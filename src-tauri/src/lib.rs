@@ -8,7 +8,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -2076,6 +2079,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
         let mut last_due: HashMap<String, String> = HashMap::new();
         let mut previous_poll = Utc::now() - chrono::Duration::seconds(30);
         let mut last_provider_poll: Option<Instant> = None;
+        let provider_poll_running = Arc::new(AtomicBool::new(false));
         let startup = SyncEvent {
             source: "startup".into(),
             message: "Background workers active — scheduler and provider polling started".into(),
@@ -2093,14 +2097,20 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
             let provider_poll_due = last_provider_poll
                 .map(|started| started.elapsed() >= Duration::from_secs(300))
                 .unwrap_or(true);
-            if provider_poll_due {
+            if provider_poll_due
+                && provider_poll_running
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+            {
                 last_provider_poll = Some(Instant::now());
                 let poll_db = db.clone();
                 let poll_app = app.clone();
+                let poll_running = provider_poll_running.clone();
                 tauri::async_runtime::spawn(async move {
                     report_provider_credentials(poll_app.clone()).await;
                     background_github_activity(poll_db.clone(), poll_app.clone()).await;
                     background_azure_activity(poll_db, poll_app).await;
+                    poll_running.store(false, Ordering::Release);
                 });
             }
             if let Ok(conn) = db.lock() {
