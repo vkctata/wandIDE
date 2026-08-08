@@ -2409,8 +2409,8 @@ function WhatsNewSection() {
           icon: Sparkles,
         },
         {
-          title: "Settings & Preferences Modal Dialog",
-          desc: "Categorized settings modal dialog with dark/light mode controls, notification preferences, and section navigation.",
+          title: "Settings & Preferences Control Center",
+          desc: "A single routed Settings page for themes, workspace folders, providers, CLI access, agents, notifications, and release notes.",
           icon: Settings,
         },
         {
