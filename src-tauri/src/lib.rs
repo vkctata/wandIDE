@@ -1180,6 +1180,27 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
                 ));
             }
         }
+    for agent_id in &req.agents {
+        if agent_id == "sentinel-verifier" {
+            continue;
+        }
+        let (cli, model, responsibility, skills_json): (String, String, String, String) = conn
+            .query_row(
+                "SELECT cli,model,role,skills FROM agents WHERE id=?1",
+                params![agent_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)), 
+            )
+            .map_err(|_| format!("Unknown agent: {agent_id}"))?;
+        req.agent_configs.insert(
+            agent_id.clone(),
+            AgentExecution {
+                cli,
+                model,
+                responsibility,
+                skills: serde_json::from_str(&skills_json).unwrap_or_default(),
+            },
+        );
+    }
     }
     let run_id = req
         .run_id
