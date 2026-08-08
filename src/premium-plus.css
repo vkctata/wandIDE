@@ -288,6 +288,9 @@ body[data-theme="lavender"] .wand-modal {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--wand-accent, #9678ff) 17%, transparent);
 }
 .modal-field span { print-color-adjust: exact; }
+.modal-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.modal-input-row input { min-width: 0; }
+.modal-browse { white-space: nowrap; padding: 10px 12px; }
 .wand-modal-top h2,
 .modal-check {
   color: var(--ink-strong, #f0f2fc);

@@ -171,6 +171,7 @@ type ModalField = {
   options?: string[];
   multiline?: boolean;
   maxLength?: number;
+  browseDirectory?: boolean;
 };
 type ModalRequest = {
   title: string;
@@ -415,7 +416,7 @@ function App() {
       "Add repository",
       [
         { id: "name", label: "Repository name", placeholder: "wand" },
-        { id: "path", label: "Local folder path", placeholder: "~/Code/wand" },
+        { id: "path", label: "Local folder path", placeholder: "~/Code/wand", browseDirectory: true },
       ],
       "Add a local repository to your Wand workspace.",
     );
@@ -2716,6 +2717,32 @@ function ModalHost() {
                       }))
                     }
                   />
+                ) : field.browseDirectory ? (
+                  <div className="modal-input-row">
+                    <input
+                      autoFocus={request.fields[0].id === field.id}
+                      value={values[field.id] || ""}
+                      placeholder={field.placeholder}
+                      onChange={(event) =>
+                        setValues((current) => ({
+                          ...current,
+                          [field.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="outline modal-browse"
+                      onClick={async () => {
+                        const selected = await open({ directory: true, multiple: false, title: "Choose repository folder" });
+                        if (typeof selected === "string") {
+                          setValues((current) => ({ ...current, [field.id]: selected }));
+                        }
+                      }}
+                    >
+                      Browse
+                    </button>
+                  </div>
                 ) : (
                   <input
                     autoFocus={request.fields[0].id === field.id}
