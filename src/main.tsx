@@ -2796,17 +2796,8 @@ function UpdateBanner() {
   useEffect(() => {
     if (!isTauriRuntime()) return;
     check()
-      .then(async (value) => {
-        if (!value) return;
-        setUpdate(value);
-        try {
-          setBusy(true);
-          await value.downloadAndInstall();
-          await relaunch();
-        } catch (reason) {
-          setBusy(false);
-          setError(String(reason));
-        }
+      .then((value) => {
+        if (value) setUpdate(value);
       })
       .catch((reason) => setError(String(reason)));
   }, []);
@@ -2833,7 +2824,7 @@ function UpdateBanner() {
         {error && <small>{error}</small>}
       </div>
       <button onClick={install} disabled={busy}>
-        {busy ? "Installing…" : "Retry"}
+        {busy ? "Installing…" : error ? "Retry" : "Approve"}
       </button>
     </aside>
   );
