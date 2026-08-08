@@ -2309,11 +2309,25 @@ function ThemeSection() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem("wand.theme") || "mint",
   );
+  useEffect(() => {
+    invoke<string | null>("workspace_setting", { key: "theme" })
+      .then((value) => {
+        if (!value) return;
+        setTheme(value);
+        document.body.dataset.theme = value;
+        localStorage.setItem("wand.theme", value);
+      })
+      .catch(() => {});
+  }, []);
   const isLight = ["daylight", "paper", "mint", "lavender"].includes(theme);
   const choose = (name: string) => {
     setTheme(name);
     document.body.dataset.theme = name;
     localStorage.setItem("wand.theme", name);
+    void invoke("save_workspace_setting", {
+      key: "theme",
+      value: name,
+    });
   };
   const setMode = (mode: "dark" | "light") => {
     const defaultTheme = mode === "light" ? "daylight" : "obsidian";
@@ -2949,41 +2963,24 @@ function OnboardingGate() {
       <ProviderHealth />
       <UpdateBanner />
       <RuntimeIdentity />
-      <ThemePicker />
+      <ThemeBootstrap />
       <ModalHost />
       {show && <Onboarding done={finish} />}
     </>
   );
 }
 createRoot(document.getElementById("root")!).render(<OnboardingGate />);
-function ThemePicker() {
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("wand.theme") || "mint",
-  );
+function ThemeBootstrap() {
   useEffect(() => {
-    document.body.dataset.theme = theme;
-    localStorage.setItem("wand.theme", theme);
-  }, [theme]);
-  return (
-    <div className="theme-dock">
-      <span className="theme-label">Appearance</span>
-      {[
-        "obsidian",
-        "aurora",
-        "amethyst",
-        "ember",
-        "daylight",
-        "paper",
-        "mint",
-        "lavender",
-      ].map((name) => (
-        <button
-          aria-label={name + " theme"}
-          className={"theme-choice " + name + (theme === name ? " active" : "")}
-          onClick={() => setTheme(name)}
-          key={name}
-        />
-      ))}
-    </div>
-  );
+    const stored = localStorage.getItem("wand.theme") || "mint";
+    document.body.dataset.theme = stored;
+    invoke<string | null>("workspace_setting", { key: "theme" })
+      .then((value) => {
+        if (!value) return;
+        document.body.dataset.theme = value;
+        localStorage.setItem("wand.theme", value);
+      })
+      .catch(() => {});
+  }, []);
+  return null;
 }
