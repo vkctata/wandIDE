@@ -1785,27 +1785,88 @@ function SettingsView({
           </p>
         </div>
       </div>
-      <div className="settingscard">
-        <h2>Repository workspace</h2>
-        <p>
-          {root ||
-            "Choose one folder and Wand will scan its immediate Git repositories."}
-        </p>
-        <div className="folder">
-          <FolderGit2 size={18} />
-          <span>{repos.length} repositories in this local workspace</span>
-          <button className="outline" onClick={scan} disabled={scanning}>
-            {scanning ? "Scanning…" : "Choose folder & scan"}
-          </button>
+      <SettingsGroup
+        number="01"
+        title="Workspace"
+        description="Your local repositories and project context."
+      >
+        <div className="settingscard">
+          <h2>Repository workspace</h2>
+          <p>
+            {root ||
+              "Choose one folder and Wand will scan its immediate Git repositories."}
+          </p>
+          <div className="folder">
+            <FolderGit2 size={18} />
+            <span>{repos.length} repositories in this local workspace</span>
+            <button className="outline" onClick={scan} disabled={scanning}>
+              {scanning ? "Scanning…" : "Choose folder & scan"}
+            </button>
+          </div>
+          {scanError && <p className="provider-message" role="alert">{scanError}</p>}
         </div>
-        {scanError && <p className="provider-message" role="alert">{scanError}</p>}
+      </SettingsGroup>
+      <SettingsGroup
+        number="02"
+        title="Appearance"
+        description="The way Wand looks in your workspace."
+      >
+        <ThemeSection />
+      </SettingsGroup>
+      <SettingsGroup
+        number="03"
+        title="Connections"
+        description="Services and local tools that Wand can use."
+      >
+        <ProviderAccess />
+        <CliManager />
+      </SettingsGroup>
+      <SettingsGroup
+        number="04"
+        title="Agent team"
+        description="The specialists available in this workspace."
+      >
+        <AgentManager repos={repos} />
+      </SettingsGroup>
+      <SettingsGroup
+        number="05"
+        title="Notifications"
+        description="Choose which work deserves your attention."
+      >
+        <NotificationPreferencesSection />
+      </SettingsGroup>
+      <SettingsGroup
+        number="06"
+        title="About Wand"
+        description="Release notes and product updates."
+      >
+        <WhatsNewSection />
+      </SettingsGroup>
+    </section>
+  );
+}
+function SettingsGroup({
+  number,
+  title,
+  description,
+  children,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  const id = `settings-${title.toLowerCase().replace(/\s+/g, "-")}`;
+  return (
+    <section className="settings-group" aria-labelledby={id}>
+      <div className="settings-group-heading">
+        <span>{number}</span>
+        <div>
+          <h2 id={id}>{title}</h2>
+          <p>{description}</p>
+        </div>
       </div>
-      <ThemeSection />
-      <ProviderAccess />
-      <CliManager />
-      <AgentManager repos={repos} />
-      <NotificationPreferencesSection />
-      <WhatsNewSection />
+      {children}
     </section>
   );
 }
@@ -2644,7 +2705,6 @@ function ThemeSection() {
     <div className="settings-section appearance-section">
       <div className="settings-section-head">
         <div>
-          <p className="eyebrow">APPEARANCE</p>
           <h2>Appearance</h2>
           <p>
             Two carefully tuned modes with one restrained Wand violet accent.

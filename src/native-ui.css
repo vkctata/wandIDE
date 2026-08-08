@@ -12,9 +12,9 @@
    app remains recognizably Wand, but the surrounding chrome matches the host
    rather than making every platform imitate macOS. */
 body[data-platform="macos"] {
-  --native-radius-sm: 8px;
-  --native-radius-md: 12px;
-  --native-radius-lg: 14px;
+  --native-radius-sm: 7px;
+  --native-radius-md: 10px;
+  --native-radius-lg: 12px;
   --native-control: 30px;
   --native-sidebar: 248px;
 }
@@ -143,17 +143,50 @@ header, .app > main > header {
   display: grid;
   grid-template-columns: minmax(0, 980px);
   align-content: start;
-  gap: 18px;
+  gap: 30px;
 }
 .settings-page > .hero {
   width: 100%;
-  margin: 0 0 8px;
+  margin: 0;
 }
-.settings-page > .settingscard,
-.settings-page > .settings-section,
-body[data-view="settings"] .settings-page > .provider-access,
-body[data-view="settings"] .settings-page > .cli-manager,
-body[data-view="settings"] .settings-page > .agent-management {
+.settings-group {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+.settings-group-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 0 2px;
+}
+.settings-group-heading > span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border: 1px solid color-mix(in srgb, var(--wand-accent, #9678ff) 35%, var(--wand-border, #292d3e));
+  border-radius: 999px;
+  color: var(--wand-accent, #9678ff);
+  font: 700 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.settings-group-heading h2 {
+  margin: 0;
+  color: var(--wand-ink, #f2f0f7);
+  font-size: 13px;
+  letter-spacing: .01em;
+}
+.settings-group-heading p {
+  margin: 3px 0 0;
+  color: var(--wand-muted, #9996a5);
+  font-size: 11px;
+}
+.settings-group > .settingscard,
+.settings-group > .settings-section,
+body[data-view="settings"] .settings-group > .provider-access,
+body[data-view="settings"] .settings-group > .cli-manager,
+body[data-view="settings"] .settings-group > .agent-management {
   width: 100%;
   max-width: none;
   margin: 0;
@@ -163,15 +196,15 @@ body[data-view="settings"] .settings-page > .agent-management {
   background: var(--wand-surface, #171a24);
   box-shadow: none;
 }
-.settings-page > .settingscard { display: block; }
-.settings-page > .provider-access,
-.settings-page > .cli-manager,
-.settings-page > .agent-management { display: block; }
-.settings-page .sectionhead { width: 100%; }
-.settings-page .provider-row,
-.settings-page .cli-row { min-width: 0; }
-.settings-page .provider-row > div,
-.settings-page .cli-row > div { min-width: 0; }
+.settings-group > .settingscard,
+.settings-group > .provider-access,
+.settings-group > .cli-manager,
+.settings-group > .agent-management { display: block; }
+.settings-group .sectionhead { width: 100%; }
+.settings-group .provider-row,
+.settings-group .cli-row { min-width: 0; }
+.settings-group .provider-row > div,
+.settings-group .cli-row > div { min-width: 0; }
 
 body[data-platform="macos"] .primary {
   font-weight: 600;
@@ -230,16 +263,16 @@ body[data-theme="lavender"] header { background: color-mix(in srgb, var(--wand-s
   .hero { gap: 18px; }
 }
 @media (max-width: 640px) {
-  .settings-page { gap: 14px; }
-  .settings-page > .settingscard,
-  .settings-page > .settings-section,
-  body[data-view="settings"] .settings-page > .provider-access,
-  body[data-view="settings"] .settings-page > .cli-manager,
-  body[data-view="settings"] .settings-page > .agent-management { padding: 16px; }
-  .settings-page .provider-row { align-items: flex-start; flex-wrap: wrap; }
-  .settings-page .provider-row > div:first-child { flex-basis: 100%; }
-  .settings-page .cli-row { gap: 9px; }
-  .settings-page .settings-section-head { gap: 10px; }
+  .settings-page { gap: 24px; }
+  .settings-group > .settingscard,
+  .settings-group > .settings-section,
+  body[data-view="settings"] .settings-group > .provider-access,
+  body[data-view="settings"] .settings-group > .cli-manager,
+  body[data-view="settings"] .settings-group > .agent-management { padding: 16px; }
+  .settings-group .provider-row { align-items: flex-start; flex-wrap: wrap; }
+  .settings-group .provider-row > div:first-child { flex-basis: 100%; }
+  .settings-group .cli-row { gap: 9px; }
+  .settings-group .settings-section-head { gap: 10px; }
 }
 
 /* Premium two-mode system. Keep the identity in the material and typography,
@@ -356,6 +389,23 @@ body[data-theme="daylight"] .run {
 }
 .appearance-section .mode-toggle-group { margin-top: 20px; }
 .appearance-section .mode-btn { min-width: 138px; }
+
+/* macOS groups are softly rounded, never pillowy. Keep this at the native
+   platform layer so Windows and Linux retain their own familiar geometry. */
+body[data-platform="macos"] .stat,
+body[data-platform="macos"] .agent,
+body[data-platform="macos"] .taskcard,
+body[data-platform="macos"] .settingscard,
+body[data-platform="macos"] .settings-section,
+body[data-platform="macos"] .settings-group > .provider-access,
+body[data-platform="macos"] .settings-group > .cli-manager,
+body[data-platform="macos"] .settings-group > .agent-management,
+body[data-platform="macos"] .wand-modal { border-radius: 10px; }
+body[data-platform="macos"] .primary,
+body[data-platform="macos"] .outline,
+body[data-platform="macos"] .filter,
+body[data-platform="macos"] .run,
+body[data-platform="macos"] .mode-btn { border-radius: 7px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
