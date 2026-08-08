@@ -90,6 +90,14 @@ type Agent = {
   model?: string;
   system_prompt?: string;
 };
+const timeGreeting = (date: Date) => {
+  const hour = date.getHours();
+  if (hour < 5) return "Good night";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  if (hour < 22) return "Good evening";
+  return "Good night";
+};
 type Task = {
   id: string;
   name: string;
@@ -635,7 +643,17 @@ function App() {
         </div>
       </aside>
       <main>
-        <header>
+        <header
+          data-tauri-drag-region
+          onMouseDown={(event) => {
+            if ((event.target as HTMLElement).closest("input,button,a,select,textarea")) return;
+            try {
+              getCurrentWindow().startDragging().catch(() => {});
+            } catch {
+              // The browser shell has no native window to drag.
+            }
+          }}
+        >
           <div className="actions">
             <div className="search">
               <Search size={15} />
@@ -717,6 +735,11 @@ function Home({
   setView: (v: View) => void;
   userName: string;
 }) {
+  const [clock, setClock] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   type Event = {
     id: number;
     kind: string;
@@ -747,7 +770,7 @@ function Home({
           <p className="eyebrow">
             <span className="pulse" /> LOCAL WORKSPACE
           </p>
-          <h1>Good morning, {userName}.</h1>
+          <h1>{timeGreeting(clock)}, {userName}.</h1>
           <p className="sub">
             Your agents are ready to work across your repositories.
           </p>
@@ -2883,9 +2906,22 @@ function OnboardingGate() {
   const [show, setShow] = useState(
     () => localStorage.getItem("wand.onboarding.complete") !== "true",
   );
+  useEffect(() => {
+    invoke<string | null>("user_name")
+      .then((name) => {
+        const hasSavedName = Boolean(name?.trim());
+        setShow(!hasSavedName);
+        if (hasSavedName) localStorage.setItem("wand.onboarding.complete", "true");
+      })
+      .catch(() => {
+        // Browser preview has no SQLite boundary; retain its local onboarding state.
+      });
+  }, []);
   const finish = async (name: string) => {
-    await invoke("save_user_name", { name }).catch(() => {});
-    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    await invoke("save_user_name", { name: cleanName }).catch(() => {});
+    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: cleanName }));
     localStorage.setItem("wand.onboarding.complete", "true");
     setShow(false);
   };
