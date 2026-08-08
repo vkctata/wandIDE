@@ -15,6 +15,17 @@
   flex-wrap: wrap;
 }
 
+.thread-error {
+  margin: -8px 0 18px;
+  padding: 10px 12px;
+  border: 1px solid #f38ba855;
+  border-radius: 9px;
+  color: #f38ba8;
+  background: color-mix(in srgb, #f38ba8 8%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .threads-empty {
   display: grid;
   place-content: center;
