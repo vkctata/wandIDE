@@ -811,7 +811,8 @@ function Home({
     message: string;
     created_at: string;
   };
-  const [events, setEvents] = useState<Event[]>([]);\n  const [localHour, setLocalHour] = useState<number | null>(null);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [localHour, setLocalHour] = useState<number | null>(null);
   const refresh = () =>
     invoke<Event[]>("list_events", { limit: 12 })
       .then(setEvents)
@@ -824,7 +825,17 @@ function Home({
       stops.forEach((stop) => stop.then((fn) => fn()));
     };
   }, []);
-  useEffect(() => {\n    const readLocalHour = () => {\n      invoke<number>("local_hour")\n        .then(setLocalHour)\n        .catch(() => setLocalHour(new Date().getHours()));\n    };\n    readLocalHour();\n    const timer = window.setInterval(readLocalHour, 60_000);\n    return () => window.clearInterval(timer);\n  }, []);\n  const runs = events.filter((e) => e.kind.startsWith("agent.")).length;
+  useEffect(() => {
+    const readLocalHour = () => {
+      invoke<number>("local_hour")
+        .then(setLocalHour)
+        .catch(() => setLocalHour(new Date().getHours()));
+    };
+    readLocalHour();
+    const timer = window.setInterval(readLocalHour, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const runs = events.filter((e) => e.kind.startsWith("agent.")).length;
   const reviews = events.filter(
     (e) => e.kind.includes("comment") || e.kind.includes("notification"),
   ).length;
