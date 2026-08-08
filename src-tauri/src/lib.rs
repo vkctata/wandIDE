@@ -6,7 +6,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
-    fs,
+    env, fs,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -18,6 +18,34 @@ use tauri::{AppHandle, Emitter, Manager, State};
 struct CliResult {
     ok: bool,
     message: String,
+}
+fn runtime_path() -> std::ffi::OsString {
+    let mut paths = env::split_paths(&env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    if cfg!(target_os = "macos") {
+        candidates.extend([
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+        ]);
+    }
+    if cfg!(unix) {
+        if let Some(home) = env::var_os("HOME") {
+            let home = PathBuf::from(home);
+            candidates.push(home.join(".local/bin"));
+            candidates.push(home.join("bin"));
+        }
+    }
+    for candidate in candidates {
+        if candidate.is_dir() && !paths.iter().any(|path| path == &candidate) {
+            paths.push(candidate);
+        }
+    }
+    env::join_paths(paths).unwrap_or_default()
+}
+fn runtime_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    command.env("PATH", runtime_path());
+    command
 }
 struct Db(Arc<Mutex<Connection>>);
 #[derive(Serialize)]
@@ -715,9 +743,9 @@ struct CliStatus {
 }
 fn installed_cli_path(command: &str) -> Option<String> {
     let lookup = if cfg!(windows) {
-        Command::new("where").arg(command).output().ok()
+        runtime_command("where").arg(command).output().ok()
     } else {
-        Command::new("which").arg(command).output().ok()
+        runtime_command("which").arg(command).output().ok()
     }?;
     if !lookup.status.success() {
         return None;
@@ -743,7 +771,7 @@ fn detect_clis() -> Vec<CliStatus> {
             let path = installed_cli_path(cmd);
             let version = path
                 .as_ref()
-                .and_then(|_| Command::new(cmd).arg("--version").output().ok())
+                .and_then(|_| runtime_command(cmd).arg("--version").output().ok())
                 .map(|output| {
                     let text = if output.stdout.is_empty() {
                         String::from_utf8_lossy(&output.stderr)
@@ -964,7 +992,7 @@ fn execute_stage(
         "{task_prompt}\n\nYou are the {agent} stage. {model_hint}\nRESPONSIBILITY: {responsibility}\nSKILLS: {skills_text}\nUse the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}"
     );
     let args = cli_args(command, model, prompt)?;
-    let output = Command::new(command)
+    let output = runtime_command(command)
         .current_dir(repo_path)
         .args(args)
         .output()
@@ -2251,6 +2279,17 @@ mod tests {
             vec!["-p", "--model", "gemini-2.5-pro", "hello"]
         );
         assert!(cli_args("unknown", "default", "hello".into()).is_err());
+    }
+
+    #[test]
+    fn runtime_path_keeps_existing_path_entries() {
+        let path = runtime_path();
+        let entries = std::env::split_paths(&path).collect::<Vec<_>>();
+        if let Some(current) = std::env::var_os("PATH") {
+            for entry in std::env::split_paths(&current) {
+                assert!(entries.iter().any(|candidate| candidate == &entry));
+            }
+        }
     }
 
     #[test]
