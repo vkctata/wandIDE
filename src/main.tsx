@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { listen as tauriListen } from '@tauri-apps/api/event';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -21,6 +21,12 @@ import './ui-corrections.css';
 import './provider-ui.css';
 import './responsive-fix.css';
 import './premium-plus.css';
+
+const isTauriRuntime = () => typeof window !== 'undefined' && Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+const invoke = <T = unknown>(command: string, args?: Record<string, unknown>): Promise<T> =>
+  isTauriRuntime() ? tauriInvoke<T>(command, args) : Promise.reject(new Error('Wand native features are available in the desktop app.'));
+const listen = <T = unknown>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> =>
+  isTauriRuntime() ? tauriListen<T>(event, handler) : Promise.resolve(() => {});
 
 type View = 'home'|'code'|'threads'|'tasks'|'notifications'|'settings';
 type Repo = { name:string; path:string; color:string; count:number };
