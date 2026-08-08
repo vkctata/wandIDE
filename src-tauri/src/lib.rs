@@ -2,7 +2,7 @@ use chrono::Utc;
 use cron::Schedule;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
     fs,
@@ -13,6 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
+use wait_timeout::ChildExt;
 struct Db(Arc<Mutex<Connection>>);
 #[derive(Serialize)]
 struct TaskRow {
@@ -83,7 +84,10 @@ fn recover_interrupted_runs(conn: &Connection) -> rusqlite::Result<usize> {
     if recovered > 0 {
         conn.execute(
             "INSERT INTO events(kind,message,created_at) VALUES ('scheduler.recovered',?1,?2)",
-            params![format!("Recovered {recovered} interrupted task run(s)"), now],
+            params![
+                format!("Recovered {recovered} interrupted task run(s)"),
+                now
+            ],
         )?;
     }
     Ok(recovered)
@@ -935,12 +939,14 @@ async fn test_provider_connection(
     let token = provider_token(&provider).await?;
     let client = reqwest::Client::new();
     let response = match provider.as_str() {
-        "github" => client
-            .get("https://api.github.com/user")
-            .header("User-Agent", "Wand")
-            .bearer_auth(token)
-            .send()
-            .await,
+        "github" => {
+            client
+                .get("https://api.github.com/user")
+                .header("User-Agent", "Wand")
+                .bearer_auth(token)
+                .send()
+                .await
+        }
         "azure-devops" => {
             let base = validate_azure_org_url(
                 provider_url
@@ -1081,11 +1087,27 @@ fn execute_stage(
     };
     let prompt = format!("{task_prompt}\n\nYou are the {agent} stage. {model_hint}\nRESPONSIBILITY: {responsibility}\nSKILLS: {skills_text}\nUse the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}");
     let args = cli_args(command, model, prompt)?;
-    let output = Command::new(command)
+    let mut child = Command::new(command)
         .current_dir(repo_path)
         .args(args)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| e.to_string())?;
+    const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+    if child
+        .wait_timeout(STAGE_TIMEOUT)
+        .map_err(|e| e.to_string())?
+        .is_none()
+    {
+        let _ = child.kill();
+        let _ = child.wait_with_output();
+        return Err(format!(
+            "CLI stage timed out after {} minutes",
+            STAGE_TIMEOUT.as_secs() / 60
+        ));
+    }
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
@@ -1438,10 +1460,13 @@ fn validate_azure_org_url(raw: &str) -> Result<String, String> {
 }
 
 fn parse_azure_pull_request_url(raw: &str) -> Result<(String, String, String, i64), String> {
-    let parsed = url::Url::parse(raw.trim()).map_err(|_| "Azure pull-request URL is invalid".to_string())?;
+    let parsed =
+        url::Url::parse(raw.trim()).map_err(|_| "Azure pull-request URL is invalid".to_string())?;
     let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
     if parsed.scheme() != "https"
-        || !(host == "dev.azure.com" || host.ends_with(".dev.azure.com") || host.ends_with(".visualstudio.com"))
+        || !(host == "dev.azure.com"
+            || host.ends_with(".dev.azure.com")
+            || host.ends_with(".visualstudio.com"))
     {
         return Err("Azure pull-request URL must use an approved HTTPS Azure DevOps host".into());
     }
@@ -1450,27 +1475,57 @@ fn parse_azure_pull_request_url(raw: &str) -> Result<(String, String, String, i6
         .map(|segments| segments.collect())
         .unwrap_or_else(Vec::new);
     let git_index = segments.iter().position(|segment| *segment == "_git");
-    let Some(git_index) = git_index else { return Err("Azure pull-request URL is missing its repository".into()) };
-    if git_index == 0 || segments.len() <= git_index + 3 || segments[git_index + 2] != "pullrequest" {
-        return Err("Azure pull-request URL must use the project/_git/repository/pullrequest/id form".into());
+    let Some(git_index) = git_index else {
+        return Err("Azure pull-request URL is missing its repository".into());
+    };
+    if git_index == 0 || segments.len() <= git_index + 3 || segments[git_index + 2] != "pullrequest"
+    {
+        return Err(
+            "Azure pull-request URL must use the project/_git/repository/pullrequest/id form"
+                .into(),
+        );
     }
-    let pull_id = segments[git_index + 3].parse::<i64>().map_err(|_| "Azure pull-request ID is invalid".to_string())?;
-    if pull_id <= 0 { return Err("Azure pull-request ID must be greater than zero".into()); }
-    let base = format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or_default());
-    Ok((base, segments[git_index - 1].to_string(), segments[git_index + 1].to_string(), pull_id))
+    let pull_id = segments[git_index + 3]
+        .parse::<i64>()
+        .map_err(|_| "Azure pull-request ID is invalid".to_string())?;
+    if pull_id <= 0 {
+        return Err("Azure pull-request ID must be greater than zero".into());
+    }
+    let base = format!(
+        "{}://{}",
+        parsed.scheme(),
+        parsed.host_str().unwrap_or_default()
+    );
+    Ok((
+        base,
+        segments[git_index - 1].to_string(),
+        segments[git_index + 1].to_string(),
+        pull_id,
+    ))
 }
 
 #[tauri::command]
 async fn azure_pull_request_comment(url: String, body: String) -> Result<String, String> {
     let body = body.trim().to_string();
-    if body.is_empty() { return Err("A comment cannot be empty".into()); }
-    if body.chars().count() > 4000 { return Err("A comment cannot exceed 4000 characters".into()); }
+    if body.is_empty() {
+        return Err("A comment cannot be empty".into());
+    }
+    if body.chars().count() > 4000 {
+        return Err("A comment cannot exceed 4000 characters".into());
+    }
     let (base, project, repository, pull_id) = parse_azure_pull_request_url(&url)?;
     let token = provider_token("azure-devops").await?;
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).redirect(reqwest::redirect::Policy::none()).user_agent("Wand/0.1").build().map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("Wand/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
     let endpoint = format!("{base}/{project}/_apis/git/repositories/{repository}/pullRequests/{pull_id}/threads?api-version=7.1-preview.1");
     let response = client.post(endpoint).basic_auth("", Some(token)).json(&serde_json::json!({"comments":[{"parentCommentId":0,"content":body,"commentType":1}],"status":1})).send().await.map_err(|e| e.to_string())?;
-    if !response.status().is_success() { return Err(format!("Azure DevOps returned {}", response.status())); }
+    if !response.status().is_success() {
+        return Err(format!("Azure DevOps returned {}", response.status()));
+    }
     Ok("Azure DevOps pull-request comment posted".into())
 }
 
@@ -1485,16 +1540,23 @@ async fn azure_pull_request_approve(url: String) -> Result<String, String> {
         .build()
         .map_err(|e| e.to_string())?;
     let identity = client
-        .get(format!("{base}/_apis/connectionData?connectOptions=none&lastChangeId=-1&lastChangeId64=-1"))
+        .get(format!(
+            "{base}/_apis/connectionData?connectOptions=none&lastChangeId=-1&lastChangeId64=-1"
+        ))
         .basic_auth("", Some(&token))
         .send()
         .await
         .map_err(|e| e.to_string())?;
     if !identity.status().is_success() {
-        return Err(format!("Azure DevOps returned {} while resolving the current user", identity.status()));
+        return Err(format!(
+            "Azure DevOps returned {} while resolving the current user",
+            identity.status()
+        ));
     }
     let identity: serde_json::Value = identity.json().await.map_err(|e| e.to_string())?;
-    let reviewer = identity["authenticatedUser"]["id"].as_str().unwrap_or_default();
+    let reviewer = identity["authenticatedUser"]["id"]
+        .as_str()
+        .unwrap_or_default();
     if reviewer.is_empty() {
         return Err("Azure DevOps did not return the authenticated reviewer identity".into());
     }
@@ -1807,18 +1869,41 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     for name in names {
         let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(error)=>{emit_provider_health(&app,"github","error",Some(format!("GitHub request failed for {name}: {error}"))); return;}};
         if !response.status().is_success() {
-            emit_provider_health(&app,"github","error",Some(format!("GitHub returned {} for {name}",response.status())));
+            emit_provider_health(
+                &app,
+                "github",
+                "error",
+                Some(format!("GitHub returned {} for {name}", response.status())),
+            );
             continue;
         }
         let comments: Vec<serde_json::Value> = match response.json().await {
             Ok(value) => value,
-            Err(error) => { emit_provider_health(&app,"github","error",Some(format!("GitHub response could not be read for {name}: {error}"))); return; },
+            Err(error) => {
+                emit_provider_health(
+                    &app,
+                    "github",
+                    "error",
+                    Some(format!(
+                        "GitHub response could not be read for {name}: {error}"
+                    )),
+                );
+                return;
+            }
         };
         for comment in comments {
             let id = format!("github-review:{}", comment["id"].as_i64().unwrap_or(0));
             let conn = match db.lock() {
                 Ok(value) => value,
-                Err(error) => { emit_provider_health(&app,"github","error",Some(format!("Database lock failed: {error}"))); return; },
+                Err(error) => {
+                    emit_provider_health(
+                        &app,
+                        "github",
+                        "error",
+                        Some(format!("Database lock failed: {error}")),
+                    );
+                    return;
+                }
             };
             let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]);
             if changed.unwrap_or(0) > 0 {
@@ -1844,12 +1929,28 @@ async fn report_provider_credentials(app: AppHandle) {
 async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     let token = match provider_token("azure-devops").await {
         Ok(value) => value,
-        Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Credential check failed: {error}"))); return; },
+        Err(error) => {
+            emit_provider_health(
+                &app,
+                "azure-devops",
+                "error",
+                Some(format!("Credential check failed: {error}")),
+            );
+            return;
+        }
     };
     let base: Option<String> = {
         let conn = match db.lock() {
             Ok(value) => value,
-            Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Database lock failed: {error}"))); return; },
+            Err(error) => {
+                emit_provider_health(
+                    &app,
+                    "azure-devops",
+                    "error",
+                    Some(format!("Database lock failed: {error}")),
+                );
+                return;
+            }
         };
         conn.query_row(
             "SELECT url FROM provider_settings WHERE provider='azure-devops'",
@@ -1860,7 +1961,15 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         .ok()
         .flatten()
     };
-    let Some(base) = base else { emit_provider_health(&app,"azure-devops","error",Some("Azure DevOps organization URL is not configured".into())); return };
+    let Some(base) = base else {
+        emit_provider_health(
+            &app,
+            "azure-devops",
+            "error",
+            Some("Azure DevOps organization URL is not configured".into()),
+        );
+        return;
+    };
     let client = reqwest::Client::new();
     let response = match client
         .get(format!(
@@ -1871,15 +1980,36 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         .await
     {
         Ok(value) => value,
-        Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Azure DevOps request failed: {error}"))); return; },
+        Err(error) => {
+            emit_provider_health(
+                &app,
+                "azure-devops",
+                "error",
+                Some(format!("Azure DevOps request failed: {error}")),
+            );
+            return;
+        }
     };
     if !response.status().is_success() {
-        emit_provider_health(&app,"azure-devops","error",Some(format!("Azure DevOps returned {}",response.status())));
+        emit_provider_health(
+            &app,
+            "azure-devops",
+            "error",
+            Some(format!("Azure DevOps returned {}", response.status())),
+        );
         return;
     }
     let pulls: serde_json::Value = match response.json().await {
         Ok(value) => value,
-            Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Azure DevOps response could not be read: {error}"))); return; },
+        Err(error) => {
+            emit_provider_health(
+                &app,
+                "azure-devops",
+                "error",
+                Some(format!("Azure DevOps response could not be read: {error}")),
+            );
+            return;
+        }
     };
     let mut added = 0;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
@@ -2314,13 +2444,21 @@ mod tests {
 
         assert_eq!(recover_interrupted_runs(&conn).unwrap(), 2);
         let recurring: String = conn
-            .query_row("SELECT status FROM tasks WHERE id='recurring'", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id='recurring'", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         let one_off: String = conn
-            .query_row("SELECT status FROM tasks WHERE id='one-off'", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id='one-off'", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         let failed_runs: i64 = conn
-            .query_row("SELECT COUNT(*) FROM task_runs WHERE status='failed'", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM task_runs WHERE status='failed'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(recurring, "queued");
         assert_eq!(one_off, "failed");
