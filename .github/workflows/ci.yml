@@ -54,10 +54,17 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: .
           args: ${{ matrix.args }}
           includeDebug: false
+          tagName: wand-v__VERSION__
+          releaseName: Wand v__VERSION__
+          releaseBody: Signed Wand desktop release
+          releaseDraft: true
+          prerelease: false
       - uses: actions/upload-artifact@v4
         with:
           name: wand-${{ matrix.target }}

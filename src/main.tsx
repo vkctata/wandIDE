@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import { Bell, Bot, CheckCircle2, ChevronDown, Clock3, Code2, FolderGit2, GitPullRequest, Github, Hash, LayoutDashboard, MessageSquare, Play, Plus, Search, Settings, Sparkles, TerminalSquare, TimerReset, Zap } from 'lucide-react';
 import './styles.css';
 
@@ -18,6 +20,7 @@ function App(){
   const [view,setView]=useState<View>('home'); const [repos,setRepos]=useState(()=>load('forgepad.repos',defaultRepos)); const [tasks,setTasks]=useState(()=>load('forgepad.tasks',defaultTasks)); const [repo,setRepo]=useState(repos[0]); const [query,setQuery]=useState(''); const [notice,setNotice]=useState('');
   useEffect(()=>localStorage.setItem('forgepad.repos',JSON.stringify(repos)),[repos]); useEffect(()=>localStorage.setItem('forgepad.tasks',JSON.stringify(tasks)),[tasks]);
   useEffect(()=>{let stop:undefined|(()=>void); listen<{message:string}>('wand://sync',e=>setNotice(e.payload.message)).then(unlisten=>stop=unlisten); return ()=>stop?.()},[]);
+  useEffect(()=>{check().then(async update=>{if(update && window.confirm(`Wand ${update.version} is available. Download and install it now?`)){setNotice(`Downloading Wand ${update.version}…`); await update.downloadAndInstall(); await relaunch()}}).catch(()=>{/* Browser dev mode has no updater plugin. */})},[]);
   const addRepo=()=>{const name=prompt('Repository name'); if(!name)return; const path=prompt('Local folder path','~/Code/'+name); if(!path)return; const next={name,path,color:'#89b4fa',count:0}; setRepos([...repos,next]); setRepo(next); setView('threads');};
   const addTask=()=>{const name=prompt('Task name','Implement the next feature'); if(!name)return; const selected=agents.filter(a=>confirm(`Tag ${a.name} for this task?`)).map(a=>a.id); const cron=prompt('Cron expression (leave blank for one-off)',''); setTasks([...tasks,{id:crypto.randomUUID(),name,provider:'Agent chain',repo:repo.name,cron:cron||'one-off',active:true,agents:selected.length?selected:['planner','builder','reviewer','sentinel']}]); setNotice('Task saved with an agent handoff chain'); setView('tasks');};
   const runTask=async(t:Task)=>{const chain=t.agents.map(id=>agents.find(a=>a.id===id)?.name).filter(Boolean).join(' → '); try {const result=await invoke<{message:string}>('run_agent_cli',{provider:'agent-chain',prompt:`${t.name}\nHandoff chain: ${chain}\nThe final Sentinel agent must verify the complete result in the background.`,repoPath:repos.find(r=>r.name===t.repo)?.path||''}); setNotice(result.message)} catch {setNotice(`Queued: ${chain}. Sentinel will verify in background when running under Tauri.`)}};

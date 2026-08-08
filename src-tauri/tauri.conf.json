@@ -5,5 +5,6 @@
   "identifier": "com.wand.ide",
   "build": { "beforeDevCommand": "npm run dev", "beforeBuildCommand": "npm run build", "devUrl": "http://localhost:5173", "frontendDist": "../dist" },
   "app": { "windows": [{ "title": "Wand", "width": 1280, "height": 820, "minWidth": 960, "minHeight": 640 }], "security": { "csp": null } },
-  "bundle": { "active": true, "icon": [] }
+  "bundle": { "active": true, "icon": [], "createUpdaterArtifacts": true },
+  "plugins": { "updater": { "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK", "endpoints": ["https://github.com/vkctata/wandIDE/releases/latest/download/latest.json"], "windows": { "installMode": "passive" } } }
 }

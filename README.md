@@ -97,7 +97,20 @@ Every push and pull request runs the web build and Rust check. The desktop job p
 - Apple Silicon macOS (`aarch64-apple-darwin`)
 - Windows x64 (`x86_64-pc-windows-msvc`)
 
-The resulting bundles are uploaded as workflow artifacts. Release publishing can be added once signing certificates and update metadata are available.
+The resulting bundles are uploaded as workflow artifacts and signed for the updater.
+
+## Auto-updates
+
+Wand uses the official Tauri updater plugin. On desktop startup it checks the GitHub Releases `latest.json` endpoint. If a newer signed release exists, Wand asks the user for approval, downloads the installer, verifies its signature, installs it, and relaunches. Browser development mode silently ignores updater errors because the Tauri plugin is not present there.
+
+Updates are signed; unsigned artifacts are rejected. Configure these GitHub Actions secrets before publishing:
+
+```text
+TAURI_SIGNING_PRIVATE_KEY
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+The private key must never be committed. The public key is embedded in the desktop configuration and is safe to publish. The release workflow creates signed updater artifacts and drafts a GitHub Release for approval.
 
 ## Product concepts
 
