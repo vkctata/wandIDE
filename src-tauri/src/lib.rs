@@ -929,6 +929,7 @@ struct ChainRequest {
     #[serde(default)]
     model: String,
     #[serde(default)]
+    #[allow(dead_code)]
     agent_configs: HashMap<String, AgentExecution>,
     #[serde(default)]
     run_id: Option<String>,
@@ -1027,6 +1028,22 @@ fn finish_run(
         }
     }
 }
+fn stored_agent_execution(conn: &Connection, agent_id: &str) -> Result<AgentExecution, String> {
+    conn.query_row(
+        "SELECT cli,model,role,skills FROM agents WHERE id=?1",
+        params![agent_id],
+        |row| {
+            let skills_json: String = row.get(3)?;
+            Ok(AgentExecution {
+                cli: row.get(0)?,
+                model: row.get(1)?,
+                responsibility: row.get(2)?,
+                skills: serde_json::from_str(&skills_json).unwrap_or_default(),
+            })
+        },
+    )
+    .map_err(|_| format!("Agent configuration is missing for '{agent_id}'"))
+}
 #[tauri::command]
 fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
     let command = allowed_cli(&req.cli)
@@ -1112,7 +1129,19 @@ fn launch_chain_worker(
         let mut stages = req.agents.clone();
         stages.push("sentinel-verifier".into());
         for (index, agent) in stages.iter().enumerate() {
-            let config = req.agent_configs.get(agent);
+            // The database is the source of truth. The request snapshot is retained only
+            // for compatibility with older callers; it must never override a saved agent.
+            let config = db_arc
+                .lock()
+                .ok()
+                .and_then(|conn| stored_agent_execution(&conn, agent).ok());
+            if config.is_none() {
+                let message = format!("Agent configuration is missing for '{agent}'");
+                finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
+                return;
+            }
+            let config = config.as_ref();
             let stage_command = config
                 .and_then(|item| allowed_cli(&item.cli))
                 .unwrap_or(&command)
@@ -2330,6 +2359,23 @@ mod tests {
         )
         .unwrap();
         assert!(preferred_allowed_cli(&conn).is_none());
+    }
+
+    #[test]
+    fn stored_agent_execution_reads_persisted_configuration() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "UPDATE agents SET cli='gemini', model='gemini-2.5-pro', role='Review only', skills='[\"security\"]' WHERE id='reviewer'",
+            [],
+        )
+        .unwrap();
+        let config = stored_agent_execution(&conn, "reviewer").unwrap();
+        assert_eq!(config.cli, "gemini");
+        assert_eq!(config.model, "gemini-2.5-pro");
+        assert_eq!(config.responsibility, "Review only");
+        assert_eq!(config.skills, vec!["security"]);
+        assert!(stored_agent_execution(&conn, "missing").is_err());
     }
 
     #[test]
