@@ -1468,12 +1468,13 @@ function Onboarding({ done }: { done: (name: string) => void }) {
 }
 function CliManager() {
   const [clis, setClis] = useState<any[]>([]);
-  const [enabled, setEnabled] = useState<string[]>(() =>
-    JSON.parse(localStorage.getItem("wand.clis") || "[]"),
-  );
+  const [enabled, setEnabled] = useState<string[]>([]);
   useEffect(() => {
-    invoke<any[]>("detect_clis")
-      .then(setClis)
+    Promise.all([invoke<any[]>("detect_clis"), invoke<string[]>("cli_access")])
+      .then(([detected, access]) => {
+        setClis(detected);
+        setEnabled(access);
+      })
       .catch(() =>
         setClis([
           { id: "claude", name: "Claude", command: "claude", installed: false },
@@ -1493,7 +1494,7 @@ function CliManager() {
       ? enabled.filter((x) => x !== id)
       : [...enabled, id];
     setEnabled(next);
-    localStorage.setItem("wand.clis", JSON.stringify(next));
+    void invoke("save_cli_access", { clis: next });
   };
   return (
     <div className="cli-manager">
