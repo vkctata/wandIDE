@@ -22,6 +22,7 @@ The current build provides the desktop-ready product foundation:
 - Background Rust sync loop emitting `wand://sync` events to the UI
 - Repository threads, activity timeline, notifications, and settings surfaces
 - Tauri icon and desktop configuration for macOS and Windows
+- Linux x64 packaging through GitHub Actions (`.deb` and `.AppImage`)
 - GitHub Actions for web checks, Rust checks, and desktop packaging
 
 The provider and CLI adapters are deliberately isolated behind the Tauri command boundary. This keeps credentials and process execution out of the browser layer and leaves room for GitHub, Azure DevOps, Claude, Codex, Kimi, and Gemini adapters.
@@ -74,6 +75,17 @@ npm run tauri dev
 
 The first launch displays the Wand onboarding walkthrough. Completion is stored locally so it does not repeat on every start.
 
+## Download Wand
+
+Installers are published on the [Wand Releases page](https://github.com/vkctata/wandIDE/releases/latest). Choose the package for your platform:
+
+- [macOS Apple Silicon](https://github.com/vkctata/wandIDE/releases/latest) — `.dmg`
+- [macOS Intel](https://github.com/vkctata/wandIDE/releases/latest) — `.dmg`
+- [Windows x64](https://github.com/vkctata/wandIDE/releases/latest) — `.msi` or `.exe`
+- [Linux x64](https://github.com/vkctata/wandIDE/releases/latest) — `.deb` or `.AppImage`
+
+GitHub Actions builds these installers for tagged releases and attaches them to the release. Linux users may need the WebKitGTK and related system libraries documented in the [Tauri Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
+
 ## Validation
 
 Run the frontend build:
@@ -98,6 +110,14 @@ Every push and pull request runs the web build and Rust check. The desktop job p
 - Windows x64 (`x86_64-pc-windows-msvc`)
 
 The resulting bundles are uploaded as workflow artifacts and signed for the updater.
+
+The release matrix covers Apple Silicon macOS, Intel macOS, Windows x64, and Linux x64.
+
+## Credential security
+
+Provider PATs are never stored in Wand's SQLite database, browser storage, a `.pfx` file, or a repository. Wand stores them through the native OS credential manager: macOS Keychain, Windows Credential Manager, or the Linux Secret Service/keyring backend. Each installation gets a random installation namespace in the same OS credential manager, so one installation cannot accidentally reuse another installation's credential slot. Existing legacy Wand credentials are migrated into the installation-scoped slot on first use.
+
+Wand intentionally does not create portable `.pfx` files for PATs. PFX is a certificate container and would require a separate password/key; keeping that password beside the file would be weaker than the native credential stores. No PAT value crosses into React or is written to disk by the Rust database layer.
 
 ## Auto-updates
 
