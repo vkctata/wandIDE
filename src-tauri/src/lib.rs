@@ -191,6 +191,31 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
             .map_err(|error| format!("Invalid cron expression: {error}"))?;
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let repo_exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM repos WHERE name=?1)",
+            params![task.repo.trim()],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !repo_exists {
+        return Err(format!("Unknown repository: {}", task.repo.trim()));
+    }
+    for agent_id in &task.agents {
+        let scope: String = conn
+            .query_row(
+                "SELECT scope FROM agents WHERE id=?1",
+                params![agent_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("Unknown agent: {agent_id}"))?;
+        if scope != "workspace" && scope != format!("repo:{}", task.repo.trim()) {
+            return Err(format!(
+                "Agent {agent_id} is not available in repository {}",
+                task.repo.trim()
+            ));
+        }
+    }
     conn.execute("INSERT OR REPLACE INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES (?1,?2,?3,?4,?5,'queued',?6)",params![task.id,task.name.trim(),task.repo.trim(),task.cron.trim(),serde_json::to_string(&task.agents).map_err(|e|e.to_string())?,Utc::now().to_rfc3339()]).map_err(|e|e.to_string())?;
     Ok(())
 }
