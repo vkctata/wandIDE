@@ -785,6 +785,8 @@ fn create_thread_message(
             if !repo_path.is_dir() {
                 return Err("The tagged repository folder is no longer available".into());
             }
+            let fallback_cli = cli.clone();
+            let enabled_clis = cli_access_from_db(&tx)?;
             let configs = agent_ids
                 .iter()
                 .filter_map(|agent_id| {
@@ -792,9 +794,17 @@ fn create_thread_message(
                         "SELECT cli,model,role,skills FROM agents WHERE id=?1",
                         params![agent_id],
                         |row| {
+                            let stored_cli: String = row.get(0)?;
+                            let cli = if enabled_clis.iter().any(|item| item == &stored_cli)
+                                && installed_cli_path(&stored_cli).is_some()
+                            {
+                                stored_cli
+                            } else {
+                                fallback_cli.clone()
+                            };
                             let skills_json: String = row.get(3)?;
                             Ok(AgentExecution {
-                                cli: row.get(0)?,
+                                cli,
                                 model: row.get(1)?,
                                 responsibility: row.get(2)?,
                                 skills: serde_json::from_str(&skills_json).unwrap_or_default(),
