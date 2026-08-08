@@ -1,5 +1,4 @@
 use chrono::Utc;
-use chrono::TimeZone;
 use cron::Schedule;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
