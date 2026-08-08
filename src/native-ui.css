@@ -406,6 +406,65 @@ body[data-platform="macos"] .outline,
 body[data-platform="macos"] .filter,
 body[data-platform="macos"] .run,
 body[data-platform="macos"] .mode-btn { border-radius: 7px; }
+
+/* The companion themes share the same materials; only the temperature shifts.
+   This keeps every variation recognizably Wand rather than feeling like a
+   separate product. */
+body[data-theme="graphite"] { color: var(--wand-ink); background: #111217 !important; }
+body[data-theme="porcelain"] { color: var(--wand-ink) !important; background: #f6f3f0 !important; }
+body[data-theme="graphite"] .app {
+  background: radial-gradient(850px 480px at 82% -12%, rgba(155, 145, 216, .08), transparent 64%), linear-gradient(150deg, #1b1c21 0%, #15161b 48%, #111217 100%);
+}
+body[data-theme="porcelain"] .app {
+  background: radial-gradient(900px 500px at 82% -12%, rgba(118, 100, 188, .07), transparent 64%), linear-gradient(150deg, #fffefd 0%, #f6f3f0 52%, #efebe8 100%);
+}
+body[data-theme="graphite"] aside,
+body[data-theme="graphite"] header { background: rgba(24, 25, 30, .78); border-color: rgba(255, 255, 255, .08); }
+body[data-theme="porcelain"] aside,
+body[data-theme="porcelain"] header { background: rgba(255, 254, 253, .64) !important; border-color: rgba(55, 51, 57, .10) !important; }
+body[data-theme="graphite"] .stat,
+body[data-theme="graphite"] .agent,
+body[data-theme="graphite"] .taskcard,
+body[data-theme="graphite"] .settingscard,
+body[data-theme="graphite"] .settings-section,
+body[data-theme="graphite"] .settings-group > .provider-access,
+body[data-theme="graphite"] .settings-group > .cli-manager,
+body[data-theme="graphite"] .settings-group > .agent-management { background: rgba(29, 30, 36, .72) !important; border-color: rgba(255, 255, 255, .09) !important; }
+body[data-theme="porcelain"] .stat,
+body[data-theme="porcelain"] .agent,
+body[data-theme="porcelain"] .taskcard,
+body[data-theme="porcelain"] .settingscard,
+body[data-theme="porcelain"] .settings-section,
+body[data-theme="porcelain"] .settings-group > .provider-access,
+body[data-theme="porcelain"] .settings-group > .cli-manager,
+body[data-theme="porcelain"] .settings-group > .agent-management { background: rgba(255, 254, 253, .74) !important; border-color: rgba(55, 51, 57, .10) !important; }
+body[data-theme="graphite"] .hero h1,
+body[data-theme="graphite"] h2,
+body[data-theme="graphite"] h3,
+body[data-theme="graphite"] h4 { color: var(--wand-ink); }
+body[data-theme="porcelain"] .hero h1,
+body[data-theme="porcelain"] h2,
+body[data-theme="porcelain"] h3,
+body[data-theme="porcelain"] h4 { color: var(--wand-ink) !important; }
+body[data-theme="porcelain"] .sub,
+body[data-theme="porcelain"] .sectionhead p,
+body[data-theme="porcelain"] small,
+body[data-theme="porcelain"] .nav,
+body[data-theme="porcelain"] .repo { color: var(--wand-muted) !important; }
+body[data-theme="porcelain"] .nav.active { color: var(--wand-ink) !important; background: rgba(118, 100, 188, .10) !important; box-shadow: inset 2px 0 var(--wand-accent) !important; }
+body[data-theme="porcelain"] .actions .search,
+body[data-theme="porcelain"] .iconbtn,
+body[data-theme="porcelain"] .account-trigger,
+body[data-theme="porcelain"] .outline,
+body[data-theme="porcelain"] .filter,
+body[data-theme="porcelain"] .run { background: rgba(255, 254, 253, .60) !important; border-color: rgba(55, 51, 57, .12) !important; color: var(--wand-ink) !important; }
+.theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.theme-grid .theme-choice { min-width: 0; }
+.theme-grid .theme-choice.obsidian span { background: linear-gradient(135deg, #24242f, #a99aff); }
+.theme-grid .theme-choice.graphite span { background: linear-gradient(135deg, #2a2b31, #9b91d8); }
+.theme-grid .theme-choice.daylight span { background: linear-gradient(135deg, #fff, #6e5bd2); }
+.theme-grid .theme-choice.porcelain span { background: linear-gradient(135deg, #fffdf9, #7664bc); }
+body[data-platform="macos"] .settings-modal { border-radius: 10px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

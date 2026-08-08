@@ -10,6 +10,16 @@ body[data-theme="obsidian"] {
   --wand-muted: #9996a5;
   background: #0d0d12;
 }
+body[data-theme="graphite"] {
+  --wand-accent: #9b91d8;
+  --wand-accent-2: #7169b5;
+  --wand-surface: #1b1c21;
+  --wand-surface-2: #131419;
+  --wand-border: #303138;
+  --wand-ink: #f1f1f4;
+  --wand-muted: #a0a0aa;
+  background: #111217;
+}
 body[data-theme="daylight"] {
   --wand-accent: #6e5bd2;
   --wand-accent-2: #5745b4;
@@ -19,6 +29,16 @@ body[data-theme="daylight"] {
   --wand-ink: #25242c;
   --wand-muted: #716e7c;
   background: #f5f4f8;
+}
+body[data-theme="porcelain"] {
+  --wand-accent: #7664bc;
+  --wand-accent-2: #5e4da1;
+  --wand-surface: #fffefd;
+  --wand-surface-2: #f6f3f0;
+  --wand-border: #e5e0db;
+  --wand-ink: #2b292d;
+  --wand-muted: #777278;
+  background: #f6f3f0;
 }
 body[data-theme] .primary {
   background: linear-gradient(135deg, var(--wand-accent), var(--wand-accent-2));

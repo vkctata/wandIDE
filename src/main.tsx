@@ -68,11 +68,13 @@ const isTauriRuntime = () =>
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
   );
 type RuntimePlatform = "macos" | "windows" | "linux";
-type ThemeName = "obsidian" | "daylight";
-const normalizeTheme = (value: string | null | undefined): ThemeName =>
-  ["daylight", "paper", "mint", "lavender"].includes(value || "")
-    ? "daylight"
-    : "obsidian";
+type ThemeName = "obsidian" | "graphite" | "daylight" | "porcelain";
+const normalizeTheme = (value: string | null | undefined): ThemeName => {
+  if (value === "graphite" || value === "porcelain") return value;
+  if (["daylight", "paper", "mint", "lavender"].includes(value || ""))
+    return "daylight";
+  return "obsidian";
+};
 const runtimePlatform = (): RuntimePlatform => {
   if (typeof navigator === "undefined") return "linux";
   const identity = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
@@ -278,6 +280,7 @@ function App() {
     };
   }, []);
   const [view, setView] = useState<View>("home");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [repos, setRepos] = useState(() =>
     isTauriRuntime() ? defaultRepos : load("wand.repos", defaultRepos),
   );
@@ -776,7 +779,7 @@ function App() {
                 </span>
               )}
             </button>
-            <AccountMenu onSettings={() => setView("settings")} />
+            <AccountMenu onSettings={() => setSettingsOpen(true)} />
           </div>
         </header>
         {query.trim() && (
@@ -828,6 +831,13 @@ function App() {
           <SettingsView repos={repos} setRepos={setRepos} />
         )}
       </main>
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          repos={repos}
+          setRepos={setRepos}
+        />
+      )}
     </div>
   );
 }
@@ -2688,7 +2698,7 @@ function ThemeSection() {
       })
       .catch(() => {});
   }, []);
-  const isLight = theme === "daylight";
+  const isLight = theme === "daylight" || theme === "porcelain";
   const choose = (name: ThemeName) => {
     setTheme(name);
     document.body.dataset.theme = name;
@@ -2707,7 +2717,7 @@ function ThemeSection() {
         <div>
           <h2>Appearance</h2>
           <p>
-            Two carefully tuned modes with one restrained Wand violet accent.
+            Four closely related themes, all built around a restrained Wand violet accent.
           </p>
         </div>
         <span className="theme-current">{theme}</span>
@@ -2727,6 +2737,27 @@ function ThemeSection() {
           <Sun size={16} />
           <span>Light Mode</span>
         </button>
+      </div>
+      <div className="theme-grid-container">
+        <span className="theme-group-label">
+          {isLight ? "Light themes" : "Dark themes"}
+        </span>
+        <div className="theme-grid">
+          {(isLight
+            ? (["daylight", "porcelain"] as ThemeName[])
+            : (["obsidian", "graphite"] as ThemeName[])
+          ).map((name) => (
+            <button
+              aria-label={`${name} theme`}
+              className={`theme-choice ${name}${theme === name ? " active" : ""}`}
+              onClick={() => choose(name)}
+              key={name}
+            >
+              <span aria-hidden="true" />
+              {name}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -2896,50 +2927,16 @@ function AccountMenu({
 }: {
   onSettings: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const close = (event: MouseEvent) => {
-      if (!(event.target as HTMLElement).closest(".account-menu"))
-        setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", escape);
-    };
-  }, []);
-  const goToSettings = () => {
-    setOpen(false);
-    onSettings();
-  };
   return (
     <div className="account-menu">
       <button
-        className={"account-trigger " + (open ? "open" : "")}
-        aria-label="Settings menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        className="account-trigger"
+        aria-label="Open settings"
+        title="Settings"
+        onClick={onSettings}
       >
         <Settings size={16} />
       </button>
-      {open && (
-        <div className="account-dropdown" role="menu">
-          <div className="account-heading">
-            <strong>Settings</strong>
-            <small>Wand workspace</small>
-          </div>
-          <button role="menuitem" onClick={goToSettings}>
-            <Settings size={14} /> Open settings
-          </button>
-          <button role="menuitem" onClick={goToSettings}>
-            <Sparkles size={14} /> Updates & release notes
-          </button>
-        </div>
-      )}
     </div>
   );
 }
