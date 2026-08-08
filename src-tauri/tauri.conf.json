@@ -2,8 +2,8 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Wand",
   "version": "0.1.0",
-  "identifier": "com.forgepad.app",
+  "identifier": "com.wand.ide",
   "build": { "beforeDevCommand": "npm run dev", "beforeBuildCommand": "npm run build", "devUrl": "http://localhost:5173", "frontendDist": "../dist" },
-  "app": { "windows": [{ "title": "forgepad", "width": 1280, "height": 820, "minWidth": 960, "minHeight": 640 }], "security": { "csp": null } },
+  "app": { "windows": [{ "title": "Wand", "width": 1280, "height": 820, "minWidth": 960, "minHeight": 640 }], "security": { "csp": null } },
   "bundle": { "active": true, "icon": [] }
 }

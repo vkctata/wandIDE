@@ -1,1 +1,1 @@
-fn main() { forgepad_lib::run() }
+fn main() { wand_lib::run() }
