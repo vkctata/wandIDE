@@ -5,13 +5,16 @@
 
 /* ------------------------------------------------------------------ */
 /* Quiet ambient — a single, nearly-invisible accent wash               */
+/* Dark-first. Theme-scoped light surfaces come from Codex's layer.     */
 /* ------------------------------------------------------------------ */
 .app {
   background:
     radial-gradient(1100px 560px at 78% -10%, color-mix(in srgb, var(--wand-accent, #9678ff) 6%, transparent) 0%, transparent 62%),
     #0b0d14;
 }
-body[data-theme] .app {
+/* Ambient wash only for the default + obsidian (all other themes keep
+   Codex's own theme backgrounds, light and dark). */
+body[data-theme="obsidian"] .app {
   background:
     radial-gradient(1100px 560px at 78% -10%, color-mix(in srgb, var(--wand-accent, #9678ff) 6%, transparent) 0%, transparent 62%),
     #0b0d14;
@@ -91,23 +94,24 @@ body[data-theme] .app {
 .search kbd { border-radius: 4px; }
 
 /* ------------------------------------------------------------------ */
-/* Surfaces — same glass, less glow                                     */
+/* Surfaces — theme-aware: deep for dark, driven by --wand-surface in   */
+/* light themes so Codex's light rules stay intact. Loaded last but     */
+/* without !important warring.                                          */
 /* ------------------------------------------------------------------ */
 .stat, .agent, .taskcard, .settingscard, .agent-config, .code-toolbar {
-  background: #121520 !important;
-  border: 1px solid rgba(255,255,255,.09);
+  border: 1px solid var(--wand-border, rgba(255,255,255,.09));
   border-radius: 12px;
   box-shadow: 0 14px 34px rgba(0,0,0,.26), inset 0 1px rgba(255,255,255,.04);
 }
 .stat:hover, .agent:hover, .taskcard:hover, .agent-config:hover {
   transform: translateY(-2px);
-  border-color: rgba(255,255,255,.14);
+  border-color: color-mix(in srgb, var(--wand-accent, #9678ff) 40%, var(--wand-border, #292d3e));
   box-shadow: 0 18px 40px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.05);
 }
 .agent { padding: 16px; }
 .event { margin-bottom: 8px; }
-.event:hover { background: rgba(255,255,255,.03) !important; }
-.event:hover h3 { color: #fff; }
+.event:hover h3 { color: var(--ink-strong, #fff); }
+.event:hover { background: color-mix(in srgb, var(--ink-strong, #ffffff) 4%, transparent) !important; }
 
 /* Deliberate, restrained accent accents — not glows */
 .agenticon, .threadicon, .taskicon, .eventicon {
@@ -129,6 +133,20 @@ body[data-theme] .app {
 .onboard-mark { animation: none; }
 .live-dot { animation: none; box-shadow: 0 0 10px rgba(111,218,160,.55); }
 .stat svg { filter: none; }
+
+/* Light themes: keep chrome legible where my dark-first rules linger */
+body[data-theme="daylight"] .brand .mark,
+body[data-theme="paper"] .brand .mark,
+body[data-theme="mint"] .brand .mark,
+body[data-theme="lavender"] .brand .mark {
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,.10), 0 4px 14px rgba(30,42,66,.16);
+}
+body[data-theme="daylight"],
+body[data-theme="paper"],
+body[data-theme="mint"],
+body[data-theme="lavender"] {
+  scrollbar-color: rgba(30,42,70,.28) transparent;
+}
 
 /* ------------------------------------------------------------------ *
  * Editor dock + settings additions (from Codex) stay premium-quiet      *
