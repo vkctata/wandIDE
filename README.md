@@ -10,6 +10,7 @@ The current build provides the desktop-ready product foundation:
 - React + TypeScript frontend powered by Vite
 - Wand first-run onboarding walkthrough
 - Premium responsive workspace UI with configurable dark/light accent themes, subtle gradients, and reduced-motion support
+- Borderless themed desktop chrome with in-app minimize, maximize, and close controls
 - Local repository workspace and task persistence in SQLite through the Tauri boundary, including manually added repositories
 - Pre-built engineering agent catalog:
   - Planner
