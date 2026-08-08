@@ -1,22 +1,32 @@
-use serde::Serialize;
-use std::{thread, time::Duration};
-use tauri::{AppHandle, Emitter};
+use chrono::Utc;
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::{fs, path::PathBuf, sync::{Arc, Mutex}, thread, time::Duration};
+use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Serialize)] struct CliResult { ok: bool, message: String }
+struct Db(Arc<Mutex<Connection>>);
+#[derive(Serialize)] struct TaskRow { id:String, name:String, repo:String, cron:String, agents:String, status:String }
+#[derive(Deserialize)] struct NewTask { id:String, name:String, repo:String, cron:String, agents:Vec<String> }
+
+fn migrate(conn: &Connection) -> rusqlite::Result<()> { conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo TEXT NOT NULL, cron TEXT NOT NULL, agents TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS repos (name TEXT PRIMARY KEY, path TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'local');") }
+
 #[tauri::command]
-fn run_agent_cli(provider: String, prompt: String, repo_path: String) -> CliResult {
-  // Execution is intentionally gated here: wire this command to a sidecar/PTY runner
-  // after adding explicit user approval and encrypted credential lookup.
-  CliResult { ok: true, message: format!("Queued {provider} task for {repo_path}: {prompt}") }
-}
+fn run_agent_cli(provider: String, prompt: String, repo_path: String, db: State<Db>, app: AppHandle) -> CliResult { let message = format!("Queued {provider} task for {repo_path}: {prompt}"); if let Ok(conn)=db.0.lock(){let _=conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",params!["agent.queued",message,Utc::now().to_rfc3339()]);} let _=app.emit("wand://agent", message.clone()); CliResult { ok: true, message } }
+
+#[tauri::command]
+fn create_task(task: NewTask, db: State<Db>) -> Result<(),String> { let conn=db.0.lock().map_err(|e|e.to_string())?; conn.execute("INSERT OR REPLACE INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES (?1,?2,?3,?4,?5,'queued',?6)",params![task.id,task.name,task.repo,task.cron,serde_json::to_string(&task.agents).map_err(|e|e.to_string())?,Utc::now().to_rfc3339()]).map_err(|e|e.to_string())?; Ok(()) }
+
+#[tauri::command]
+fn list_tasks(db: State<Db>) -> Result<Vec<TaskRow>,String> { let conn=db.0.lock().map_err(|e|e.to_string())?; let mut stmt=conn.prepare("SELECT id,name,repo,cron,agents,status FROM tasks ORDER BY created_at DESC").map_err(|e|e.to_string())?; let rows=stmt.query_map([],|r|Ok(TaskRow{id:r.get(0)?,name:r.get(1)?,repo:r.get(2)?,cron:r.get(3)?,agents:r.get(4)?,status:r.get(5)?})).map_err(|e|e.to_string())?; rows.map(|r|r.map_err(|e|e.to_string())).collect() }
 #[derive(Clone, Serialize)]
 struct SyncEvent { source: String, message: String, timestamp: String }
 
 fn start_background_sync(app: AppHandle) {
   thread::spawn(move || loop {
-    let event = SyncEvent { source: "workspace-sync".into(), message: "Background sync heartbeat — provider adapters ready".into(), timestamp: format!("{:?}", std::time::SystemTime::now()) };
+    let event = SyncEvent { source: "workspace-sync".into(), message: "Background workers active — checking schedules and provider adapters".into(), timestamp: Utc::now().to_rfc3339() };
     let _ = app.emit("wand://sync", event);
     thread::sleep(Duration::from_secs(30));
   });
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { start_background_sync(app.handle().clone()); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli]).run(tauri::generate_context!()).expect("error while running wand"); }
+pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); app.manage(Db(Arc::new(Mutex::new(conn)))); start_background_sync(app.handle().clone()); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,create_task,list_tasks]).run(tauri::generate_context!()).expect("error while running wand"); }
