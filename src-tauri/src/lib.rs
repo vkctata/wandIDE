@@ -333,6 +333,24 @@ fn list_tasks(db: State<Db>) -> Result<Vec<TaskRow>, String> {
         .map_err(|e| e.to_string())?;
     rows.map(|r| r.map_err(|e| e.to_string())).collect()
 }
+#[tauri::command]
+fn cancel_task(task_id: String, db: State<Db>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let changed = conn
+        .execute(
+            "UPDATE tasks SET status='cancelled' WHERE id=?1 AND status IN ('queued','running')",
+            params![task_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("Only queued or running tasks can be cancelled".into());
+    }
+    conn.execute(
+        "UPDATE task_runs SET status='cancelled',finished_at=?2,error='Cancelled by user' WHERE task_id=?1 AND status IN ('queued','running')",
+        params![task_id, Utc::now().to_rfc3339()],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
 #[derive(Serialize)]
 struct AgentRow {
     id: String,
@@ -1101,6 +1119,13 @@ fn fail_task(db: &Arc<Mutex<Connection>>, task_id: &str, run_id: &Option<String>
     }
     finish_run(db, run_id, "failed", Some(error));
 }
+fn task_is_cancelled(db: &Arc<Mutex<Connection>>, task_id: &str) -> bool {
+    db.lock()
+        .ok()
+        .and_then(|conn| conn.query_row("SELECT status FROM tasks WHERE id=?1", params![task_id], |row| row.get::<_, String>(0)).ok())
+        .map(|status| status == "cancelled")
+        .unwrap_or(false)
+}
 fn stored_agent_execution(conn: &Connection, agent_id: &str) -> Result<AgentExecution, String> {
     conn.query_row(
         "SELECT cli,model,role,skills FROM agents WHERE id=?1",
@@ -1197,7 +1222,7 @@ fn task_completion_status(cron: &str) -> &'static str {
     }
 }
 fn recurring_task_is_runnable(status: &str) -> bool {
-    status != "completed" && status != "running"
+    status != "completed" && status != "running" && status != "cancelled"
 }
 fn launch_chain_worker(
     req: ChainRequest,
@@ -1224,6 +1249,11 @@ fn launch_chain_worker(
         let mut stages = req.agents.clone();
         stages.push("sentinel-verifier".into());
         for (index, agent) in stages.iter().enumerate() {
+            if task_is_cancelled(&db_arc, &req.task_id) {
+                finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
+                let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"status":"cancelled"}));
+                return;
+            }
             // The database is the source of truth. The request snapshot is retained only
             // for compatibility with older callers; it must never override a saved agent.
             let config = db_arc
@@ -2091,7 +2121,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 });
             }
             if let Ok(conn) = db.lock() {
-                if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status != 'completed' AND status != 'running'") {
+                if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status NOT IN ('completed','running','cancelled')") {
           if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,String>(2)?))) {
             for row in rows.flatten() {
               let (id, name, expr) = row;
@@ -2132,7 +2162,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
             }
           }
         }
-                let count: i64 = conn.query_row("SELECT COUNT(*) FROM tasks WHERE cron != 'one-off' AND status != 'completed'", [], |r| r.get(0)).unwrap_or(0);
+                let count: i64 = conn.query_row("SELECT COUNT(*) FROM tasks WHERE cron != 'one-off' AND status NOT IN ('completed','running','cancelled')", [], |r| r.get(0)).unwrap_or(0);
                 let event = SyncEvent {
                     source: "scheduler".into(),
                     message: format!(
@@ -2153,7 +2183,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,create_git_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,create_git_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,cancel_task,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn run_agent_cli(
@@ -2489,6 +2519,7 @@ mod tests {
         assert!(recurring_task_is_runnable("failed"));
         assert!(!recurring_task_is_runnable("running"));
         assert!(!recurring_task_is_runnable("completed"));
+        assert!(!recurring_task_is_runnable("cancelled"));
     }
 
     #[test]
