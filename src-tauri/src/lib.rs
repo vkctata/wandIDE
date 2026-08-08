@@ -324,7 +324,6 @@ struct AgentRow {
     color: String,
     cli: String,
     model: String,
-    system_prompt: String,
     scope: String,
     built_in: bool,
 }
@@ -461,7 +460,7 @@ fn list_task_runs(limit: Option<i64>, db: State<Db>) -> Result<Vec<TaskRunRow>, 
 fn list_agents(db: State<Db>) -> Result<Vec<AgentRow>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     ensure_agent_prompt(&conn).map_err(|e| e.to_string())?;
-    let mut stmt=conn.prepare("SELECT id,name,role,skills,color,cli,model,system_prompt,scope,built_in FROM agents ORDER BY built_in DESC,name ASC").map_err(|e|e.to_string())?;
+    let mut stmt=conn.prepare("SELECT id,name,role,skills,color,cli,model,scope,built_in FROM agents ORDER BY built_in DESC,name ASC").map_err(|e|e.to_string())?;
     let rows = stmt
         .query_map([], |r| {
             Ok(AgentRow {
@@ -472,9 +471,8 @@ fn list_agents(db: State<Db>) -> Result<Vec<AgentRow>, String> {
                 color: r.get(4)?,
                 cli: r.get(5)?,
                 model: r.get(6)?,
-                system_prompt: r.get(7)?,
-                scope: r.get(8)?,
-                built_in: r.get::<_, i64>(9)? != 0,
+                scope: r.get(7)?,
+                built_in: r.get::<_, i64>(8)? != 0,
             })
         })
         .map_err(|e| e.to_string())?;
