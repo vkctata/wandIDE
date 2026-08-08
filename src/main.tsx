@@ -3073,6 +3073,10 @@ function WindowChrome() {
       console.error(`Unable to ${name} the Wand window`, error),
     );
   };
+  const toggleMacFullscreen = async () => {
+    const fullscreen = await appWindow.isFullscreen();
+    await appWindow.setFullscreen(!fullscreen);
+  };
   return (
     <div className={`window-chrome ${platform}${platform === "macos" ? " mac" : ""}`}>
       <div className="window-drag" data-tauri-drag-region />
@@ -3088,9 +3092,18 @@ function WindowChrome() {
         </button>
         <button
           className="window-maximize"
-          aria-label="Maximize Wand"
+          aria-label={
+            platform === "macos" ? "Enter or exit full screen" : "Maximize Wand"
+          }
+          title={platform === "macos" ? "Enter Full Screen" : "Maximize Wand"}
           onClick={() =>
-            runWindowCommand("maximize", () => appWindow.toggleMaximize())
+            runWindowCommand(
+              platform === "macos" ? "toggle full screen" : "maximize",
+              () =>
+                platform === "macos"
+                  ? toggleMacFullscreen()
+                  : appWindow.toggleMaximize(),
+            )
           }
         >
           <Square size={12} />
