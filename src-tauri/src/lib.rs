@@ -2696,10 +2696,9 @@ fn validate_worktree_branch(branch: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 #[tauri::command]
-fn create_git_worktree(repo_path: String, branch: String) -> Result<String, String> {
-    let root = std::path::Path::new(&repo_path)
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
+fn create_git_worktree(repo_path: String, branch: String, db: State<Db>) -> Result<String, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let root = registered_repo_root(&repo_path, &conn)?;
     let branch = validate_worktree_branch(&branch)?;
     let worktree = root
         .join(".wand")
@@ -2720,6 +2719,7 @@ fn create_git_worktree(repo_path: String, branch: String) -> Result<String, Stri
     if output.status.success() {
         Ok(worktree.to_string_lossy().to_string())
     } else {
+        let _ = fs::remove_dir_all(&worktree);
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
 }
@@ -2749,13 +2749,12 @@ fn run_git_patch(repo_path: &std::path::Path, patch: &str, check: bool) -> Resul
     }
 }
 #[tauri::command]
-fn apply_git_patch(repo_path: String, patch: String) -> Result<(), String> {
+fn apply_git_patch(repo_path: String, patch: String, db: State<Db>) -> Result<(), String> {
     if patch.trim().is_empty() {
         return Err("A unified Git patch is required".into());
     }
-    let root = std::path::Path::new(&repo_path)
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let root = registered_repo_root(&repo_path, &conn)?;
     run_git_patch(&root, &patch, true)?;
     run_git_patch(&root, &patch, false)
 }
@@ -2920,6 +2919,14 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&registered_path);
         let _ = std::fs::remove_dir_all(&unregistered_path);
+    }
+
+    #[test]
+    fn validates_worktree_branch_names_before_git() {
+        assert!(validate_worktree_branch("wand/feature-1").is_ok());
+        assert!(validate_worktree_branch("../escape").is_err());
+        assert!(validate_worktree_branch("-bad").is_err());
+        assert!(validate_worktree_branch("feature name").is_err());
     }
 
     use super::*;
