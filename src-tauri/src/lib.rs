@@ -2,7 +2,8 @@ use chrono::Utc;
 use cron::Schedule;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
     fs,
@@ -1801,7 +1802,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,create_git_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn run_agent_cli(
@@ -1873,6 +1874,83 @@ fn git_diff(repo_path: String) -> Result<String, String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
+}
+fn validate_worktree_branch(branch: &str) -> Result<String, String> {
+    let value = branch.trim();
+    if value.is_empty()
+        || value.len() > 120
+        || value.starts_with('-')
+        || value.contains('\0')
+        || value.contains("..")
+        || value.contains(' ')
+    {
+        return Err("Worktree branch name is invalid".into());
+    }
+    Ok(value.to_string())
+}
+#[tauri::command]
+fn create_git_worktree(repo_path: String, branch: String) -> Result<String, String> {
+    let root = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let branch = validate_worktree_branch(&branch)?;
+    let worktree = root
+        .join(".wand")
+        .join("worktrees")
+        .join(&branch.replace('/', "__"));
+    if worktree.exists() {
+        return Err("That Wand worktree already exists".into());
+    }
+    if let Some(parent) = worktree.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let output = Command::new("git")
+        .current_dir(&root)
+        .args(["worktree", "add", "-b", &branch])
+        .arg(&worktree)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(worktree.to_string_lossy().to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+fn run_git_patch(repo_path: &std::path::Path, patch: &str, check: bool) -> Result<(), String> {
+    let mut command = Command::new("git");
+    command.current_dir(repo_path).arg("apply");
+    if check {
+        command.arg("--check");
+    }
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .take()
+        .ok_or("Unable to open git patch input")?
+        .write_all(patch.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+#[tauri::command]
+fn apply_git_patch(repo_path: String, patch: String) -> Result<(), String> {
+    if patch.trim().is_empty() {
+        return Err("A unified Git patch is required".into());
+    }
+    let root = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    run_git_patch(&root, &patch, true)?;
+    run_git_patch(&root, &patch, false)
 }
 #[derive(Serialize)]
 struct EventRow {
