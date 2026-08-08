@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -7,8 +7,6 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import Editor, { DiffEditor, loader } from "@monaco-editor/react";
-import * as monaco from "monaco-editor";
 import {
   Activity,
   Bell,
@@ -50,9 +48,9 @@ import "./provider-ui.css";
 import "./responsive-fix.css";
 import "./premium-plus.css";
 
-// Keep the editor self-contained in packaged builds. The default Monaco
-// loader points at jsDelivr, which is inappropriate for a local-first IDE.
-loader.config({ monaco });
+// Load Monaco only when the user opens Code. The editor remains self-contained
+// in packaged builds, while the rest of Wand starts without its worker payload.
+const EditorSurface = lazy(() => import("./EditorSurface"));
 
 const isTauriRuntime = () =>
   typeof window !== "undefined" &&
@@ -995,35 +993,9 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
         </div>
       ) : (
         <div className="editor-shell">
-          {mode === "file" ? (
-            <Editor
-              height="100%"
-              theme="vs-dark"
-              language={language}
-              value={content}
-              onChange={(value) => setContent(value || "")}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                automaticLayout: true,
-                tabSize: 2,
-              }}
-            />
-          ) : (
-            <DiffEditor
-              height="100%"
-              theme="vs-dark"
-              language={language}
-              original={original}
-              modified={content}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                readOnly: true,
-                automaticLayout: true,
-              }}
-            />
-          )}
+          <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
+            <EditorSurface mode={mode} language={language} content={content} original={original} onChange={(value) => setContent(value || "")} />
+          </Suspense>
         </div>
       )}
     </section>
