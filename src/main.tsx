@@ -210,26 +210,32 @@ const ensureDesktopNotificationPermission = () => {
   })();
   return desktopNotificationPermission;
 };
-const notifyDesktop = async (category: string, title: string, body: string) => {
+const notificationPreferenceEnabled = async (category: string) => {
   try {
-    const prefs = JSON.parse(
-      localStorage.getItem("wand.notification-prefs") || "{}",
-    );
-    if (prefs[category] === false) return;
+    const raw = await invoke<string | null>("workspace_setting", {
+      key: "notification-prefs",
+    });
+    if (!raw) return true;
+    const prefs = JSON.parse(raw) as Record<string, boolean>;
+    return prefs[category] !== false;
+  } catch {
+    return true;
+  }
+};
+const notifyDesktop = async (category: string, title: string, body: string) => {
+  if (!(await notificationPreferenceEnabled(category))) return;
+  try {
     if (await ensureDesktopNotificationPermission()) {
       sendNotification({ title, body });
     }
   } catch {}
 };
 const publishNotice = (category: string, title: string, body = title) => {
-  try {
-    const prefs = JSON.parse(
-      localStorage.getItem("wand.notification-prefs") || "{}",
-    );
-    if (prefs[category] === false) return;
-  } catch {}
-  window.dispatchEvent(new CustomEvent("wand:notice", { detail: title }));
-  void notifyDesktop(category, title, body);
+  void (async () => {
+    if (!(await notificationPreferenceEnabled(category))) return;
+    window.dispatchEvent(new CustomEvent("wand:notice", { detail: title }));
+    await notifyDesktop(category, title, body);
+  })();
 };
 function App() {
   const [notificationCount, setNotificationCount] = useState(0);
@@ -2263,10 +2269,7 @@ function NotificationPreferencesSection() {
     task: true,
     thread: true,
   };
-  const [prefs, setPrefs] = useState<Prefs>(() => ({
-    ...defaults,
-    ...parseJson<Partial<Prefs>>(localStorage.getItem("wand.notification-prefs"), {}),
-  }));
+  const [prefs, setPrefs] = useState<Prefs>(defaults);
   const [saved, setSaved] = useState(false);
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "notification-prefs" })
@@ -2283,7 +2286,6 @@ function NotificationPreferencesSection() {
   const toggle = (key: keyof Prefs) => {
     const next = { ...prefs, [key]: !prefs[key] };
     setPrefs(next);
-    localStorage.setItem("wand.notification-prefs", JSON.stringify(next));
     void invoke("save_workspace_setting", {
       key: "notification-prefs",
       value: JSON.stringify(next),
