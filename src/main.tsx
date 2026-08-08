@@ -501,10 +501,13 @@ function App() {
       setNotice("Tasks run against local folders. Choose a local repository first.");
       return;
     }
+    const runtimeAccess = await invoke<string[]>("cli_access").catch(
+      () => enabledClis,
+    );
     const available = agentCatalog.filter(
       (a) =>
         (!a.scope || a.scope === "workspace" || a.scope === `repo:${repo.name}`) &&
-        enabledClis.includes(a.cli || "codex"),
+        runtimeAccess.includes(a.cli || "codex"),
     );
     if (!available.length) {
       setNotice("Enable an installed CLI and a compatible agent in Settings first.");
