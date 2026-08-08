@@ -937,7 +937,7 @@ async fn test_provider_connection(
     provider_url: Option<String>,
 ) -> Result<String, String> {
     let token = provider_token(&provider).await?;
-    let client = reqwest::Client::new();
+    let client = provider_http_client()?;
     let response = match provider.as_str() {
         "github" => {
             client
@@ -1642,7 +1642,7 @@ async fn github_pull_request_action(
 #[tauri::command]
 async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRepo>, String> {
     let token = provider_token("github").await?;
-    let response = reqwest::Client::new()
+    let response = provider_http_client()?
         .get("https://api.github.com/user/repos?per_page=100&sort=updated")
         .header("User-Agent", "Wand")
         .bearer_auth(token)
@@ -1694,7 +1694,7 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
         rows.collect::<Result<Vec<String>, _>>()
             .map_err(|e| e.to_string())?
     };
-    let client = reqwest::Client::new();
+    let client = provider_http_client()?;
     let mut added = 0;
     for name in names {
         let endpoint=format!("https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc");
@@ -1745,7 +1745,7 @@ async fn sync_azure_devops(
     let token = provider_token("azure-devops").await?;
     let base = validate_azure_org_url(&provider_url)?;
     let endpoint = base + "/_apis/git/repositories?api-version=7.1";
-    let response = reqwest::Client::new()
+    let response = provider_http_client()?
         .get(endpoint)
         .basic_auth("", Some(token))
         .send()
@@ -1790,7 +1790,7 @@ async fn sync_azure_activity(
 ) -> Result<u32, String> {
     let token = provider_token("azure-devops").await?;
     let base = validate_azure_org_url(&provider_url)?;
-    let response = reqwest::Client::new()
+    let response = provider_http_client()?
         .get(format!(
             "{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1"
         ))
@@ -1802,7 +1802,7 @@ async fn sync_azure_activity(
         return Err(format!("Azure DevOps returned {}", response.status()));
     }
     let pulls: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    let client = reqwest::Client::new();
+    let client = provider_http_client()?;
     let mut added = 0;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
         let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
@@ -1864,7 +1864,18 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
             Err(_) => return,
         }
     };
-    let client = reqwest::Client::new();
+    let client = match provider_http_client() {
+        Ok(value) => value,
+        Err(error) => {
+            emit_provider_health(
+                &app,
+                "github",
+                "error",
+                Some(format!("Unable to configure GitHub polling: {error}")),
+            );
+            return;
+        }
+    };
     let mut added = 0;
     for name in names {
         let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(error)=>{emit_provider_health(&app,"github","error",Some(format!("GitHub request failed for {name}: {error}"))); return;}};
@@ -1970,7 +1981,18 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         );
         return;
     };
-    let client = reqwest::Client::new();
+    let client = match provider_http_client() {
+        Ok(value) => value,
+        Err(error) => {
+            emit_provider_health(
+                &app,
+                "azure-devops",
+                "error",
+                Some(format!("Unable to configure Azure DevOps polling: {error}")),
+            );
+            return;
+        }
+    };
     let response = match client
         .get(format!(
             "{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1"
