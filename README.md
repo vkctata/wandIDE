@@ -152,7 +152,7 @@ The private key must never be committed. The public key is embedded in the deskt
 
 ### Agents
 
-Agents are persistent specialists with a role, skill set, system prompt, model, CLI runtime, and scope. A task can tag one or more applicable agents from the selected repository. Wand preserves their order and sends the output of one stage to the next:
+Agents are persistent specialists with one responsibility, a skill set, model, CLI runtime, and scope. Responsibility text is capped at 1,000 characters and is used as the agent's execution instruction. A task can tag one or more applicable agents from the selected repository. Wand preserves their order and sends the output of one stage to the next:
 
 ```text
 Planner → Builder → Code reviewer → Sentinel

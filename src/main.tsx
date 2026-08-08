@@ -1,112 +1,2024 @@
-import React, { useEffect, useState } from 'react';
-import { createRoot } from 'react-dom/client';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-import { listen as tauriListen } from '@tauri-apps/api/event';
-import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
-import { open } from '@tauri-apps/plugin-dialog';
-import { sendNotification } from '@tauri-apps/plugin-notification';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import Editor from '@monaco-editor/react';
-import { DiffEditor } from '@monaco-editor/react';
-import { Activity, Bell, Bot, CheckCircle2, ChevronDown, Clock3, Code2, FolderGit2, GitPullRequest, Github, Hash, LayoutDashboard, MessageSquare, Minus, Moon, Play, Plus, Search, Settings, Sparkles, Square, Sun, TerminalSquare, TimerReset, X, Zap } from 'lucide-react';
-import './styles.css';
-import './layout.css';
-import './theme.css';
-import './premium.css';
-import './account.css';
-import './chrome-redesign.css';
-import './chrome-fixes.css';
-import './ui-corrections.css';
-import './provider-ui.css';
-import './responsive-fix.css';
-import './premium-plus.css';
+import React, { useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { open } from "@tauri-apps/plugin-dialog";
+import { sendNotification } from "@tauri-apps/plugin-notification";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import Editor from "@monaco-editor/react";
+import { DiffEditor } from "@monaco-editor/react";
+import {
+  Activity,
+  Bell,
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  Code2,
+  FolderGit2,
+  GitPullRequest,
+  Github,
+  Hash,
+  LayoutDashboard,
+  MessageSquare,
+  Minus,
+  Moon,
+  Play,
+  Plus,
+  RotateCcw,
+  Search,
+  Settings,
+  Sparkles,
+  Square,
+  Sun,
+  TerminalSquare,
+  TimerReset,
+  X,
+  Zap,
+} from "lucide-react";
+import "./styles.css";
+import "./layout.css";
+import "./theme.css";
+import "./premium.css";
+import "./account.css";
+import "./chrome-redesign.css";
+import "./chrome-fixes.css";
+import "./ui-corrections.css";
+import "./provider-ui.css";
+import "./responsive-fix.css";
+import "./premium-plus.css";
 
-const isTauriRuntime = () => typeof window !== 'undefined' && Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
-const invoke = <T = unknown>(command: string, args?: Record<string, unknown>): Promise<T> =>
-  isTauriRuntime() ? tauriInvoke<T>(command, args) : Promise.reject(new Error('Wand native features are available in the desktop app.'));
-const listen = <T = unknown>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> =>
+const isTauriRuntime = () =>
+  typeof window !== "undefined" &&
+  Boolean(
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
+  );
+const invoke = <T = unknown,>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> =>
+  isTauriRuntime()
+    ? tauriInvoke<T>(command, args)
+    : Promise.reject(
+        new Error("Wand native features are available in the desktop app."),
+      );
+const listen = <T = unknown,>(
+  event: string,
+  handler: (event: { payload: T }) => void,
+): Promise<() => void> =>
   isTauriRuntime() ? tauriListen<T>(event, handler) : Promise.resolve(() => {});
 
-type View = 'home'|'code'|'threads'|'tasks'|'notifications'|'settings';
-type Repo = { name:string; path:string; color:string; count:number };
-type Agent = { id:string; name:string; role:string; skills:string[]; color:string; scope?:string; cli?:string; model?:string; system_prompt?:string };
-type Task = { id:string; name:string; provider:string; repo:string; cron:string; active:boolean; agents:string[] };
-const defaultRepos:Repo[] = [];
-const agents:Agent[] = [{id:'planner',name:'Planner',role:'Breaks work into executable slices',skills:['planning','repo analysis'],color:'#a98cff'},{id:'builder',name:'Builder',role:'Implements features and fixes',skills:['typescript','rust','testing'],color:'#76c6f5'},{id:'reviewer',name:'Code reviewer',role:'Reviews changes and suggests fixes',skills:['code review','security'],color:'#f9c86a'},{id:'sentinel',name:'Sentinel',role:'Runs verification in the background',skills:['ci','dependency audit','regression'],color:'#6fdaa0'},{id:'docs',name:'Docs writer',role:'Keeps technical docs current',skills:['documentation','changelog'],color:'#f38ba8'}];
-const defaultTasks:Task[] = [];
-const emptyRepo:Repo = {name:'No repository selected',path:'.',color:'#89b4fa',count:0};
-const load = <T,>(key:string, fallback:T):T => { try { return JSON.parse(localStorage.getItem(key) || '') as T } catch { return fallback } };
-type ModalField={id:string;label:string;placeholder?:string;value?:string;secret?:boolean;check?:boolean;options?:string[];multiline?:boolean;maxLength?:number};
-type ModalRequest={title:string;description?:string;fields:ModalField[];resolve:(values:Record<string,string>|null)=>void};
-const askModal=(title:string,fields:ModalField[],description?:string)=>new Promise<Record<string,string>|null>(resolve=>window.dispatchEvent(new CustomEvent<ModalRequest>('wand:modal',{detail:{title,description,fields,resolve}})));
+type View =
+  "home" | "code" | "threads" | "tasks" | "notifications" | "settings";
+type Repo = { name: string; path: string; color: string; count: number };
+type Agent = {
+  id: string;
+  name: string;
+  role: string;
+  skills: string[];
+  color: string;
+  scope?: string;
+  cli?: string;
+  model?: string;
+  system_prompt?: string;
+};
+type Task = {
+  id: string;
+  name: string;
+  provider: string;
+  repo: string;
+  cron: string;
+  active: boolean;
+  agents: string[];
+};
+const defaultRepos: Repo[] = [];
+const agents: Agent[] = [
+  {
+    id: "planner",
+    name: "Planner",
+    role: "Breaks work into executable slices",
+    skills: ["planning", "repo analysis"],
+    color: "#a98cff",
+  },
+  {
+    id: "builder",
+    name: "Builder",
+    role: "Implements features and fixes",
+    skills: ["typescript", "rust", "testing"],
+    color: "#76c6f5",
+  },
+  {
+    id: "reviewer",
+    name: "Code reviewer",
+    role: "Reviews changes and suggests fixes",
+    skills: ["code review", "security"],
+    color: "#f9c86a",
+  },
+  {
+    id: "sentinel",
+    name: "Sentinel",
+    role: "Runs verification in the background",
+    skills: ["ci", "dependency audit", "regression"],
+    color: "#6fdaa0",
+  },
+  {
+    id: "docs",
+    name: "Docs writer",
+    role: "Keeps technical docs current",
+    skills: ["documentation", "changelog"],
+    color: "#f38ba8",
+  },
+];
+const defaultTasks: Task[] = [];
+const emptyRepo: Repo = {
+  name: "No repository selected",
+  path: ".",
+  color: "#89b4fa",
+  count: 0,
+};
+const load = <T,>(key: string, fallback: T): T => {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "") as T;
+  } catch {
+    return fallback;
+  }
+};
+type ModalField = {
+  id: string;
+  label: string;
+  placeholder?: string;
+  value?: string;
+  secret?: boolean;
+  check?: boolean;
+  options?: string[];
+  multiline?: boolean;
+  maxLength?: number;
+};
+type ModalRequest = {
+  title: string;
+  description?: string;
+  fields: ModalField[];
+  resolve: (values: Record<string, string> | null) => void;
+};
+const askModal = (title: string, fields: ModalField[], description?: string) =>
+  new Promise<Record<string, string> | null>((resolve) =>
+    window.dispatchEvent(
+      new CustomEvent<ModalRequest>("wand:modal", {
+        detail: { title, description, fields, resolve },
+      }),
+    ),
+  );
 
-const notifyDesktop=(category:string,title:string,body:string)=>{try{const prefs=JSON.parse(localStorage.getItem('wand.notification-prefs')||'{}');if(prefs[category]===false)return;sendNotification({title,body})}catch{}}
-function App(){
-  const [notificationCount,setNotificationCount]=useState(0);
-  useEffect(()=>{const refresh=()=>invoke<any[]>('list_notifications').then(rows=>setNotificationCount(rows.filter(row=>row.unread).length)).catch(()=>setNotificationCount(0));refresh();const stop=listen('wand://notifications',refresh);const timer=window.setInterval(refresh,5000);return()=>{stop.then(unsubscribe=>unsubscribe());window.clearInterval(timer)}},[]);
-  const [view,setView]=useState<View>('home'); const [repos,setRepos]=useState(()=>load('wand.repos',defaultRepos)); const [tasks,setTasks]=useState(()=>load('wand.tasks',defaultTasks)); const [repo,setRepo]=useState<Repo>(()=>load<Repo[]>('wand.repos',defaultRepos)[0]||emptyRepo); const [userName,setUserName]=useState('there'); const [query,setQuery]=useState(''); const [notice,setNotice]=useState(''); const [agentCatalog,setAgentCatalog]=useState<Agent[]>(agents);
-  useEffect(()=>localStorage.setItem('wand.repos',JSON.stringify(repos)),[repos]); useEffect(()=>localStorage.setItem('wand.tasks',JSON.stringify(tasks)),[tasks]);
-  useEffect(()=>{invoke<any[]>('list_tasks').then(rows=>setTasks(rows.map(r=>({...r,provider:'Agent chain',active:r.status!=='failed',agents:JSON.parse(r.agents||'[]')})))).catch(()=>{}); invoke<any[]>('list_agents').then(rows=>setAgentCatalog(rows.map(r=>({...r,skills:JSON.parse(r.skills||'[]')})))).catch(()=>{}); invoke<string|null>('user_name').then(value=>{if(value)setUserName(value)}).catch(()=>{}); invoke<any[]>('list_repositories').then(rows=>{const next=rows.map(r=>({name:r.name,path:r.path,color:'#89b4fa',count:0}));setRepos(next);setRepo(current=>next.find(item=>item.name===current.name)||next[0]||emptyRepo)}).catch(()=>{})},[]);
-  useEffect(()=>{const onName=(event:Event)=>setUserName((event as CustomEvent<string>).detail||'there');window.addEventListener('wand:user-name',onName);return()=>window.removeEventListener('wand:user-name',onName)},[]);
-  useEffect(()=>{const onKey=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();(document.querySelector('.search input') as HTMLInputElement|null)?.focus()}if(event.key==='Escape'){setQuery('');(document.activeElement as HTMLElement|null)?.blur()}};document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey)},[]);
- useEffect(()=>{let stop:undefined|(()=>void); listen<{message:string}>('wand://sync',e=>{setNotice(e.payload.message);notifyDesktop('task','Wand background sync',e.payload.message)}).then(unlisten=>stop=unlisten); return ()=>stop?.()},[]);
- useEffect(()=>{const refreshRepos=()=>invoke<any[]>('list_repositories').then(rows=>{const next=rows.map(r=>({name:r.name,path:r.path,color:'#89b4fa',count:0}));setRepos(next);setRepo(current=>next.find(item=>item.name===current.name)||next[0]||emptyRepo)}).catch(()=>{});const subscriptions=[listen<any>('wand://provider',event=>{refreshRepos();const provider=event.payload?.provider||'Provider';const count=event.payload?.count??0;setNotice(`${provider} sync completed · ${count} repositories`);notifyDesktop('provider',`${provider} sync completed`,`${count} repositories are available in Wand.`)}),listen<any>('wand://notifications',event=>{const added=event.payload?.added??0;if(added>0){setNotice(`${added} new review notification${added===1?'':'s'}`);notifyDesktop('provider','New review activity',`${added} new pull-request notification${added===1?'':'s'} arrived.`)}}),listen<any>('wand://agent',event=>{const status=event.payload?.status;if(status==='completed'||status==='verified'||status==='failed'){const agent=event.payload?.agent||'Agent';const title=status==='failed'?`${agent} failed`:status==='verified'?`${agent} verified the work`:`${agent} completed`;setNotice(title);notifyDesktop('agent',title,event.payload?.error||'A background agent stage has finished.')}})];return()=>{subscriptions.forEach(subscription=>subscription.then(unsubscribe=>unsubscribe()))}},[]);
- useEffect(()=>{let stop:undefined|(()=>void);listen<any>('wand://agent',event=>{const payload=event.payload||{};if(payload.status!=='completed'&&payload.status!=='verified')return;const task=tasks.find(item=>item.id===payload.task_id);if(!task||!payload.handoff)return;const author=payload.agent||'Wand agent';const body=`${payload.status==='verified'?'Verification result':'Stage handoff'}:\n${String(payload.handoff).slice(0,4000)}`;invoke('create_thread_message',{repo:task.repo,author,body}).catch(()=>{})}).then(unsubscribe=>stop=unsubscribe);return()=>stop?.()},[tasks]);
-  useEffect(()=>{document.body.dataset.view=view; const go=(e:Event)=>setView((e as CustomEvent<View>).detail); window.addEventListener('wand:navigate',go); return ()=>window.removeEventListener('wand:navigate',go)},[view]);
-  const addRepo=async()=>{const values=await askModal('Add repository',[{id:'name',label:'Repository name',placeholder:'wand'},{id:'path',label:'Local folder path',placeholder:'~/Code/wand'}],'Add a local repository to your Wand workspace.');if(!values?.name||!values.path)return;try{const saved=await invoke<any>('save_repository',{name:values.name.trim(),path:values.path.trim()});const next={name:saved.name,path:saved.path,color:'#89b4fa',count:0};setRepos(current=>[...current.filter(item=>item.name!==next.name),next]);setRepo(next);setView('threads')}catch(error){setNotice(String(error))}};
-  const addTask=async()=>{if(!repos.length){setNotice('Choose a repository folder in Settings before scheduling a task.');setView('settings');return} const available=agentCatalog.filter(a=>!a.scope||a.scope==='workspace'||a.scope===`repo:${repo.name}`);const values=await askModal('Schedule an agent task',[{id:'name',label:'Task name',placeholder:'Implement the next feature'},{id:'cron',label:'Cron expression',placeholder:'Leave blank for one-off'},...available.map(a=>({id:`agent:${a.id}`,label:`Tag ${a.name} · ${a.skills.join(', ')}`,check:true,value:'false'}))],'Choose the work and tag the specialists who should handle it.');if(!values?.name)return;const selected=available.filter(a=>values[`agent:${a.id}`]==='true').map(a=>a.id);const task={id:crypto.randomUUID(),name:values.name.trim(),provider:'Agent chain',repo:repo.name,cron:values.cron?.trim()||'one-off',active:true,agents:selected.length?selected:['planner','builder','reviewer','sentinel']};try{await invoke('create_task',{task:{id:task.id,name:task.name,repo:task.repo,cron:task.cron,agents:task.agents}})}catch(error){setNotice(String(error));return}setTasks(current=>[task,...current.filter(item=>item.id!==task.id)]);setNotice(`Task saved with ${available.length} applicable agents`);setView('tasks');};
-  const runTask=async(t:Task)=>{const selected=t.agents.map(id=>agentCatalog.find(a=>a.id===id)).filter(Boolean) as Agent[]; const chain=selected.map(a=>a.name).join(' → '); const instructions=selected.map(a=>`${a.name}: ${a.system_prompt||a.role}`).join('\n'); const enabled=JSON.parse(localStorage.getItem('wand.clis')||'[]') as string[]; const configured=selected.find(a=>a.cli&&enabled.includes(a.cli)); const cli=configured?.cli||enabled[0]||'codex'; const model=configured?.model||'default'; const agent_configs=Object.fromEntries(selected.map(a=>[a.id,{cli:a.cli&&enabled.includes(a.cli)?a.cli:cli,model:a.model||'default'}])); try {await invoke('run_agent_chain_v2',{req:{task_id:t.id,prompt:`${t.name}\nHandoff chain: ${chain}\nAgent instructions:\n${instructions}\nThe final Sentinel verifier must inspect the complete result in the background.`,repo_path:repos.find(r=>r.name===t.repo)?.path||'.',agents:t.agents,cli,model,agent_configs}}); setNotice(`Started ${chain||'agent chain'} using enabled runtimes; verifier queued`)} catch {setNotice(`Queued: ${chain||'agent chain'}. Enable a local CLI in Settings to execute it.`)}};
-  const nav=(v:View)=><button className={view===v?'nav active':'nav'} onClick={()=>setView(v)}>{v==='home'?<LayoutDashboard/>:v==='code'?<Code2/>:v==='threads'?<MessageSquare/>:v==='tasks'?<Clock3/>:v==='notifications'?<Bell/>:<Settings/>}<span>{v[0].toUpperCase()+v.slice(1)}</span></button>;
-  return <div className="app"><aside><div className="brand"><span className="wand-wordmark">wan<span className="wand-d">d<svg className="d-sparkle spark-1" viewBox="0 0 10 10"><path d="M5 0L6.2 3.8L10 5L6.2 6.2L5 10L3.8 6.2L0 5L3.8 3.8Z" fill="currentColor"/></svg><svg className="d-sparkle-sm spark-2" viewBox="0 0 10 10"><path d="M5 0L6.2 3.8L10 5L6.2 6.2L5 10L3.8 6.2L0 5L3.8 3.8Z" fill="currentColor"/></svg></span><span className="wand-dot">.</span></span></div><div className="navgroup"><label>Workspace</label>{nav('home')}{nav('code')}{nav('threads')}{nav('tasks')}{nav('notifications')}</div><div className="navgroup repos"><label>Repositories <button className="sideplus" onClick={addRepo}><Plus size={13}/></button></label>{repos.map(r=><button key={r.name} className={'repo '+(repo.name===r.name?'selected':'')} onClick={()=>{setRepo(r);setView('threads')}}><i style={{background:r.color}}/><span>{r.name}</span><em>{r.count}</em></button>)}</div></aside><main><header><div className="actions"><div className="search"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search anything"/><kbd>⌘ K</kbd></div><button className="iconbtn" onClick={()=>setView('notifications')} title="Notifications"><Bell size={17}/><i/></button><AccountMenu repos={repos} setRepos={setRepos}/></div></header>{query.trim()&&<div className="search-palette">{[['home','Overview'],['code','Code'],['threads',repo.name+' threads'],['tasks','Scheduled tasks'],['notifications','Notifications'],...repos.map(r=>['threads',r.name]),...tasks.map(t=>['tasks',t.name]),...agentCatalog.map(a=>['settings',a.name])].filter(item=>item[1].toLowerCase().includes(query.toLowerCase())).slice(0,8).map(([target,label],index)=><button key={target+label+index} onMouseDown={()=>{setView(target as View);setQuery('')}}><span>{label}</span><small>{target}</small></button>)}</div>}{notice&&<button className="toast" onClick={()=>setNotice('')}>{notice} ×</button>}{view==='home'?<Home setView={setView} userName={userName}/>:view==='code'?<CodeWorkspace repo={repo}/>:view==='threads'?<Threads repo={repo}/>:view==='tasks'?<Tasks tasks={tasks} addTask={addTask} runTask={runTask}/>:view==='notifications'?<Notifications/>:<SettingsView repos={repos} setRepos={setRepos}/>}</main><RepoChat repo={repo.name}/></div>
+const notifyDesktop = (category: string, title: string, body: string) => {
+  try {
+    const prefs = JSON.parse(
+      localStorage.getItem("wand.notification-prefs") || "{}",
+    );
+    if (prefs[category] === false) return;
+    sendNotification({ title, body });
+  } catch {}
+};
+function App() {
+  const [notificationCount, setNotificationCount] = useState(0);
+  useEffect(() => {
+    const refresh = () =>
+      invoke<any[]>("list_notifications")
+        .then((rows) =>
+          setNotificationCount(rows.filter((row) => row.unread).length),
+        )
+        .catch(() => setNotificationCount(0));
+    refresh();
+    const stop = listen("wand://notifications", refresh);
+    const timer = window.setInterval(refresh, 5000);
+    return () => {
+      stop.then((unsubscribe) => unsubscribe());
+      window.clearInterval(timer);
+    };
+  }, []);
+  const [view, setView] = useState<View>("home");
+  const [repos, setRepos] = useState(() => load("wand.repos", defaultRepos));
+  const [tasks, setTasks] = useState(() => load("wand.tasks", defaultTasks));
+  const [repo, setRepo] = useState<Repo>(
+    () => load<Repo[]>("wand.repos", defaultRepos)[0] || emptyRepo,
+  );
+  const [userName, setUserName] = useState("there");
+  const [query, setQuery] = useState("");
+  const [notice, setNotice] = useState("");
+  const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
+  useEffect(
+    () => localStorage.setItem("wand.repos", JSON.stringify(repos)),
+    [repos],
+  );
+  useEffect(
+    () => localStorage.setItem("wand.tasks", JSON.stringify(tasks)),
+    [tasks],
+  );
+  useEffect(() => {
+    invoke<any[]>("list_tasks")
+      .then((rows) =>
+        setTasks(
+          rows.map((r) => ({
+            ...r,
+            provider: "Agent chain",
+            active: r.status !== "failed",
+            agents: JSON.parse(r.agents || "[]"),
+          })),
+        ),
+      )
+      .catch(() => {});
+    invoke<any[]>("list_agents")
+      .then((rows) =>
+        setAgentCatalog(
+          rows.map((r) => ({ ...r, skills: JSON.parse(r.skills || "[]") })),
+        ),
+      )
+      .catch(() => {});
+    invoke<string | null>("user_name")
+      .then((value) => {
+        if (value) setUserName(value);
+      })
+      .catch(() => {});
+    invoke<any[]>("list_repositories")
+      .then((rows) => {
+        const next = rows.map((r) => ({
+          name: r.name,
+          path: r.path,
+          color: "#89b4fa",
+          count: 0,
+        }));
+        setRepos(next);
+        setRepo(
+          (current) =>
+            next.find((item) => item.name === current.name) ||
+            next[0] ||
+            emptyRepo,
+        );
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const onName = (event: Event) =>
+      setUserName((event as CustomEvent<string>).detail || "there");
+    window.addEventListener("wand:user-name", onName);
+    return () => window.removeEventListener("wand:user-name", onName);
+  }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        (
+          document.querySelector(".search input") as HTMLInputElement | null
+        )?.focus();
+      }
+      if (event.key === "Escape") {
+        setQuery("");
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    let stop: undefined | (() => void);
+    listen<{ message: string }>("wand://sync", (e) => {
+      setNotice(e.payload.message);
+      notifyDesktop("task", "Wand background sync", e.payload.message);
+    }).then((unlisten) => (stop = unlisten));
+    return () => stop?.();
+  }, []);
+  useEffect(() => {
+    const refreshRepos = () =>
+      invoke<any[]>("list_repositories")
+        .then((rows) => {
+          const next = rows.map((r) => ({
+            name: r.name,
+            path: r.path,
+            color: "#89b4fa",
+            count: 0,
+          }));
+          setRepos(next);
+          setRepo(
+            (current) =>
+              next.find((item) => item.name === current.name) ||
+              next[0] ||
+              emptyRepo,
+          );
+        })
+        .catch(() => {});
+    const subscriptions = [
+      listen<any>("wand://provider", (event) => {
+        refreshRepos();
+        const provider = event.payload?.provider || "Provider";
+        const count = event.payload?.count ?? 0;
+        setNotice(`${provider} sync completed · ${count} repositories`);
+        notifyDesktop(
+          "provider",
+          `${provider} sync completed`,
+          `${count} repositories are available in Wand.`,
+        );
+      }),
+      listen<any>("wand://notifications", (event) => {
+        const added = event.payload?.added ?? 0;
+        if (added > 0) {
+          setNotice(
+            `${added} new review notification${added === 1 ? "" : "s"}`,
+          );
+          notifyDesktop(
+            "provider",
+            "New review activity",
+            `${added} new pull-request notification${added === 1 ? "" : "s"} arrived.`,
+          );
+        }
+      }),
+      listen<any>("wand://agent", (event) => {
+        const status = event.payload?.status;
+        if (
+          status === "completed" ||
+          status === "verified" ||
+          status === "failed"
+        ) {
+          const agent = event.payload?.agent || "Agent";
+          const title =
+            status === "failed"
+              ? `${agent} failed`
+              : status === "verified"
+                ? `${agent} verified the work`
+                : `${agent} completed`;
+          setNotice(title);
+          notifyDesktop(
+            "agent",
+            title,
+            event.payload?.error || "A background agent stage has finished.",
+          );
+        }
+      }),
+    ];
+    return () => {
+      subscriptions.forEach((subscription) =>
+        subscription.then((unsubscribe) => unsubscribe()),
+      );
+    };
+  }, []);
+  useEffect(() => {
+    let stop: undefined | (() => void);
+    listen<any>("wand://agent", (event) => {
+      const payload = event.payload || {};
+      if (payload.status !== "completed" && payload.status !== "verified")
+        return;
+      const task = tasks.find((item) => item.id === payload.task_id);
+      if (!task || !payload.handoff) return;
+      const author = payload.agent || "Wand agent";
+      const body = `${payload.status === "verified" ? "Verification result" : "Stage handoff"}:\n${String(payload.handoff).slice(0, 4000)}`;
+      invoke("create_thread_message", { repo: task.repo, author, body }).catch(
+        () => {},
+      );
+    }).then((unsubscribe) => (stop = unsubscribe));
+    return () => stop?.();
+  }, [tasks]);
+  useEffect(() => {
+    document.body.dataset.view = view;
+    const go = (e: Event) => setView((e as CustomEvent<View>).detail);
+    window.addEventListener("wand:navigate", go);
+    return () => window.removeEventListener("wand:navigate", go);
+  }, [view]);
+  const addRepo = async () => {
+    const values = await askModal(
+      "Add repository",
+      [
+        { id: "name", label: "Repository name", placeholder: "wand" },
+        { id: "path", label: "Local folder path", placeholder: "~/Code/wand" },
+      ],
+      "Add a local repository to your Wand workspace.",
+    );
+    if (!values?.name || !values.path) return;
+    try {
+      const saved = await invoke<any>("save_repository", {
+        name: values.name.trim(),
+        path: values.path.trim(),
+      });
+      const next = {
+        name: saved.name,
+        path: saved.path,
+        color: "#89b4fa",
+        count: 0,
+      };
+      setRepos((current) => [
+        ...current.filter((item) => item.name !== next.name),
+        next,
+      ]);
+      setRepo(next);
+      setView("threads");
+    } catch (error) {
+      setNotice(String(error));
+    }
+  };
+  const addTask = async () => {
+    if (!repos.length) {
+      setNotice(
+        "Choose a repository folder in Settings before scheduling a task.",
+      );
+      setView("settings");
+      return;
+    }
+    const available = agentCatalog.filter(
+      (a) =>
+        !a.scope || a.scope === "workspace" || a.scope === `repo:${repo.name}`,
+    );
+    const values = await askModal(
+      "Schedule an agent task",
+      [
+        {
+          id: "name",
+          label: "Task name",
+          placeholder: "Implement the next feature",
+        },
+        {
+          id: "cron",
+          label: "Cron expression",
+          placeholder: "Leave blank for one-off",
+        },
+        ...available.map((a) => ({
+          id: `agent:${a.id}`,
+          label: `Tag ${a.name} · ${a.skills.join(", ")}`,
+          check: true,
+          value: "false",
+        })),
+      ],
+      "Choose the work and tag the specialists who should handle it.",
+    );
+    if (!values?.name) return;
+    const selected = available
+      .filter((a) => values[`agent:${a.id}`] === "true")
+      .map((a) => a.id);
+    const task = {
+      id: crypto.randomUUID(),
+      name: values.name.trim(),
+      provider: "Agent chain",
+      repo: repo.name,
+      cron: values.cron?.trim() || "one-off",
+      active: true,
+      agents: selected.length
+        ? selected
+        : ["planner", "builder", "reviewer", "sentinel"],
+    };
+    try {
+      await invoke("create_task", {
+        task: {
+          id: task.id,
+          name: task.name,
+          repo: task.repo,
+          cron: task.cron,
+          agents: task.agents,
+        },
+      });
+    } catch (error) {
+      setNotice(String(error));
+      return;
+    }
+    setTasks((current) => [
+      task,
+      ...current.filter((item) => item.id !== task.id),
+    ]);
+    setNotice(`Task saved with ${available.length} applicable agents`);
+    setView("tasks");
+  };
+  const runTask = async (t: Task) => {
+    const selected = t.agents
+      .map((id) => agentCatalog.find((a) => a.id === id))
+      .filter(Boolean) as Agent[];
+    const chain = selected.map((a) => a.name).join(" → ");
+    const instructions = selected
+      .map((a) => `${a.name}: ${a.system_prompt || a.role}`)
+      .join("\n");
+    const enabled = JSON.parse(
+      localStorage.getItem("wand.clis") || "[]",
+    ) as string[];
+    const configured = selected.find((a) => a.cli && enabled.includes(a.cli));
+    const cli = configured?.cli || enabled[0] || "codex";
+    const model = configured?.model || "default";
+    const agent_configs = Object.fromEntries(
+      selected.map((a) => [
+        a.id,
+        {
+          cli: a.cli && enabled.includes(a.cli) ? a.cli : cli,
+          model: a.model || "default",
+          responsibility: a.role || a.system_prompt || "",
+          skills: a.skills,
+        },
+      ]),
+    );
+    try {
+      await invoke("run_agent_chain_v2", {
+        req: {
+          task_id: t.id,
+          prompt: `${t.name}\nHandoff chain: ${chain}\nAgent instructions:\n${instructions}\nThe final Sentinel verifier must inspect the complete result in the background.`,
+          repo_path: repos.find((r) => r.name === t.repo)?.path || ".",
+          agents: t.agents,
+          cli,
+          model,
+          agent_configs,
+        },
+      });
+      setNotice(
+        `Started ${chain || "agent chain"} using enabled runtimes; verifier queued`,
+      );
+    } catch {
+      setNotice(
+        `Queued: ${chain || "agent chain"}. Enable a local CLI in Settings to execute it.`,
+      );
+    }
+  };
+  const nav = (v: View) => (
+    <button
+      className={view === v ? "nav active" : "nav"}
+      onClick={() => setView(v)}
+    >
+      {v === "home" ? (
+        <LayoutDashboard />
+      ) : v === "code" ? (
+        <Code2 />
+      ) : v === "threads" ? (
+        <MessageSquare />
+      ) : v === "tasks" ? (
+        <Clock3 />
+      ) : v === "notifications" ? (
+        <Bell />
+      ) : (
+        <Settings />
+      )}
+      <span>{v[0].toUpperCase() + v.slice(1)}</span>
+    </button>
+  );
+  return (
+    <div className="app">
+      <aside>
+        <div className="brand">
+          <span className="wand-wordmark">
+            wan
+            <span className="wand-d">
+              d
+              <svg className="d-sparkle spark-1" viewBox="0 0 10 10">
+                <path
+                  d="M5 0L6.2 3.8L10 5L6.2 6.2L5 10L3.8 6.2L0 5L3.8 3.8Z"
+                  fill="currentColor"
+                />
+              </svg>
+              <svg className="d-sparkle-sm spark-2" viewBox="0 0 10 10">
+                <path
+                  d="M5 0L6.2 3.8L10 5L6.2 6.2L5 10L3.8 6.2L0 5L3.8 3.8Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <span className="wand-dot">.</span>
+          </span>
+        </div>
+        <div className="navgroup">
+          {nav("home")}
+          {nav("code")}
+          {nav("threads")}
+          {nav("tasks")}
+          {nav("notifications")}
+        </div>
+        <div className="navgroup repos">
+          <label>
+            Repositories{" "}
+            <button className="sideplus" onClick={addRepo}>
+              <Plus size={13} />
+            </button>
+          </label>
+          {repos.map((r) => (
+            <button
+              key={r.name}
+              className={"repo " + (repo.name === r.name ? "selected" : "")}
+              onClick={() => {
+                setRepo(r);
+                setView("threads");
+              }}
+            >
+              <i style={{ background: r.color }} />
+              <span>{r.name}</span>
+              <em>{r.count}</em>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div className="actions">
+            <div className="search">
+              <Search size={15} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search anything"
+              />
+              <kbd>⌘ K</kbd>
+            </div>
+            <button
+              className="iconbtn"
+              onClick={() => setView("notifications")}
+              title="Notifications"
+            >
+              <Bell size={17} />
+              <i />
+            </button>
+            <AccountMenu repos={repos} setRepos={setRepos} />
+          </div>
+        </header>
+        {query.trim() && (
+          <div className="search-palette">
+            {[
+              ["home", "Overview"],
+              ["code", "Code"],
+              ["threads", repo.name + " threads"],
+              ["tasks", "Scheduled tasks"],
+              ["notifications", "Notifications"],
+              ...repos.map((r) => ["threads", r.name]),
+              ...tasks.map((t) => ["tasks", t.name]),
+              ...agentCatalog.map((a) => ["settings", a.name]),
+            ]
+              .filter((item) =>
+                item[1].toLowerCase().includes(query.toLowerCase()),
+              )
+              .slice(0, 8)
+              .map(([target, label], index) => (
+                <button
+                  key={target + label + index}
+                  onMouseDown={() => {
+                    setView(target as View);
+                    setQuery("");
+                  }}
+                >
+                  <span>{label}</span>
+                  <small>{target}</small>
+                </button>
+              ))}
+          </div>
+        )}
+        {notice && (
+          <button className="toast" onClick={() => setNotice("")}>
+            {notice} ×
+          </button>
+        )}
+        {view === "home" ? (
+          <Home setView={setView} userName={userName} />
+        ) : view === "code" ? (
+          <CodeWorkspace repo={repo} />
+        ) : view === "threads" ? (
+          <Threads repo={repo} agents={agentCatalog} />
+        ) : view === "tasks" ? (
+          <Tasks tasks={tasks} addTask={addTask} runTask={runTask} />
+        ) : view === "notifications" ? (
+          <Notifications />
+        ) : (
+          <SettingsView repos={repos} setRepos={setRepos} />
+        )}
+      </main>
+      <RepoChat repo={repo.name} agents={agentCatalog} />
+    </div>
+  );
 }
-function Home({setView,userName}:{setView:(v:View)=>void;userName:string}){type Event={id:number;kind:string;message:string;created_at:string}; const [events,setEvents]=useState<Event[]>([]); const refresh=()=>invoke<Event[]>('list_events',{limit:12}).then(setEvents).catch(()=>setEvents([])); useEffect(()=>{refresh();const names=['wand://agent','wand://scheduler','wand://notifications'];const stops=names.map(name=>listen(name,refresh));return()=>{stops.forEach(stop=>stop.then(fn=>fn()))}},[]); const runs=events.filter(e=>e.kind.startsWith('agent.')).length; const reviews=events.filter(e=>e.kind.includes('comment')||e.kind.includes('notification')).length; return <section className="content"><div className="hero"><div><p className="eyebrow"><span className="pulse"/> LOCAL WORKSPACE</p><h1>Good morning, {userName}.</h1><p className="sub">Your agents are ready to work across your repositories.</p></div><button className="primary" onClick={()=>setView('tasks')}><Plus size={16}/> New task</button></div><div className="stats"><Stat icon={Zap} value={String(runs)} label="Agent events" hint="Persisted local activity"/><Stat icon={GitPullRequest} value={String(reviews)} label="Review notifications" hint="From provider sync"/><Stat icon={TimerReset} value={String(events.length)} label="Recent events" hint="SQLite event history"/></div><div className="sectionhead"><div><h2>Activity</h2><p>Events synced to this local workspace.</p></div></div><div className="timeline">{events.length===0&&<div className="emptyhint"><Sparkles size={20}/><h3>No activity yet</h3><p>Run a task or sync a provider to start your local activity history.</p></div>}{events.map((event,i)=><article className="event" key={event.id}><div className={'eventicon '+(['purple','green','yellow','blue'][i%4])}><Activity size={17}/></div><div className="eventbody"><div className="eventtop"><span className="kind">{event.kind}</span><span className="tag blue">local</span><span className="time">{event.created_at}</span></div><h3>{event.message}</h3><p><span className="repo-dot"/> Wand runtime</p></div></article>)}</div><div className="sectionhead agents"><div><h2>Active agents</h2><p>Configured coding specialists.</p></div><button className="textbtn" onClick={()=>setView('settings')}>Manage agents →</button></div><div className="agentgrid"><Agent icon={Bot} name="Code reviewer" desc="Reviews new pull requests" status="Watching your repos"/><Agent icon={TerminalSquare} name="Sentinel" desc="Dependency & security audits" status="Schedule available"/><Agent icon={Code2} name="Pair programmer" desc="Your on-demand coding partner" status="Ready when you are"/></div></section>}
-function Stat({icon:Icon,value,label,hint}:{icon:any,value:string,label:string,hint:string}){return <div className="stat"><Icon size={18}/><strong>{value}</strong><span>{label}</span><small>{hint}</small></div>} function Agent({icon:Icon,name,desc,status}:{icon:any,name:string,desc:string,status:string}){return <div className="agent"><div className="agenticon"><Icon size={18}/></div><div><h3>{name}</h3><p>{desc}</p><small><span className="green-dot"/> {status}</small></div></div>}
-function CodeWorkspace({repo}:{repo:Repo}){const [path,setPath]=useState('README.md');const [draftPath,setDraftPath]=useState('README.md');const [content,setContent]=useState('');const [original,setOriginal]=useState('');const [mode,setMode]=useState<'file'|'diff'>('file');const [error,setError]=useState('');const [saving,setSaving]=useState(false);const load=async()=>{try{setError('');const versions=await invoke<{original:string;modified:string}>('git_file_versions',{repoPath:repo.path,relativePath:draftPath});setPath(draftPath);setOriginal(versions.original);setContent(versions.modified)}catch(e){setError(String(e))}};const save=async()=>{try{setSaving(true);setError('');await invoke('write_repo_file',{repoPath:repo.path,relativePath:path,content});setOriginal(content)}catch(e){setError(String(e))}finally{setSaving(false)}};useEffect(()=>{load()},[repo.name]);const language=path.endsWith('.rs')?'rust':path.endsWith('.ts')||path.endsWith('.tsx')?'typescript':path.endsWith('.json')?'json':'markdown';return <section className="content code-workspace"><div className="code-toolbar"><div><p className="eyebrow"><Code2 size={14}/> REPOSITORY CODE</p><h1>{repo.name}</h1><p className="sub">Edit files and inspect Git changes without leaving Wand.</p></div><div className="code-controls"><input value={draftPath} onChange={e=>setDraftPath(e.target.value)} onKeyDown={e=>e.key==='Enter'&&load()} placeholder="relative path, e.g. src/main.tsx"/><button className={mode==='file'?'outline active':''} onClick={()=>setMode('file')}>File</button><button className={mode==='diff'?'outline active':''} onClick={()=>setMode('diff')}>Git diff</button><button className="outline" disabled={mode!=='file'||saving||!path} onClick={save}>{saving?'Saving…':'Save'}</button><button className="primary" onClick={load}>Open</button></div></div>{error?<div className="emptyhint"><h3>Unable to open file</h3><p>{error}</p></div>:<div className="editor-shell">{mode==='file'?<Editor height="100%" theme="vs-dark" language={language} value={content} onChange={value=>setContent(value||'')} options={{minimap:{enabled:false},fontSize:13,automaticLayout:true,tabSize:2}}/>:<DiffEditor height="100%" theme="vs-dark" language={language} original={original} modified={content} options={{minimap:{enabled:false},fontSize:13,readOnly:true,automaticLayout:true}}/>}</div>}</section>}
-function Threads({repo}:{repo:Repo}){type Message={id:number;author:string;body:string;created_at:string};const [messages,setMessages]=useState<Message[]>([]);const load=()=>invoke<Message[]>('list_thread_messages',{repo:repo.name}).then(setMessages).catch(()=>setMessages([]));useEffect(()=>{load()},[repo.name]);const create=async()=>{const values=await askModal('New repository message',[{id:'body',label:'Message',placeholder:'Share context with humans and agents'}],'Keep the conversation for this repository in one place.');if(!values?.body?.trim())return;await invoke('create_thread_message',{repo:repo.name,author:'You',body:values.body.trim()}).catch(()=>{});load()};return <section className="content"><div className="hero compact"><div><p className="eyebrow"><FolderGit2 size={14}/> REPOSITORY</p><h1>{repo.name}</h1><p className="sub">Threads and agent context for {repo.path}</p></div><button className="primary" disabled={repo===emptyRepo} onClick={create}><Plus size={16}/> New thread</button></div><div className="threadlist">{messages.length===0?<div className="emptyhint"><MessageSquare size={20}/><h3>No repository messages yet</h3><p>Start the conversation for this repository and keep the context local.</p></div>:messages.map(message=><div className="thread" key={message.id}><div className="threadicon"><Hash size={16}/></div><div><h3>{message.body}</h3><p>{message.author} · {message.created_at}</p></div><span className="tag blue">message</span><ChevronDown size={14}/></div>)}</div></section>}
-function Tasks({tasks,addTask,runTask}:{tasks:Task[],addTask:()=>void,runTask:(t:Task)=>void}){type Run={id:string;task_id:string;scheduled_at:string;started_at?:string;finished_at?:string;status:string;error?:string};const [runs,setRuns]=useState<Run[]>([]);const load=()=>invoke<Run[]>("list_task_runs",{limit:30}).then(setRuns).catch(()=>setRuns([]));useEffect(()=>{load();const names=["wand://agent","wand://scheduler"];const stops=names.map(name=>listen(name,load));return()=>{stops.forEach(stop=>stop.then(fn=>fn()))}},[]);return <section className="content"><div className="hero compact"><div><p className="eyebrow"><Clock3 size={14}/> AUTOMATIONS</p><h1>Scheduled tasks</h1><p className="sub">Persisted locally and ready for agent execution.</p></div><button className="primary" onClick={addTask}><Plus size={16}/> Schedule task</button></div>{tasks.map(t=><div className="taskcard" key={t.id}><div className="taskicon"><Zap size={17}/></div><div><h3>{t.name}</h3><p>{t.provider} · {t.repo}</p></div><code>{t.cron}</code><span className={"tag "+(t.active?"green":"blue")}>{t.active?"Active":"Paused"}</span><button className="run" onClick={()=>runTask(t)}><Play size={14}/> Run now</button></div>)}<div className="sectionhead"><div><h2>Run history</h2><p>Durable scheduler records from the local SQLite database.</p></div></div><div className="run-history">{runs.length===0?<div className="emptyhint"><Sparkles size={20}/><h3>No scheduled runs yet</h3><p>When a cron slot starts, its status and any failure are recorded here.</p></div>:runs.map(run=><div className="run-row" key={run.id}><div><b>{tasks.find(t=>t.id===run.task_id)?.name||run.task_id}</b><small>{run.scheduled_at}{run.error?" · "+run.error:""}</small></div><span className={"tag "+(run.status==="completed"?"green":run.status==="failed"?"red":"blue")}>{run.status}</span></div>)}</div></section>}
-function Notifications(){type Notice={id:string;provider:string;repo:string;title:string;body:string;url:string;author:string;unread:boolean;created_at:string};type Prefs={provider:boolean;agent:boolean;task:boolean;thread:boolean};const defaults:Prefs={provider:true,agent:true,task:true,thread:true};const [items,setItems]=useState<Notice[]>([]);const [loading,setLoading]=useState(false);const [prefs,setPrefs]=useState<Prefs>(()=>({...defaults,...JSON.parse(localStorage.getItem("wand.notification-prefs")||"{}")}));const [saved,setSaved]=useState(false);const load=()=>invoke<Notice[]>("list_notifications").then(setItems).catch(()=>setItems([]));useEffect(()=>{load();const stop=listen("wand://notifications",load);return()=>{stop.then(fn=>fn())}},[]);const sync=async()=>{setLoading(true);try{await invoke("sync_github_activity");await load()}catch{}finally{setLoading(false)}};const mark=async()=>{await invoke("mark_notifications_read").catch(()=>{});setItems(items.map(x=>({...x,unread:false})))};const toggle=(key:keyof Prefs)=>{const next={...prefs,[key]:!prefs[key]};setPrefs(next);localStorage.setItem("wand.notification-prefs",JSON.stringify(next));setSaved(true);setTimeout(()=>setSaved(false),1800)};return <section className="content"><div className="hero compact"><div><p className="eyebrow"><Bell size={14}/> INBOX</p><h1>Notifications</h1><p className="sub">PR comments and agent events that need your attention.</p></div><div className="notice-actions"><button className="outline" onClick={sync}>{loading?"Syncing…":"Sync GitHub"}</button><button className="textbtn" onClick={mark}>Mark all read</button></div></div><div className="notification-preferences"><div className="sectionhead"><div><h2>Notification preferences</h2><p>Choose which categories appear as toasts and native OS notifications.</p></div>{saved&&<span className="tag green">Saved</span>}</div>{[["provider","Provider updates"],["agent","Agent handoffs and verification"],["task","Scheduled task runs"],["thread","Repository threads"]].map(([key,label])=><label className="notification-setting" key={key}><span><b>{label}</b><small>In-app and desktop notifications</small></span><input type="checkbox" checked={prefs[key as keyof Prefs]} onChange={()=>toggle(key as keyof Prefs)}/></label>)}</div>{items.length===0?<div className="emptyhint"><MessageSquare size={20}/><h3>Your inbox is clear</h3><p>Connect a provider and sync to surface pull-request comments here.</p></div>:items.map(item=><a className={"notice "+(item.unread?"unread":"")} href={item.url||"#"} target="_blank" rel="noreferrer" key={item.id}><div className="eventicon purple"><MessageSquare size={17}/></div><div><b>{item.title}</b><p>{item.author} · {item.repo} — {item.body}</p></div><span>{item.provider}</span></a>)}</section>}
-function SettingsView({repos,setRepos}:{repos:Repo[];setRepos:React.Dispatch<React.SetStateAction<Repo[]>>}){const [root,setRoot]=useState('');useEffect(()=>{invoke<string|null>('workspace_root').then(value=>{if(value)setRoot(value)}).catch(()=>{})},[]);const scan=async()=>{const selected=await open({directory:true,multiple:false,title:'Choose your repositories folder'});if(typeof selected!=='string')return;const rows=await invoke<any[]>('scan_repositories',{rootPath:selected}).catch(()=>[]);await invoke('save_workspace_root',{root:selected}).catch(()=>{});setRoot(selected);if(rows.length)setRepos(rows.map(r=>({name:r.name,path:r.path,color:'#89b4fa',count:0})))};return <section className="content settings-page"><div className="hero compact"><div><p className="eyebrow"><Settings size={14}/> PREFERENCES</p><h1>Settings</h1><p className="sub">One control center for providers, CLIs, agents, themes, and workspace access.</p></div></div><div className="settingscard"><h2>Repository workspace</h2><p>{root||'Choose one folder and Wand will scan its immediate Git repositories.'}</p><div className="folder"><FolderGit2 size={18}/><span>{repos.length} repositories in this local workspace</span><button className="outline" onClick={scan}>Choose folder & scan</button></div></div><ThemeSection/><ProviderAccess/><CliManager/><AgentManager repos={repos}/></section>}
-function Onboarding({done}:{done:(name:string)=>void}){const [step,setStep]=useState(0);const [name,setName]=useState(''); const slides=[['Welcome to Wand','Your local-first AI engineering workspace. Plan, build, review, and verify without losing the thread.'],['Connect your workspace','Choose a repository folder, then connect GitHub or Azure DevOps with a PAT when you are ready.'],['Meet your agent team','Tag Planner, Builder, Reviewer, Docs, and Sentinel on any task. Each agent hands work to the next.'],['You stay in control','Wand keeps work local, shows every handoff, and runs a final background verification before calling work done.']]; const current=slides[step]; return <div className="onboarding"><div className="onboard-card"><div className="onboard-mark"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" aria-hidden="true"><path d="M4.2 19.8 L16.8 7.2" stroke="#f2d29a" strokeWidth="2.8" strokeLinecap="round"/><path d="M4.2 19.8 L3 21 M5.4 21.2 L4.4 22.4" stroke="#c68f55" strokeWidth="1.2" strokeLinecap="round" opacity=".7"/><g className="wand-tip"><circle cx="17.4" cy="6.6" r="1.6" fill="#fff"/><circle cx="17.4" cy="6.6" r="4.4" fill="#ffe9a8" opacity=".5"/><path d="M17.4 2.4 L18.3 5.7 L21.6 6.6 L18.3 7.5 L17.4 10.8 L16.5 7.5 L13.2 6.6 L16.5 5.7 Z" fill="#fff" opacity=".95" className="wand-star"/></g><path d="M19.6 3.2 L20.2 4 M20.8 8.2 L21.6 8.8 M14.6 4.4 L15.2 5" stroke="#fff" strokeWidth="1" strokeLinecap="round" opacity=".8"/></svg></div><p className="eyebrow">WAND / GETTING STARTED</p><h1>{current[0]}</h1><p>{current[1]}</p>{step===0&&<label className="onboard-field"><span>What should Wand call you?</span><input autoFocus value={name} onChange={event=>setName(event.target.value)} placeholder="Your name" onKeyDown={event=>{if(event.key==='Enter'&&name.trim())setStep(1)}}/></label>}<div className="onboard-dots">{slides.map((_,i)=><i className={i===step?'on':''} key={i}/>)}</div><div className="onboard-actions">{step>0?<button className="textbtn" onClick={()=>setStep(step-1)}>Back</button>:<span/>}<button className="primary" disabled={step===0&&!name.trim()} onClick={()=>step<slides.length-1?setStep(step+1):done(name.trim())}>{step<slides.length-1?'Continue':'Enter Wand'}</button></div></div></div>}
-function CliManager(){const [clis,setClis]=useState<any[]>([]); const [enabled,setEnabled]=useState<string[]>(()=>JSON.parse(localStorage.getItem('wand.clis')||'[]')); useEffect(()=>{invoke<any[]>('detect_clis').then(setClis).catch(()=>setClis([{id:'claude',name:'Claude',command:'claude',installed:false},{id:'codex',name:'Codex',command:'codex',installed:false},{id:'kimi',name:'Kimi',command:'kimi',installed:false},{id:'gemini',name:'Gemini CLI',command:'gemini',installed:false}]))},[]); const toggle=(id:string)=>{const next=enabled.includes(id)?enabled.filter(x=>x!==id):[...enabled,id];setEnabled(next);localStorage.setItem('wand.clis',JSON.stringify(next))}; return <div className="cli-manager"><div className="sectionhead"><div><h2>Local CLI access</h2><p>Choose which coding runtimes Wand may use.</p></div></div>{clis.map(c=><div className="cli-row" key={c.id}><div className={'cli-state '+(c.installed?'ready':'missing')}/><div><b>{c.name}</b><small>{c.installed?c.version||'Installed and detected':`Install “${c.command}” to enable`}</small></div><button className={'outline '+(enabled.includes(c.id)?'enabled':'')} disabled={!c.installed} onClick={()=>toggle(c.id)}>{enabled.includes(c.id)?'Enabled':'Enable'}</button></div>)}</div>}
-function ProviderAccess(){const [status,setStatus]=useState<Record<string,boolean>>({}); const [syncing,setSyncing]=useState(''); const [message,setMessage]=useState(''); const refresh=()=>Promise.all(['github','azure-devops'].map(async p=>[p,await invoke<boolean>('provider_status',{provider:p}).catch(()=>false)] as const)).then(x=>setStatus(Object.fromEntries(x))); useEffect(()=>{refresh()},[]); const connect=async(provider:string)=>{const values=await askModal(`Connect ${provider==='github'?'GitHub':'Azure DevOps'}`,[{id:'token',label:'Personal access token',placeholder:'Paste your PAT',secret:true}],'The token is stored only in the native OS credential manager.');if(!values?.token)return;await invoke('save_provider_token',{provider,token:values.token});refresh()}; const sync=async(provider:string)=>{try{setSyncing(provider);setMessage('');let providerUrl='';if(provider==='azure-devops'){const values=await askModal('Azure DevOps organization',[{id:'url',label:'Organization URL',placeholder:'https://dev.azure.com/your-org'}],'Wand uses this organization to find repositories and pull-request activity.');providerUrl=values?.url||'';if(!providerUrl)return;await invoke('save_provider_url',{provider,url:providerUrl})}const args=provider==='azure-devops'?{providerUrl}:{};const rows=await invoke<any[]>(provider==='github'?'sync_github':'sync_azure_devops',args);setMessage(`${rows.length} ${provider==='github'?'GitHub':'Azure DevOps'} repositories synced. Background activity polling enabled.`)}catch(e){setMessage(String(e))}finally{setSyncing('')}}; return <div className="provider-access"><div className="sectionhead"><div><h2>Provider credentials</h2><p>Tokens never enter the React layer after submission.</p></div></div>{[['github','GitHub'],['azure-devops','Azure DevOps']].map(([id,name])=><div className="provider-row" key={id}><div><b>{name}</b><small>{status[id]?'Connected in OS credential store':'Not connected'}</small></div><button className="outline" onClick={()=>connect(id)}>{status[id]?'Replace PAT':'Connect'}</button><button className="outline" disabled={!status[id]||!!syncing} onClick={()=>sync(id)}>{syncing===id?'Syncing…':'Sync repos'}</button></div>)}{message&&<p className="provider-message">{message}</p>}</div>}
-function AgentManager({repos}:{repos:Repo[]}){type StoredAgent={id:string;name:string;role:string;skills:string[];color:string;cli:string;model:string;system_prompt:string;scope:string;built_in:boolean};const [items,setItems]=useState<StoredAgent[]>([]);const load=()=>invoke<any[]>('list_agents').then(rows=>setItems(rows.map(r=>({...r,skills:JSON.parse(r.skills||'[]')})))).catch(()=>{});useEffect(()=>{load()},[]);const edit=async(agent?:StoredAgent)=>{const values=await askModal(agent?'Edit agent':'Create an agent',[{id:'name',label:'Agent name',placeholder:'Release engineer',value:agent?.name},{id:'role',label:'Responsibility',placeholder:'Describe exactly what this agent owns…',value:agent?.role,multiline:true,maxLength:1000},{id:'skills',label:'Skills',placeholder:'release, changelog, testing',value:agent?.skills.join(', ')},{id:'cli',label:'CLI runtime',value:agent?.cli||'codex',options:['claude','codex','kimi','gemini']},{id:'model',label:'Model',value:agent?.model||'default',options:['default','sonnet','opus','gpt-5-codex','gemini-2.5-pro','kimi-k2']},{id:'scope',label:'Scope',placeholder:'workspace or repo:name',value:agent?.scope||'workspace'}],'Give each agent one clear responsibility. This text is used as its execution instruction.');if(!values?.name)return;await invoke('save_agent',{agent:{id:agent?.id||values.name.toLowerCase().replace(/[^a-z0-9]+/g,'-'),name:values.name.trim(),role:(values.role||'').slice(0,1000),skills:(values.skills||'').split(',').map(x=>x.trim()).filter(Boolean),system_prompt:(values.role||'').slice(0,1000),color:agent?.color||'#a98cff',cli:values.cli||'codex',model:values.model||'default',scope:values.scope||'workspace'}}).catch(()=>{});load()};return <div className="agent-management"><div className="sectionhead"><div><h2>Agent team</h2><p>Persistent specialists with one responsibility, a CLI runtime, model, skills, and repository scope.</p></div><button className="outline" onClick={()=>edit()}><Plus size={14}/> Add agent</button></div><div className="agent-config-grid">{items.map(agent=><div className="agent-config" key={agent.id}><div className="agent-config-top"><b>{agent.name}</b><span className="tag blue">{agent.built_in?'Built-in':'Custom'}</span></div><p>{agent.role}</p><small>{agent.skills.join(' · ')}</small><footer><code>{agent.cli}</code><code>{agent.model}</code><code>{agent.scope}</code><button className="textbtn" onClick={()=>edit(agent)}>Edit</button></footer></div>)}</div></div>}
-function RepoChat({repo}:{repo:string}){type Message={id?:number;repo?:string;author:string;body:string}; const [messages,setMessages]=useState<Message[]>([]); const [draft,setDraft]=useState(''); const [error,setError]=useState(''); useEffect(()=>{invoke<Message[]>('list_thread_messages',{repo}).then(setMessages).catch(()=>setMessages([]))},[repo]); useEffect(()=>{const stop=listen<Message>('wand://thread',e=>{if(e.payload.repo===repo)setMessages(current=>current.some(m=>m.id===e.payload.id)?current:[...current,e.payload])});return()=>{stop.then(fn=>fn())}},[repo]); const send=async()=>{const body=draft.trim();if(!body)return;try{const message=await invoke<Message>('create_thread_message',{repo,author:'You',body});setMessages(current=>current.some(m=>m.id===message.id)?current:[...current,message]);setDraft('');setError('')}catch(e){setError(String(e))}}; return <div className="repo-chat"><div className="chat-head"><div><b>{repo} thread</b><small>Humans and agents · persisted locally</small></div><span className="live-dot"/></div><div className="chat-messages">{messages.length===0&&<p className="chat-empty">Start the repository conversation.</p>}{messages.map((m,i)=><div className={'chat-message '+(m.author==='You'?'mine':'')} key={m.id??i}><small>{m.author}</small><p>{m.body}</p></div>)}</div><div className="chat-compose"><input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Message this repository…"/><button onClick={send}>Send</button></div>{error&&<small className="chat-error">{error}</small>}</div>}
-function NotificationPreferencesSection(){
-  type Prefs={provider:boolean;agent:boolean;task:boolean;thread:boolean};
-  const defaults:Prefs={provider:true,agent:true,task:true,thread:true};
-  const [prefs,setPrefs]=useState<Prefs>(()=>({...defaults,...JSON.parse(localStorage.getItem("wand.notification-prefs")||"{}")}));
-  const [saved,setSaved]=useState(false);
-  const toggle=(key:keyof Prefs)=>{
-    const next={...prefs,[key]:!prefs[key]};
+function Home({
+  setView,
+  userName,
+}: {
+  setView: (v: View) => void;
+  userName: string;
+}) {
+  type Event = {
+    id: number;
+    kind: string;
+    message: string;
+    created_at: string;
+  };
+  const [events, setEvents] = useState<Event[]>([]);
+  const refresh = () =>
+    invoke<Event[]>("list_events", { limit: 12 })
+      .then(setEvents)
+      .catch(() => setEvents([]));
+  useEffect(() => {
+    refresh();
+    const names = ["wand://agent", "wand://scheduler", "wand://notifications"];
+    const stops = names.map((name) => listen(name, refresh));
+    return () => {
+      stops.forEach((stop) => stop.then((fn) => fn()));
+    };
+  }, []);
+  const runs = events.filter((e) => e.kind.startsWith("agent.")).length;
+  const reviews = events.filter(
+    (e) => e.kind.includes("comment") || e.kind.includes("notification"),
+  ).length;
+  return (
+    <section className="content">
+      <div className="hero">
+        <div>
+          <p className="eyebrow">
+            <span className="pulse" /> LOCAL WORKSPACE
+          </p>
+          <h1>Good morning, {userName}.</h1>
+          <p className="sub">
+            Your agents are ready to work across your repositories.
+          </p>
+        </div>
+        <button className="primary" onClick={() => setView("tasks")}>
+          <Plus size={16} /> New task
+        </button>
+      </div>
+      <div className="stats">
+        <Stat
+          icon={Zap}
+          value={String(runs)}
+          label="Agent events"
+          hint="Persisted local activity"
+        />
+        <Stat
+          icon={GitPullRequest}
+          value={String(reviews)}
+          label="Review notifications"
+          hint="From provider sync"
+        />
+        <Stat
+          icon={TimerReset}
+          value={String(events.length)}
+          label="Recent events"
+          hint="Recent activity"
+        />
+      </div>
+      <div className="sectionhead">
+        <div>
+          <h2>Activity</h2>
+          <p>Events synced to this local workspace.</p>
+        </div>
+      </div>
+      <div className="timeline">
+        {events.length === 0 && (
+          <div className="emptyhint">
+            <Sparkles size={20} />
+            <h3>No activity yet</h3>
+            <p>
+              Run a task or sync a provider to start your local activity
+              history.
+            </p>
+          </div>
+        )}
+        {events.map((event, i) => (
+          <article className="event" key={event.id}>
+            <div
+              className={
+                "eventicon " + ["purple", "green", "yellow", "blue"][i % 4]
+              }
+            >
+              <Activity size={17} />
+            </div>
+            <div className="eventbody">
+              <div className="eventtop">
+                <span className="kind">{event.kind}</span>
+                <span className="tag blue">local</span>
+                <span className="time">{event.created_at}</span>
+              </div>
+              <h3>{event.message}</h3>
+              <p>
+                <span className="repo-dot" /> Wand runtime
+              </p>
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="sectionhead agents">
+        <div>
+          <h2>Active agents</h2>
+          <p>Configured coding specialists.</p>
+        </div>
+        <button className="textbtn" onClick={() => setView("settings")}>
+          Manage agents →
+        </button>
+      </div>
+      <div className="agentgrid">
+        <Agent
+          icon={Bot}
+          name="Code reviewer"
+          desc="Reviews new pull requests"
+          status="Watching your repos"
+        />
+        <Agent
+          icon={TerminalSquare}
+          name="Sentinel"
+          desc="Dependency & security audits"
+          status="Schedule available"
+        />
+        <Agent
+          icon={Code2}
+          name="Pair programmer"
+          desc="Your on-demand coding partner"
+          status="Ready when you are"
+        />
+      </div>
+    </section>
+  );
+}
+function Stat({
+  icon: Icon,
+  value,
+  label,
+  hint,
+}: {
+  icon: any;
+  value: string;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <div className="stat">
+      <Icon size={18} />
+      <strong>{value}</strong>
+      <span>{label}</span>
+      <small>{hint}</small>
+    </div>
+  );
+}
+function Agent({
+  icon: Icon,
+  name,
+  desc,
+  status,
+}: {
+  icon: any;
+  name: string;
+  desc: string;
+  status: string;
+}) {
+  return (
+    <div className="agent">
+      <div className="agenticon">
+        <Icon size={18} />
+      </div>
+      <div>
+        <h3>{name}</h3>
+        <p>{desc}</p>
+        <small>
+          <span className="green-dot" /> {status}
+        </small>
+      </div>
+    </div>
+  );
+}
+function CodeWorkspace({ repo }: { repo: Repo }) {
+  const [path, setPath] = useState("README.md");
+  const [draftPath, setDraftPath] = useState("README.md");
+  const [content, setContent] = useState("");
+  const [original, setOriginal] = useState("");
+  const [mode, setMode] = useState<"file" | "diff">("file");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const load = async () => {
+    try {
+      setError("");
+      const versions = await invoke<{ original: string; modified: string }>(
+        "git_file_versions",
+        { repoPath: repo.path, relativePath: draftPath },
+      );
+      setPath(draftPath);
+      setOriginal(versions.original);
+      setContent(versions.modified);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+  const save = async () => {
+    try {
+      setSaving(true);
+      setError("");
+      await invoke("write_repo_file", {
+        repoPath: repo.path,
+        relativePath: path,
+        content,
+      });
+      setOriginal(content);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  useEffect(() => {
+    load();
+  }, [repo.name]);
+  const language = path.endsWith(".rs")
+    ? "rust"
+    : path.endsWith(".ts") || path.endsWith(".tsx")
+      ? "typescript"
+      : path.endsWith(".json")
+        ? "json"
+        : "markdown";
+  return (
+    <section className="content code-workspace">
+      <div className="code-toolbar">
+        <div>
+          <p className="eyebrow">
+            <Code2 size={14} /> REPOSITORY CODE
+          </p>
+          <h1>{repo.name}</h1>
+          <p className="sub">
+            Edit files and inspect Git changes without leaving Wand.
+          </p>
+        </div>
+        <div className="code-controls">
+          <input
+            value={draftPath}
+            onChange={(e) => setDraftPath(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && load()}
+            placeholder="relative path, e.g. src/main.tsx"
+          />
+          <button
+            className={mode === "file" ? "outline active" : ""}
+            onClick={() => setMode("file")}
+          >
+            File
+          </button>
+          <button
+            className={mode === "diff" ? "outline active" : ""}
+            onClick={() => setMode("diff")}
+          >
+            Git diff
+          </button>
+          <button
+            className="outline"
+            disabled={mode !== "file" || saving || !path}
+            onClick={save}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button className="primary" onClick={load}>
+            Open
+          </button>
+        </div>
+      </div>
+      {error ? (
+        <div className="emptyhint">
+          <h3>Unable to open file</h3>
+          <p>{error}</p>
+        </div>
+      ) : (
+        <div className="editor-shell">
+          {mode === "file" ? (
+            <Editor
+              height="100%"
+              theme="vs-dark"
+              language={language}
+              value={content}
+              onChange={(value) => setContent(value || "")}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                automaticLayout: true,
+                tabSize: 2,
+              }}
+            />
+          ) : (
+            <DiffEditor
+              height="100%"
+              theme="vs-dark"
+              language={language}
+              original={original}
+              modified={content}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                readOnly: true,
+                automaticLayout: true,
+              }}
+            />
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
+  type Message = {
+    id: number;
+    author: string;
+    body: string;
+    created_at: string;
+    agent_ids: string[];
+  };
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [draft, setDraft] = useState("");
+  const [tagged, setTagged] = useState<string[]>([]);
+  const load = () =>
+    invoke<Message[]>("list_thread_messages", { repo: repo.name })
+      .then(setMessages)
+      .catch(() => setMessages([]));
+  useEffect(() => {
+    load();
+  }, [repo.name]);
+  const create = async () => {
+    if (!draft.trim()) return;
+    await invoke("create_thread_message", {
+      repo: repo.name,
+      author: "You",
+      body: draft.trim(),
+      agentIds: tagged,
+    }).catch(() => {});
+    setDraft("");
+    setTagged([]);
+    load();
+  };
+  return (
+    <section className="content">
+      <div className="hero compact">
+        <div>
+          <p className="eyebrow">
+            <FolderGit2 size={14} /> REPOSITORY
+          </p>
+          <h1>{repo.name}</h1>
+          <p className="sub">Threads and agent context for {repo.path}</p>
+        </div>
+        <button className="primary" disabled={repo === emptyRepo || !draft.trim()} onClick={create}><Plus size={16} /> New thread</button>
+      </div>
+      <div className="thread-composer"><AgentMentionInput repo={repo.name} value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Write a repository thread… Type @ to tag an agent" /><button className="primary" disabled={!draft.trim()} onClick={create}>Post</button></div>
+      <div className="threadlist">
+        {messages.length === 0 ? (
+          <div className="emptyhint">
+            <MessageSquare size={20} />
+            <h3>No repository messages yet</h3>
+            <p>
+              Start the conversation for this repository and keep the context
+              local.
+            </p>
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div className="thread" key={message.id}>
+              <div className="threadicon">
+                <Hash size={16} />
+              </div>
+              <div>
+                <h3>{message.body}</h3>
+                <p>
+                  {message.author} · {message.created_at}
+                </p>
+              </div>
+              {message.agent_ids?.map((id) => <span className="tag purple" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
+              <span className="tag blue">message</span>
+              <ChevronDown size={14} />
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+function Tasks({
+  tasks,
+  addTask,
+  runTask,
+}: {
+  tasks: Task[];
+  addTask: () => void;
+  runTask: (t: Task) => void;
+}) {
+  type Run = {
+    id: string;
+    task_id: string;
+    scheduled_at: string;
+    started_at?: string;
+    finished_at?: string;
+    status: string;
+    error?: string;
+  };
+  const [runs, setRuns] = useState<Run[]>([]);
+  const load = () =>
+    invoke<Run[]>("list_task_runs", { limit: 30 })
+      .then(setRuns)
+      .catch(() => setRuns([]));
+  useEffect(() => {
+    load();
+    const names = ["wand://agent", "wand://scheduler"];
+    const stops = names.map((name) => listen(name, load));
+    return () => {
+      stops.forEach((stop) => stop.then((fn) => fn()));
+    };
+  }, []);
+  const summary = {
+    running: runs.filter((r) => r.status === "running").length,
+    completed: runs.filter((r) => r.status === "completed").length,
+    failed: runs.filter((r) => r.status === "failed").length,
+  };
+  const summaryItems: Array<[string, number, string]> = [
+    ["running", summary.running, "Running"],
+    ["completed", summary.completed, "Completed"],
+    ["failed", summary.failed, "Failed"],
+  ];
+  const retry = (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) runTask(task);
+  };
+  return (
+    <section className="content">
+      <div className="hero compact">
+        <div>
+          <p className="eyebrow">
+            <Clock3 size={14} /> AUTOMATIONS
+          </p>
+          <h1>Scheduled tasks</h1>
+          <p className="sub">
+            Persisted locally and ready for agent execution.
+          </p>
+        </div>
+        <button className="primary" onClick={addTask}>
+          <Plus size={16} /> Schedule task
+        </button>
+      </div>
+      {tasks.map((t) => (
+        <div className="taskcard" key={t.id}>
+          <div className="taskicon">
+            <Zap size={17} />
+          </div>
+          <div>
+            <h3>{t.name}</h3>
+            <p>
+              {t.provider} · {t.repo}
+            </p>
+          </div>
+          <code>{t.cron}</code>
+          <span className={"tag " + (t.active ? "green" : "blue")}>
+            {t.active ? "Active" : "Paused"}
+          </span>
+          <button className="run" onClick={() => runTask(t)}>
+            <Play size={14} /> Run now
+          </button>
+        </div>
+      ))}
+      <div className="sectionhead">
+        <div>
+          <h2>Run history</h2>
+          <p>Durable scheduler records from the local SQLite database.</p>
+        </div>
+        {runs.length > 0 && (
+          <div className="run-summary">
+            {summaryItems
+              .filter((item: [string, number, string]) => item[1] > 0)
+              .map((item) => (
+                <span
+                  className={"summary-chip summary-" + item[0]}
+                  key={item[0]}
+                >
+                  <i />
+                  <b>{item[1]}</b>
+                  {item[2]}
+                </span>
+              ))}
+          </div>
+        )}
+      </div>
+      <div className="run-history">
+        {runs.length === 0 ? (
+          <div className="emptyhint">
+            <Sparkles size={20} />
+            <h3>No scheduled runs yet</h3>
+            <p>
+              When a cron slot starts, its status and any failure are recorded
+              here.
+            </p>
+          </div>
+        ) : (
+          runs.map((run) => (
+            <div className="run-row" key={run.id}>
+              <div>
+                <b>
+                  {tasks.find((t) => t.id === run.task_id)?.name || run.task_id}
+                </b>
+                <small>
+                  {run.scheduled_at}
+                  {run.error ? " · " + run.error : ""}
+                </small>
+              </div>
+              <span
+                className={
+                  "tag " +
+                  (run.status === "completed"
+                    ? "green"
+                    : run.status === "failed"
+                      ? "red"
+                      : "blue")
+                }
+              >
+                {run.status}
+              </span>
+              {run.status === "failed" ? (
+                <button
+                  className="retry-run"
+                  onClick={() => retry(run.task_id)}
+                >
+                  <RotateCcw size={13} /> Retry
+                </button>
+              ) : run.status === "running" ? (
+                <button
+                  className="retry-run"
+                  onClick={() => retry(run.task_id)}
+                >
+                  <Play size={13} /> Re-run
+                </button>
+              ) : null}
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+function Notifications() {
+  type Notice = {
+    id: string;
+    provider: string;
+    repo: string;
+    title: string;
+    body: string;
+    url: string;
+    author: string;
+    unread: boolean;
+    created_at: string;
+  };
+  const [items, setItems] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(false);
+  const load = () =>
+    invoke<Notice[]>("list_notifications")
+      .then(setItems)
+      .catch(() => setItems([]));
+  useEffect(() => {
+    load();
+    const stop = listen("wand://notifications", load);
+    return () => {
+      stop.then((fn) => fn());
+    };
+  }, []);
+  const sync = async () => {
+    setLoading(true);
+    try {
+      await invoke("sync_github_activity");
+      await load();
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  };
+  const mark = async () => {
+    await invoke("mark_notifications_read").catch(() => {});
+    setItems(items.map((x) => ({ ...x, unread: false })));
+  };
+  return (
+    <section className="content">
+      <div className="hero compact">
+        <div>
+          <p className="eyebrow">
+            <Bell size={14} /> INBOX
+          </p>
+          <h1>Notifications</h1>
+          <p className="sub">
+            PR comments and agent events that need your attention.
+          </p>
+        </div>
+        <div className="notice-actions">
+          <button className="outline" onClick={sync}>
+            {loading ? "Syncing…" : "Sync GitHub"}
+          </button>
+          <button className="textbtn" onClick={mark}>
+            Mark all read
+          </button>
+        </div>
+      </div>
+      {items.length === 0 ? (
+        <div className="emptyhint">
+          <MessageSquare size={20} />
+          <h3>Your inbox is clear</h3>
+          <p>
+            Connect a provider and sync to surface pull-request comments here.
+          </p>
+        </div>
+      ) : (
+        items.map((item) => (
+          <a
+            className={"notice " + (item.unread ? "unread" : "")}
+            href={item.url || "#"}
+            target="_blank"
+            rel="noreferrer"
+            key={item.id}
+          >
+            <div className="eventicon purple">
+              <MessageSquare size={17} />
+            </div>
+            <div>
+              <b>{item.title}</b>
+              <p>
+                {item.author} · {item.repo} — {item.body}
+              </p>
+            </div>
+            <span>{item.provider}</span>
+          </a>
+        ))
+      )}
+    </section>
+  );
+}
+function SettingsView({
+  repos,
+  setRepos,
+}: {
+  repos: Repo[];
+  setRepos: React.Dispatch<React.SetStateAction<Repo[]>>;
+}) {
+  const [root, setRoot] = useState("");
+  useEffect(() => {
+    invoke<string | null>("workspace_root")
+      .then((value) => {
+        if (value) setRoot(value);
+      })
+      .catch(() => {});
+  }, []);
+  const scan = async () => {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose your repositories folder",
+    });
+    if (typeof selected !== "string") return;
+    const rows = await invoke<any[]>("scan_repositories", {
+      rootPath: selected,
+    }).catch(() => []);
+    await invoke("save_workspace_root", { root: selected }).catch(() => {});
+    setRoot(selected);
+    if (rows.length)
+      setRepos(
+        rows.map((r) => ({
+          name: r.name,
+          path: r.path,
+          color: "#89b4fa",
+          count: 0,
+        })),
+      );
+  };
+  return (
+    <section className="content settings-page">
+      <div className="hero compact">
+        <div>
+          <p className="eyebrow">
+            <Settings size={14} /> PREFERENCES
+          </p>
+          <h1>Settings</h1>
+          <p className="sub">
+            One control center for providers, CLIs, agents, themes, and
+            workspace access.
+          </p>
+        </div>
+      </div>
+      <div className="settingscard">
+        <h2>Repository workspace</h2>
+        <p>
+          {root ||
+            "Choose one folder and Wand will scan its immediate Git repositories."}
+        </p>
+        <div className="folder">
+          <FolderGit2 size={18} />
+          <span>{repos.length} repositories in this local workspace</span>
+          <button className="outline" onClick={scan}>
+            Choose folder & scan
+          </button>
+        </div>
+      </div>
+      <ThemeSection />
+      <ProviderAccess />
+      <CliManager />
+      <AgentManager repos={repos} />
+    </section>
+  );
+}
+function Onboarding({ done }: { done: (name: string) => void }) {
+  const [step, setStep] = useState(0);
+  const [name, setName] = useState("");
+  const slides = [
+    [
+      "Welcome to Wand",
+      "Your local-first AI engineering workspace. Plan, build, review, and verify without losing the thread.",
+    ],
+    [
+      "Connect your workspace",
+      "Choose a repository folder, then connect GitHub or Azure DevOps with a PAT when you are ready.",
+    ],
+    [
+      "Meet your agent team",
+      "Tag Planner, Builder, Reviewer, Docs, and Sentinel on any task. Each agent hands work to the next.",
+    ],
+    [
+      "You stay in control",
+      "Wand keeps work local, shows every handoff, and runs a final background verification before calling work done.",
+    ],
+  ];
+  const current = slides[step];
+  return (
+    <div className="onboarding">
+      <div className="onboard-card">
+        <div className="onboard-mark" aria-hidden="true"><span className="onboard-w">W</span><span className="onboard-sparkles">✦</span></div>
+        <p className="eyebrow">WAND / GETTING STARTED</p>
+        <h1>{current[0]}</h1>
+        <p>{current[1]}</p>
+        {step === 0 && (
+          <label className="onboard-field">
+            <span>What should Wand call you?</span>
+            <input
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Your name"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && name.trim()) setStep(1);
+              }}
+            />
+          </label>
+        )}
+        <div className="onboard-dots">
+          {slides.map((_, i) => (
+            <i className={i === step ? "on" : ""} key={i} />
+          ))}
+        </div>
+        <div className="onboard-actions">
+          {step > 0 ? (
+            <button className="textbtn" onClick={() => setStep(step - 1)}>
+              Back
+            </button>
+          ) : (
+            <span />
+          )}
+          <button
+            className="primary"
+            disabled={step === 0 && !name.trim()}
+            onClick={() =>
+              step < slides.length - 1 ? setStep(step + 1) : done(name.trim())
+            }
+          >
+            {step < slides.length - 1 ? "Continue" : "Enter Wand"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function CliManager() {
+  const [clis, setClis] = useState<any[]>([]);
+  const [enabled, setEnabled] = useState<string[]>(() =>
+    JSON.parse(localStorage.getItem("wand.clis") || "[]"),
+  );
+  useEffect(() => {
+    invoke<any[]>("detect_clis")
+      .then(setClis)
+      .catch(() =>
+        setClis([
+          { id: "claude", name: "Claude", command: "claude", installed: false },
+          { id: "codex", name: "Codex", command: "codex", installed: false },
+          { id: "kimi", name: "Kimi", command: "kimi", installed: false },
+          {
+            id: "gemini",
+            name: "Gemini CLI",
+            command: "gemini",
+            installed: false,
+          },
+        ]),
+      );
+  }, []);
+  const toggle = (id: string) => {
+    const next = enabled.includes(id)
+      ? enabled.filter((x) => x !== id)
+      : [...enabled, id];
+    setEnabled(next);
+    localStorage.setItem("wand.clis", JSON.stringify(next));
+  };
+  return (
+    <div className="cli-manager">
+      <div className="sectionhead">
+        <div>
+          <h2>Local CLI access</h2>
+          <p>Choose which coding runtimes Wand may use.</p>
+        </div>
+      </div>
+      {clis.map((c) => (
+        <div className="cli-row" key={c.id}>
+          <div className={"cli-state " + (c.installed ? "ready" : "missing")} />
+          <div>
+            <b>{c.name}</b>
+            <small>
+              {c.installed
+                ? c.version || "Installed and detected"
+                : `Install “${c.command}” to enable`}
+            </small>
+          </div>
+          <button
+            className={"outline " + (enabled.includes(c.id) ? "enabled" : "")}
+            disabled={!c.installed}
+            onClick={() => toggle(c.id)}
+          >
+            {enabled.includes(c.id) ? "Enabled" : "Enable"}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+function ProviderAccess() {
+  const [status, setStatus] = useState<Record<string, boolean>>({});
+  const [syncing, setSyncing] = useState("");
+  const [message, setMessage] = useState("");
+  const refresh = () =>
+    Promise.all(
+      ["github", "azure-devops"].map(
+        async (p) =>
+          [
+            p,
+            await invoke<boolean>("provider_status", { provider: p }).catch(
+              () => false,
+            ),
+          ] as const,
+      ),
+    ).then((x) => setStatus(Object.fromEntries(x)));
+  useEffect(() => {
+    refresh();
+  }, []);
+  const connect = async (provider: string) => {
+    const values = await askModal(
+      `Connect ${provider === "github" ? "GitHub" : "Azure DevOps"}`,
+      [
+        {
+          id: "token",
+          label: "Personal access token",
+          placeholder: "Paste your PAT",
+          secret: true,
+        },
+      ],
+      "The token is stored only in the native OS credential manager.",
+    );
+    if (!values?.token) return;
+    await invoke("save_provider_token", { provider, token: values.token });
+    refresh();
+  };
+  const sync = async (provider: string) => {
+    try {
+      setSyncing(provider);
+      setMessage("");
+      let providerUrl = "";
+      if (provider === "azure-devops") {
+        const values = await askModal(
+          "Azure DevOps organization",
+          [
+            {
+              id: "url",
+              label: "Organization URL",
+              placeholder: "https://dev.azure.com/your-org",
+            },
+          ],
+          "Wand uses this organization to find repositories and pull-request activity.",
+        );
+        providerUrl = values?.url || "";
+        if (!providerUrl) return;
+        await invoke("save_provider_url", { provider, url: providerUrl });
+      }
+      const args = provider === "azure-devops" ? { providerUrl } : {};
+      const rows = await invoke<any[]>(
+        provider === "github" ? "sync_github" : "sync_azure_devops",
+        args,
+      );
+      setMessage(
+        `${rows.length} ${provider === "github" ? "GitHub" : "Azure DevOps"} repositories synced. Background activity polling enabled.`,
+      );
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setSyncing("");
+    }
+  };
+  return (
+    <div className="provider-access">
+      <div className="sectionhead">
+        <div>
+          <h2>Provider credentials</h2>
+          <p>Tokens never enter the React layer after submission.</p>
+        </div>
+      </div>
+      {[
+        ["github", "GitHub"],
+        ["azure-devops", "Azure DevOps"],
+      ].map(([id, name]) => (
+        <div className="provider-row" key={id}>
+          <div>
+            <b>{name}</b>
+            <small>
+              {status[id]
+                ? "Connected in OS credential store"
+                : "Not connected"}
+            </small>
+          </div>
+          <button className="outline" onClick={() => connect(id)}>
+            {status[id] ? "Replace PAT" : "Connect"}
+          </button>
+          <button
+            className="outline"
+            disabled={!status[id] || !!syncing}
+            onClick={() => sync(id)}
+          >
+            {syncing === id ? "Syncing…" : "Sync repos"}
+          </button>
+        </div>
+      ))}
+      {message && <p className="provider-message">{message}</p>}
+    </div>
+  );
+}
+function AgentManager({ repos }: { repos: Repo[] }) {
+  type StoredAgent = {
+    id: string;
+    name: string;
+    role: string;
+    skills: string[];
+    color: string;
+    cli: string;
+    model: string;
+    system_prompt: string;
+    scope: string;
+    built_in: boolean;
+  };
+  const [items, setItems] = useState<StoredAgent[]>([]);
+  const load = () =>
+    invoke<any[]>("list_agents")
+      .then((rows) =>
+        setItems(
+          rows.map((r) => ({ ...r, skills: JSON.parse(r.skills || "[]") })),
+        ),
+      )
+      .catch(() => {});
+  useEffect(() => {
+    load();
+  }, []);
+  const edit = async (agent?: StoredAgent) => {
+    const values = await askModal(
+      agent ? "Edit agent" : "Create an agent",
+      [
+        {
+          id: "name",
+          label: "Agent name",
+          placeholder: "Release engineer",
+          value: agent?.name,
+        },
+        {
+          id: "role",
+          label: "Responsibility",
+          placeholder: "Describe exactly what this agent owns…",
+          value: agent?.role,
+          multiline: true,
+          maxLength: 1000,
+        },
+        {
+          id: "skills",
+          label: "Skills",
+          placeholder: "release, changelog, testing",
+          value: agent?.skills.join(", "),
+        },
+        {
+          id: "cli",
+          label: "CLI runtime",
+          value: agent?.cli || "codex",
+          options: ["claude", "codex", "kimi", "gemini"],
+        },
+        {
+          id: "model",
+          label: "Model",
+          value: agent?.model || "default",
+          options: [
+            "default",
+            "sonnet",
+            "opus",
+            "gpt-5-codex",
+            "gemini-2.5-pro",
+            "kimi-k2",
+          ],
+        },
+        {
+          id: "scope",
+          label: "Scope",
+          value: agent?.scope || "workspace",
+          options: ["workspace", ...repos.map((repo) => `repo:${repo.name}`)],
+        },
+      ],
+      "Give each agent one clear responsibility. This text is used as its execution instruction.",
+    );
+    if (!values?.name) return;
+    await invoke("save_agent", {
+      agent: {
+        id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name: values.name.trim(),
+        role: (values.role || "").slice(0, 1000),
+        skills: (values.skills || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+        system_prompt: (values.role || "").slice(0, 1000),
+        color: agent?.color || "#a98cff",
+        cli: values.cli || "codex",
+        model: values.model || "default",
+        scope: values.scope || "workspace",
+      },
+    }).catch(() => {});
+    load();
+  };
+  return (
+    <div className="agent-management">
+      <div className="sectionhead">
+        <div>
+          <h2>Agent team</h2>
+          <p>
+            Persistent specialists with one responsibility, a CLI runtime,
+            model, skills, and repository scope.
+          </p>
+        </div>
+        <button className="outline" onClick={() => edit()}>
+          <Plus size={14} /> Add agent
+        </button>
+      </div>
+      <div className="agent-config-grid">
+        {items.map((agent) => (
+          <div className="agent-config" key={agent.id}>
+            <div className="agent-config-top">
+              <b>{agent.name}</b>
+              <span className="tag blue">
+                {agent.built_in ? "Built-in" : "Custom"}
+              </span>
+            </div>
+            <p>{agent.role}</p>
+            <small>{agent.skills.join(" · ")}</small>
+            <footer>
+              <code>{agent.cli}</code>
+              <code>{agent.model}</code>
+              <code>{agent.scope}</code>
+              <button className="textbtn" onClick={() => edit(agent)}>
+                Edit
+              </button>
+            </footer>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function RepoChat({ repo, agents }: { repo: string; agents: Agent[] }) {
+  type Message = { id?: number; repo?: string; author: string; body: string; agent_ids?: string[] };
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [draft, setDraft] = useState("");
+  const [tagged, setTagged] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    invoke<Message[]>("list_thread_messages", { repo })
+      .then(setMessages)
+      .catch(() => setMessages([]));
+  }, [repo]);
+  useEffect(() => {
+    const stop = listen<Message>("wand://thread", (e) => {
+      if (e.payload.repo === repo)
+        setMessages((current) =>
+          current.some((m) => m.id === e.payload.id)
+            ? current
+            : [...current, e.payload],
+        );
+    });
+    return () => {
+      stop.then((fn) => fn());
+    };
+  }, [repo]);
+  const send = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    try {
+      const message = await invoke<Message>("create_thread_message", {
+        repo,
+        author: "You",
+        body,
+        agentIds: tagged,
+      });
+      setMessages((current) =>
+        current.some((m) => m.id === message.id)
+          ? current
+          : [...current, message],
+      );
+      setDraft("");
+      setTagged([]);
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+  return (
+    <div className="repo-chat">
+      <div className="chat-head">
+        <div>
+          <b>{repo} thread</b>
+          <small>Humans and agents · persisted locally</small>
+        </div>
+        <span className="live-dot" />
+      </div>
+      <div className="chat-messages">
+        {messages.length === 0 && (
+          <p className="chat-empty">Start the repository conversation.</p>
+        )}
+        {messages.map((m, i) => (
+          <div
+            className={"chat-message " + (m.author === "You" ? "mine" : "")}
+            key={m.id ?? i}
+          >
+            <small>{m.author}</small>
+            <p>{m.body}</p>
+            {m.agent_ids?.map((id) => <span className="tag purple" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
+          </div>
+        ))}
+      </div>
+      <div className="chat-compose">
+        <AgentMentionInput repo={repo} value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Message this repository… Type @ to tag an agent" />
+        <button onClick={send}>Send</button>
+      </div>
+      {error && <small className="chat-error">{error}</small>}
+    </div>
+  );
+}
+function AgentMentionInput({
+  repo,
+  value,
+  onChange,
+  agents,
+  tagged,
+  onTagged,
+  placeholder,
+}: {
+  repo: string;
+  value: string;
+  onChange: (value: string) => void;
+  agents: Agent[];
+  tagged: string[];
+  onTagged: (ids: string[]) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const available = agents.filter(
+    (agent) =>
+      !agent.scope ||
+      agent.scope === "workspace" ||
+      agent.scope === `repo:${repo}`,
+  );
+  const choose = (agent: Agent) => {
+    const at = value.lastIndexOf("@");
+    const next =
+      at >= 0
+        ? value.slice(0, at) + "@" + agent.name + " "
+        : value + "@" + agent.name + " ";
+    onChange(next);
+    onTagged(tagged.includes(agent.id) ? tagged : [...tagged, agent.id]);
+    setOpen(false);
+    setQuery("");
+  };
+  const update = (next: string) => {
+    onChange(next);
+    const at = next.lastIndexOf("@");
+    const fragment = at >= 0 ? next.slice(at + 1) : "";
+    setQuery(fragment);
+    setOpen(at >= 0 && !fragment.includes(" "));
+  };
+  return (
+    <div className="mention-composer">
+      <textarea
+        value={value}
+        onChange={(event) => update(event.target.value)}
+        placeholder={placeholder}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setOpen(false);
+        }}
+      />
+      {open && (
+        <div className="mention-menu">
+          {available
+            .filter((agent) =>
+              agent.name
+                .toLowerCase()
+                .replace(/\s+/g, "")
+                .includes(query.toLowerCase().replace(/\s+/g, "")),
+            )
+            .slice(0, 8)
+            .map((agent) => (
+              <button
+                type="button"
+                key={agent.id}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  choose(agent);
+                }}
+              >
+                <span
+                  className="mention-avatar"
+                  style={{ background: agent.color }}
+                >
+                  {agent.name[0]}
+                </span>
+                <span>
+                  <b>@{agent.name}</b>
+                  <small>{agent.role}</small>
+                </span>
+              </button>
+            ))}
+        </div>
+      )}
+      {tagged.length > 0 && (
+        <div className="mention-tags">
+          {tagged.map((id) => (
+            <span className="tag purple" key={id}>
+              @{agents.find((agent) => agent.id === id)?.name || id}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationPreferencesSection() {
+  type Prefs = {
+    provider: boolean;
+    agent: boolean;
+    task: boolean;
+    thread: boolean;
+  };
+  const defaults: Prefs = {
+    provider: true,
+    agent: true,
+    task: true,
+    thread: true,
+  };
+  const [prefs, setPrefs] = useState<Prefs>(() => ({
+    ...defaults,
+    ...JSON.parse(localStorage.getItem("wand.notification-prefs") || "{}"),
+  }));
+  const [saved, setSaved] = useState(false);
+  const toggle = (key: keyof Prefs) => {
+    const next = { ...prefs, [key]: !prefs[key] };
     setPrefs(next);
-    localStorage.setItem("wand.notification-prefs",JSON.stringify(next));
+    localStorage.setItem("wand.notification-prefs", JSON.stringify(next));
     setSaved(true);
-    setTimeout(()=>setSaved(false),1800);
+    setTimeout(() => setSaved(false), 1800);
   };
   return (
     <div className="settings-section notification-preferences-section">
       <div className="settings-section-head">
         <div>
-          <p className="eyebrow"><Bell size={14}/> NOTIFICATIONS</p>
+          <p className="eyebrow">
+            <Bell size={14} /> NOTIFICATIONS
+          </p>
           <h2>Notification Preferences</h2>
-          <p>Choose which categories trigger in-app toasts and native OS desktop notifications.</p>
+          <p>
+            Choose which categories trigger in-app toasts and native OS desktop
+            notifications.
+          </p>
         </div>
-        {saved&&<span className="tag green">Saved</span>}
+        {saved && <span className="tag green">Saved</span>}
       </div>
       <div className="notification-preferences-list">
         {[
-          ["provider","Provider updates","Pull request comments, activity sync, and repository events"],
-          ["agent","Agent handoffs & verification","Multi-agent chain transitions and background verifier results"],
-          ["task","Scheduled task runs","Cron triggers and automated scheduler execution updates"],
-          ["thread","Repository threads","Direct human and agent messages in local repo threads"]
-        ].map(([key,label,hint])=>(
+          [
+            "provider",
+            "Provider updates",
+            "Pull request comments, activity sync, and repository events",
+          ],
+          [
+            "agent",
+            "Agent handoffs & verification",
+            "Multi-agent chain transitions and background verifier results",
+          ],
+          [
+            "task",
+            "Scheduled task runs",
+            "Cron triggers and automated scheduler execution updates",
+          ],
+          [
+            "thread",
+            "Repository threads",
+            "Direct human and agent messages in local repo threads",
+          ],
+        ].map(([key, label, hint]) => (
           <label className="notification-setting" key={key}>
             <span>
               <b>{label}</b>
               <small>{hint}</small>
             </span>
-            <input type="checkbox" checked={prefs[key as keyof Prefs]} onChange={()=>toggle(key as keyof Prefs)}/>
+            <input
+              type="checkbox"
+              checked={prefs[key as keyof Prefs]}
+              onChange={() => toggle(key as keyof Prefs)}
+            />
           </label>
         ))}
       </div>
@@ -114,59 +2026,282 @@ function NotificationPreferencesSection(){
   );
 }
 
-function WhatsNewSection(){const features=[{title:'Typographic Identity & Magic Sparkles',desc:'Icon-free wordmark featuring metallic theme gradients and subtle magic sparkles on the letter d.',icon:Sparkles},{title:'Monaco Code & Git Diff Workspace',desc:'Integrated code editor and side-by-side Git diff viewer built right into your main workflow.',icon:Code2},{title:'Multi-Agent Execution Chains',desc:'Tag Planner, Builder, Reviewer, and Sentinel agents to hand off work automatically across local CLI runtimes.',icon:Bot},{title:'Local-First Privacy & OS Credentials',desc:'All repository activity stays on your machine with PAT tokens secured directly in native OS keychains.',icon:Zap}];return <div className="settings-section whats-new-section"><div className="settings-section-head"><div><p className="eyebrow"><Sparkles size={14}/> RELEASE HIGHLIGHTS</p><h2>What’s New in Wand</h2><p>Recent updates, enhancements, and feature highlights in your local workspace.</p></div><span className="tag green">v0.1.0 · Latest</span></div><div className="whats-new-grid">{features.map((f,i)=>{const Icon=f.icon;return <div className="whats-new-card" key={i}><div className="whats-new-icon"><Icon size={18}/></div><div><h3>{f.title}</h3><p>{f.desc}</p></div></div>})}</div></div>}
+function WhatsNewSection() {
+  const releases = [
+    {
+      version: "v0.1.0",
+      date: "August 2026",
+      badge: "Latest",
+      highlights: [
+        {
+          title: "Typographic Brand Identity & Magic Sparkles",
+          desc: "Sparkle W wordmark with a metallic theme gradient and subtle magic accents.",
+          icon: Sparkles,
+        },
+        {
+          title: "Settings & Preferences Modal Dialog",
+          desc: "Categorized settings modal dialog with dark/light mode controls, notification preferences, and section navigation.",
+          icon: Settings,
+        },
+        {
+          title: "Monaco Code & Git Diff Workspace",
+          desc: "Integrated code editor and side-by-side Git diff viewer built right into your main workflow.",
+          icon: Code2,
+        },
+      ],
+    },
+    {
+      version: "v0.0.9",
+      date: "July 2026",
+      highlights: [
+        {
+          title: "Multi-Agent Execution Chains",
+          desc: "Tag Planner, Builder, Reviewer, and Sentinel agents to hand off work automatically across local CLI runtimes.",
+          icon: Bot,
+        },
+        {
+          title: "Local-First Privacy & OS Keychains",
+          desc: "All repository activity stays on your machine with PAT tokens secured directly in native OS keychains.",
+          icon: Zap,
+        },
+      ],
+    },
+  ];
 
-function ThemeSection(){const [theme,setTheme]=useState(()=>localStorage.getItem('wand.theme')||'obsidian');const isLight=['daylight','paper','mint','lavender'].includes(theme);const choose=(name:string)=>{setTheme(name);document.body.dataset.theme=name;localStorage.setItem('wand.theme',name)};const setMode=(mode:'dark'|'light')=>{const defaultTheme=mode==='light'?'daylight':'obsidian';choose(defaultTheme)};return <div className="settings-section appearance-section"><div className="settings-section-head"><div><p className="eyebrow">APPEARANCE</p><h2>Theme & Color Mode</h2><p>Switch between Dark Mode and Light Mode or choose a custom accent palette.</p></div><span className="theme-current">{theme}</span></div><div className="mode-toggle-group"><button className={'mode-btn '+(!isLight?'active':'')} onClick={()=>setMode('dark')}><Moon size={16}/><span>Dark Mode</span></button><button className={'mode-btn '+(isLight?'active':'')} onClick={()=>setMode('light')}><Sun size={16}/><span>Light Mode</span></button></div><div className="theme-grid-container"><label className="theme-group-label">{isLight?'Light Accent Palettes':'Dark Accent Palettes'}</label><div className="theme-grid">{(isLight?['daylight','paper','mint','lavender']:['obsidian','aurora','amethyst','ember']).map(name=><button aria-label={name+' theme'} className={'theme-choice '+name+(theme===name?' active':'')} onClick={()=>choose(name)} key={name}><span/>{name}</button>)}</div></div></div>}
+  return (
+    <div className="settings-section whats-new-section">
+      <div className="settings-section-head">
+        <div>
+          <p className="eyebrow">
+            <Sparkles size={13} /> RELEASE TIMELINE
+          </p>
+          <h2>What’s New in Wand</h2>
+          <p>Chronological updates, enhancements, and feature highlights.</p>
+        </div>
+      </div>
+      <div className="whats-new-timeline">
+        {releases.map((rel, i) => (
+          <div className="timeline-release" key={rel.version}>
+            <div className="timeline-node">
+              <span className="node-dot" />
+              {i < releases.length - 1 && <span className="node-line" />}
+            </div>
+            <div className="timeline-content">
+              <div className="release-header">
+                <h3>{rel.version}</h3>
+                <span className="release-date">{rel.date}</span>
+                {rel.badge && <span className="tag green">{rel.badge}</span>}
+              </div>
+              <div className="release-highlights">
+                {rel.highlights.map((h, j) => {
+                  const Icon = h.icon;
+                  return (
+                    <div className="timeline-card" key={j}>
+                      <div className="timeline-icon">
+                        <Icon size={15} />
+                      </div>
+                      <div>
+                        <h4>{h.title}</h4>
+                        <p>{h.desc}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-function SettingsModal({onClose,repos,setRepos,initialTab}:{onClose:()=>void;repos:Repo[];setRepos:React.Dispatch<React.SetStateAction<Repo[]>>;initialTab?:string}){
-  const [tab,setTab]=useState<'appearance'|'workspace'|'providers'|'clis'|'agents'|'notifications'|'whats-new'>(initialTab as any||'appearance');
-  const [root,setRoot]=useState('');
+function ThemeSection() {
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("wand.theme") || "mint",
+  );
+  const isLight = ["daylight", "paper", "mint", "lavender"].includes(theme);
+  const choose = (name: string) => {
+    setTheme(name);
+    document.body.dataset.theme = name;
+    localStorage.setItem("wand.theme", name);
+  };
+  const setMode = (mode: "dark" | "light") => {
+    const defaultTheme = mode === "light" ? "daylight" : "obsidian";
+    choose(defaultTheme);
+  };
+  return (
+    <div className="settings-section appearance-section">
+      <div className="settings-section-head">
+        <div>
+          <p className="eyebrow">APPEARANCE</p>
+          <h2>Theme & Color Mode</h2>
+          <p>
+            Switch between Dark Mode and Light Mode or choose a custom accent
+            palette.
+          </p>
+        </div>
+        <span className="theme-current">{theme}</span>
+      </div>
+      <div className="mode-toggle-group">
+        <button
+          className={"mode-btn " + (!isLight ? "active" : "")}
+          onClick={() => setMode("dark")}
+        >
+          <Moon size={16} />
+          <span>Dark Mode</span>
+        </button>
+        <button
+          className={"mode-btn " + (isLight ? "active" : "")}
+          onClick={() => setMode("light")}
+        >
+          <Sun size={16} />
+          <span>Light Mode</span>
+        </button>
+      </div>
+      <div className="theme-grid-container">
+        <label className="theme-group-label">
+          {isLight ? "Light Accent Palettes" : "Dark Accent Palettes"}
+        </label>
+        <div className="theme-grid">
+          {(isLight
+            ? ["daylight", "paper", "mint", "lavender"]
+            : ["obsidian", "aurora", "amethyst", "ember"]
+          ).map((name) => (
+            <button
+              aria-label={name + " theme"}
+              className={
+                "theme-choice " + name + (theme === name ? " active" : "")
+              }
+              onClick={() => choose(name)}
+              key={name}
+            >
+              <span />
+              {name}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  useEffect(()=>{
-    invoke<string|null>('workspace_root').then(value=>{if(value)setRoot(value)}).catch(()=>{});
-    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose()};
-    window.addEventListener('keydown',key);
-    return()=>window.removeEventListener('keydown',key);
-  },[onClose]);
+function SettingsModal({
+  onClose,
+  repos,
+  setRepos,
+  initialTab,
+}: {
+  onClose: () => void;
+  repos: Repo[];
+  setRepos: React.Dispatch<React.SetStateAction<Repo[]>>;
+  initialTab?: string;
+}) {
+  const [tab, setTab] = useState<
+    | "appearance"
+    | "workspace"
+    | "providers"
+    | "clis"
+    | "agents"
+    | "notifications"
+    | "whats-new"
+  >((initialTab as any) || "appearance");
+  const [root, setRoot] = useState("");
 
-  const scan=async()=>{
-    const selected=await open({directory:true,multiple:false,title:'Choose your repositories folder'});
-    if(typeof selected!=='string')return;
-    const rows=await invoke<any[]>('scan_repositories',{rootPath:selected}).catch(()=>[]);
-    await invoke('save_workspace_root',{root:selected}).catch(()=>{});
+  useEffect(() => {
+    invoke<string | null>("workspace_root")
+      .then((value) => {
+        if (value) setRoot(value);
+      })
+      .catch(() => {});
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+
+  const scan = async () => {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose your repositories folder",
+    });
+    if (typeof selected !== "string") return;
+    const rows = await invoke<any[]>("scan_repositories", {
+      rootPath: selected,
+    }).catch(() => []);
+    await invoke("save_workspace_root", { root: selected }).catch(() => {});
     setRoot(selected);
-    if(rows.length)setRepos(rows.map(r=>({name:r.name,path:r.path,color:'#89b4fa',count:0})));
+    if (rows.length)
+      setRepos(
+        rows.map((r) => ({
+          name: r.name,
+          path: r.path,
+          color: "#89b4fa",
+          count: 0,
+        })),
+      );
   };
 
-  const tabs=[
-    {id:'appearance',label:'Appearance',icon:Sun},
-    {id:'workspace',label:'Workspace',icon:FolderGit2},
-    {id:'providers',label:'Providers',icon:Zap},
-    {id:'clis',label:'CLI Access',icon:TerminalSquare},
-    {id:'agents',label:'Agent Team',icon:Bot},
-    {id:'notifications',label:'Notifications',icon:Bell},
-    {id:'whats-new',label:'What’s New',icon:Sparkles}
+  const tabs = [
+    { id: "appearance", label: "Appearance", icon: Sun },
+    { id: "workspace", label: "Workspace", icon: FolderGit2 },
+    { id: "providers", label: "Providers", icon: Zap },
+    { id: "clis", label: "CLI Access", icon: TerminalSquare },
+    { id: "agents", label: "Agent Team", icon: Bot },
+    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "whats-new", label: "What’s New", icon: Sparkles },
   ] as const;
 
   return (
-    <div className="settings-modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <section className="settings-modal" role="dialog" aria-modal="true" aria-label="Wand Settings">
+    <div
+      className="settings-modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Wand Settings"
+      >
         <header className="settings-modal-header">
           <div>
-            <p className="eyebrow"><Settings size={13}/> WAND PREFERENCES</p>
+            <p className="eyebrow">
+              <Settings size={13} /> WAND PREFERENCES
+            </p>
             <h2>Settings</h2>
           </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close settings">×</button>
+          <button
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Close settings"
+          >
+            ×
+          </button>
         </header>
         <div className="settings-modal-body">
           <nav className="settings-modal-nav">
-            {tabs.map(t=>{
-              const Icon=t.icon;
+            {tabs.map((t) => {
+              const Icon = t.icon;
               return (
                 <React.Fragment key={t.id}>
-                  {t.id==='whats-new'&&<hr className="settings-nav-divider"/>}
-                  <button className={'settings-nav-item '+(tab===t.id?'active':'')+' '+(t.id==='whats-new'?'whats-new-nav':'')} onClick={()=>setTab(t.id)}>
-                    <Icon size={16}/>
+                  {t.id === "whats-new" && (
+                    <hr className="settings-nav-divider" />
+                  )}
+                  <button
+                    className={
+                      "settings-nav-item " +
+                      (tab === t.id ? "active" : "") +
+                      " " +
+                      (t.id === "whats-new" ? "whats-new-nav" : "")
+                    }
+                    onClick={() => setTab(t.id)}
+                  >
+                    <Icon size={16} />
                     <span>{t.label}</span>
                   </button>
                 </React.Fragment>
@@ -174,23 +2309,35 @@ function SettingsModal({onClose,repos,setRepos,initialTab}:{onClose:()=>void;rep
             })}
           </nav>
           <main className="settings-modal-content">
-            {tab==='appearance'&&<ThemeSection/>}
-            {tab==='workspace'&&(
+            {tab === "appearance" && <ThemeSection />}
+            {tab === "workspace" && (
               <div className="settingscard modal-card">
-                <div className="sectionhead"><div><h2>Repository workspace</h2><p>Local folder scanned for Git repositories.</p></div></div>
-                <p>{root||'Choose one folder and Wand will scan its immediate Git repositories.'}</p>
+                <div className="sectionhead">
+                  <div>
+                    <h2>Repository workspace</h2>
+                    <p>Local folder scanned for Git repositories.</p>
+                  </div>
+                </div>
+                <p>
+                  {root ||
+                    "Choose one folder and Wand will scan its immediate Git repositories."}
+                </p>
                 <div className="folder">
-                  <FolderGit2 size={18}/>
-                  <span>{repos.length} repositories in this local workspace</span>
-                  <button className="outline" onClick={scan}>Choose folder & scan</button>
+                  <FolderGit2 size={18} />
+                  <span>
+                    {repos.length} repositories in this local workspace
+                  </span>
+                  <button className="outline" onClick={scan}>
+                    Choose folder & scan
+                  </button>
                 </div>
               </div>
             )}
-            {tab==='providers'&&<ProviderAccess/>}
-            {tab==='clis'&&<CliManager/>}
-            {tab==='agents'&&<AgentManager repos={repos}/>}
-            {tab==='notifications'&&<NotificationPreferencesSection/>}
-            {tab==='whats-new'&&<WhatsNewSection/>}
+            {tab === "providers" && <ProviderAccess />}
+            {tab === "clis" && <CliManager />}
+            {tab === "agents" && <AgentManager repos={repos} />}
+            {tab === "notifications" && <NotificationPreferencesSection />}
+            {tab === "whats-new" && <WhatsNewSection />}
           </main>
         </div>
       </section>
@@ -198,13 +2345,430 @@ function SettingsModal({onClose,repos,setRepos,initialTab}:{onClose:()=>void;rep
   );
 }
 
-function AccountMenu({repos,setRepos}:{repos?:Repo[];setRepos?:React.Dispatch<React.SetStateAction<Repo[]>>}){const [open,setOpen]=useState(false);const [activeTab,setActiveTab]=useState<string|null>(null);useEffect(()=>{const close=(event:MouseEvent)=>{if(!(event.target as HTMLElement).closest(".account-menu"))setOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setOpen(false)};document.addEventListener("mousedown",close);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("mousedown",close);document.removeEventListener("keydown",escape)}},[]);const openModal=(tab:string)=>{setActiveTab(tab);setOpen(false)};return <div className="account-menu"><button className={"account-trigger "+(open?"open":"")} aria-label="Settings menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}><Settings size={16}/></button>{open&&<div className="account-dropdown" role="menu"><div className="account-heading"><strong>Settings</strong><small>Wand workspace</small></div><button role="menuitem" onClick={()=>openModal('appearance')}><Settings size={14}/> Preferences & Agents</button><button role="menuitem" onClick={()=>openModal('whats-new')}><Sparkles size={14}/> What’s new</button></div>}{activeTab&&repos&&setRepos&&<SettingsModal initialTab={activeTab} onClose={()=>setActiveTab(null)} repos={repos} setRepos={setRepos}/>}</div>}
-function ModalHost(){const [request,setRequest]=useState<ModalRequest|null>(null);const [values,setValues]=useState<Record<string,string>>({});useEffect(()=>{const open=(event:Event)=>{const next=(event as CustomEvent<ModalRequest>).detail;setValues(Object.fromEntries(next.fields.map(field=>[field.id,field.value??(field.check?'false':'' )])));setRequest(next)};const key=(event:KeyboardEvent)=>{if(event.key==='Escape'&&request){request.resolve(null);setRequest(null)}};window.addEventListener('wand:modal',open);document.addEventListener('keydown',key);return()=>{window.removeEventListener('wand:modal',open);document.removeEventListener('keydown',key)}},[request]);if(!request)return null;const finish=()=>{request.resolve(values);setRequest(null)};return <div className="wand-modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget){request.resolve(null);setRequest(null)}}}><section className="wand-modal" role="dialog" aria-modal="true" aria-labelledby="wand-modal-title"><div className="wand-modal-top"><div><p className="eyebrow">WAND / WORKFLOW</p><h2 id="wand-modal-title">{request.title}</h2>{request.description&&<p>{request.description}</p>}</div><button className="modal-close" onClick={()=>{request.resolve(null);setRequest(null)}}>×</button></div><div className="wand-modal-fields">{request.fields.map(field=>field.check?<label className="modal-check" key={field.id}><input type="checkbox" checked={values[field.id]==='true'} onChange={event=>setValues(current=>({...current,[field.id]:event.target.checked?'true':'false'}))}/><span>{field.label}</span></label>:<label className="modal-field" key={field.id}><span>{field.label}</span>{field.options?<select autoFocus={request.fields[0].id===field.id} value={values[field.id]||field.options[0]} onChange={event=>setValues(current=>({...current,[field.id]:event.target.value}))}>{field.options.map(option=><option key={option} value={option}>{option}</option>)}</select>:field.multiline?<textarea autoFocus={request.fields[0].id===field.id} maxLength={field.maxLength} value={values[field.id]||''} placeholder={field.placeholder} onChange={event=>setValues(current=>({...current,[field.id]:event.target.value}))}/>:<input autoFocus={request.fields[0].id===field.id} maxLength={field.maxLength} type={field.secret?'password':'text'} value={values[field.id]||''} placeholder={field.placeholder} onChange={event=>setValues(current=>({...current,[field.id]:event.target.value}))}/>}</label>)}</div><div className="wand-modal-actions"><button className="textbtn" onClick={()=>{request.resolve(null);setRequest(null)}}>Cancel</button><button className="primary" onClick={finish}>Continue</button></div></section></div>}
-function WindowChrome(){if(typeof window==='undefined'||!(window as any).__TAURI_INTERNALS__)return null;const appWindow=getCurrentWindow();return <div className="window-chrome" data-tauri-drag-region><div className="window-drag" data-tauri-drag-region onMouseDown={()=>appWindow.startDragging()}/><div className="window-controls"><button aria-label="Minimize Wand" onClick={()=>appWindow.minimize()}><Minus size={13}/></button><button aria-label="Maximize Wand" onClick={()=>appWindow.toggleMaximize()}><Square size={12}/></button><button className="window-close" aria-label="Close Wand" onClick={()=>appWindow.close()}><X size={13}/></button></div></div>}
-function BackgroundStatus(){const [status,setStatus]=useState('Starting background workers…');const [when,setWhen]=useState('');useEffect(()=>{const stop=listen<{message:string;timestamp:string}>('wand://sync',event=>{setStatus(event.payload.message);setWhen(new Date(event.payload.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))});return()=>{stop.then(unsubscribe=>unsubscribe())}},[]);return <div className="background-status" title={status}><span className="background-dot"/><span>Background workers</span><small>{when?`Checked ${when}`:'Starting…'}</small></div>}
-function ProviderHealth(){const [error,setError]=useState('');useEffect(()=>{const stop=listen<any>('wand://provider',event=>{if(event.payload?.status==='error')setError(`${event.payload.provider}: ${event.payload.error}`)});return()=>{stop.then(unsubscribe=>unsubscribe())}},[]);if(!error)return null;return <button className="provider-health-error" onClick={()=>setError('')} title="Dismiss provider health warning"><span className="background-dot error"/><span>{error}</span><b>×</b></button>}
-function UpdateBanner(){const [update,setUpdate]=useState<any>(null);const [busy,setBusy]=useState(false);const [error,setError]=useState('');useEffect(()=>{check().then(value=>setUpdate(value||null)).catch(()=>{})},[]);if(!update)return null;const install=async()=>{try{setBusy(true);setError('');await update.downloadAndInstall();await relaunch()}catch(value){setBusy(false);setError(String(value))}};return <aside className="update-banner" aria-label="Wand update available"><div className="update-banner-icon"><Sparkles size={15}/></div><div className="update-banner-copy"><strong>Update available</strong><span>Wand {update.version}</span>{error&&<small>{error}</small>}</div><button onClick={install} disabled={busy}>{busy?'Installing…':'Update'}</button></aside>}
-function RuntimeIdentity(){useEffect(()=>{const apply=(name:string)=>{const clean=name.trim()||'there';document.querySelectorAll<HTMLElement>('.account-heading strong').forEach(node=>{node.textContent=clean})};invoke<string|null>('user_name').then(name=>apply(name||'')).catch(()=>{});const onName=(event:Event)=>apply((event as CustomEvent<string>).detail||'');window.addEventListener('wand:user-name',onName);return()=>window.removeEventListener('wand:user-name',onName)},[]);return null}
-function OnboardingGate(){const [show,setShow]=useState(()=>localStorage.getItem('wand.onboarding.complete')!=='true'); const finish=async(name:string)=>{await invoke('save_user_name',{name}).catch(()=>{});window.dispatchEvent(new CustomEvent('wand:user-name',{detail:name}));localStorage.setItem('wand.onboarding.complete','true');setShow(false)}; return <><App/><WindowChrome/><BackgroundStatus/><ProviderHealth/><UpdateBanner/><RuntimeIdentity/><ThemePicker/><AccountMenu/><ModalHost/>{show&&<Onboarding done={finish}/>}</>}
-createRoot(document.getElementById('root')!).render(<OnboardingGate/>);
-function ThemePicker(){const [theme,setTheme]=useState(()=>localStorage.getItem('wand.theme')||'obsidian'); useEffect(()=>{document.body.dataset.theme=theme;localStorage.setItem('wand.theme',theme)},[theme]); return <div className="theme-dock"><span className="theme-label">Appearance</span>{['obsidian','aurora','amethyst','ember','daylight','paper','mint','lavender'].map(name=><button aria-label={name+' theme'} className={'theme-choice '+name+(theme===name?' active':'')} onClick={()=>setTheme(name)} key={name}/>)}</div>}
+function AccountMenu({
+  repos,
+  setRepos,
+}: {
+  repos?: Repo[];
+  setRepos?: React.Dispatch<React.SetStateAction<Repo[]>>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest(".account-menu"))
+        setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
+  const openModal = (tab: string) => {
+    setActiveTab(tab);
+    setOpen(false);
+  };
+  return (
+    <div className="account-menu">
+      <button
+        className={"account-trigger " + (open ? "open" : "")}
+        aria-label="Settings menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Settings size={16} />
+      </button>
+      {open && (
+        <div className="account-dropdown" role="menu">
+          <div className="account-heading">
+            <strong>Settings</strong>
+            <small>Wand workspace</small>
+          </div>
+          <button role="menuitem" onClick={() => openModal("appearance")}>
+            <Settings size={14} /> Preferences & Agents
+          </button>
+          <button role="menuitem" onClick={() => openModal("whats-new")}>
+            <Sparkles size={14} /> What’s new
+          </button>
+        </div>
+      )}
+      {activeTab && repos && setRepos && (
+        <SettingsModal
+          initialTab={activeTab}
+          onClose={() => setActiveTab(null)}
+          repos={repos}
+          setRepos={setRepos}
+        />
+      )}
+    </div>
+  );
+}
+function ModalHost() {
+  const [request, setRequest] = useState<ModalRequest | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const open = (event: Event) => {
+      const next = (event as CustomEvent<ModalRequest>).detail;
+      setValues(
+        Object.fromEntries(
+          next.fields.map((field) => [
+            field.id,
+            field.value ?? (field.check ? "false" : ""),
+          ]),
+        ),
+      );
+      setRequest(next);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && request) {
+        request.resolve(null);
+        setRequest(null);
+      }
+    };
+    window.addEventListener("wand:modal", open);
+    document.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("wand:modal", open);
+      document.removeEventListener("keydown", key);
+    };
+  }, [request]);
+  if (!request) return null;
+  const finish = () => {
+    request.resolve(values);
+    setRequest(null);
+  };
+  return (
+    <div
+      className="wand-modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          request.resolve(null);
+          setRequest(null);
+        }
+      }}
+    >
+      <section
+        className="wand-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wand-modal-title"
+      >
+        <div className="wand-modal-top">
+          <div>
+            <p className="eyebrow">WAND / WORKFLOW</p>
+            <h2 id="wand-modal-title">{request.title}</h2>
+            {request.description && <p>{request.description}</p>}
+          </div>
+          <button
+            className="modal-close"
+            onClick={() => {
+              request.resolve(null);
+              setRequest(null);
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div className="wand-modal-fields">
+          {request.fields.map((field) =>
+            field.check ? (
+              <label className="modal-check" key={field.id}>
+                <input
+                  type="checkbox"
+                  checked={values[field.id] === "true"}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [field.id]: event.target.checked ? "true" : "false",
+                    }))
+                  }
+                />
+                <span>{field.label}</span>
+              </label>
+            ) : (
+              <label className="modal-field" key={field.id}>
+                <span>{field.label}</span>
+                {field.options ? (
+                  <select
+                    autoFocus={request.fields[0].id === field.id}
+                    value={values[field.id] || field.options[0]}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [field.id]: event.target.value,
+                      }))
+                    }
+                  >
+                    {field.options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ) : field.multiline ? (
+                  <textarea
+                    autoFocus={request.fields[0].id === field.id}
+                    maxLength={field.maxLength}
+                    value={values[field.id] || ""}
+                    placeholder={field.placeholder}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [field.id]: event.target.value,
+                      }))
+                    }
+                  />
+                ) : (
+                  <input
+                    autoFocus={request.fields[0].id === field.id}
+                    maxLength={field.maxLength}
+                    type={field.secret ? "password" : "text"}
+                    value={values[field.id] || ""}
+                    placeholder={field.placeholder}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [field.id]: event.target.value,
+                      }))
+                    }
+                  />
+                )}
+              </label>
+            ),
+          )}
+        </div>
+        <div className="wand-modal-actions">
+          <button
+            className="textbtn"
+            onClick={() => {
+              request.resolve(null);
+              setRequest(null);
+            }}
+          >
+            Cancel
+          </button>
+          <button className="primary" onClick={finish}>
+            Continue
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+function WindowChrome() {
+  if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
+    return null;
+  const isMac = navigator.platform.toLowerCase().includes("mac");
+  const appWindow = getCurrentWindow();
+  return (
+    <div className={"window-chrome" + (isMac ? " mac" : "")} data-tauri-drag-region>
+      <div
+        className="window-drag"
+        data-tauri-drag-region
+        onMouseDown={() => appWindow.startDragging()}
+      />
+      <div className="window-controls">
+        <button aria-label="Minimize Wand" onClick={() => appWindow.minimize()}>
+          <Minus size={13} />
+        </button>
+        <button
+          aria-label="Maximize Wand"
+          onClick={() => appWindow.toggleMaximize()}
+        >
+          <Square size={12} />
+        </button>
+        <button
+          className="window-close"
+          aria-label="Close Wand"
+          onClick={() => appWindow.close()}
+        >
+          <X size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+function BackgroundStatus() {
+  const [status, setStatus] = useState("Starting background workers…");
+  const [when, setWhen] = useState("");
+  useEffect(() => {
+    invoke<{ message: string; timestamp: string } | null>("background_status")
+      .then((event) => {
+        if (!event) return;
+        setStatus(event.message);
+        setWhen(
+          new Date(event.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        );
+      })
+      .catch(() => {});
+    const stop = listen<{ message: string; timestamp: string }>(
+      "wand://sync",
+      (event) => {
+        setStatus(event.payload.message);
+        setWhen(
+          new Date(event.payload.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        );
+      },
+    );
+    return () => {
+      stop.then((unsubscribe) => unsubscribe());
+    };
+  }, []);
+  return (
+    <div className="background-status" title={status}>
+      <span className="background-dot" />
+      <span>Background workers</span>
+      <small>{when ? `Checked ${when}` : "Starting…"}</small>
+    </div>
+  );
+}
+function ProviderHealth() {
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const stop = listen<any>("wand://provider", (event) => {
+      if (event.payload?.status === "error")
+        setError(`${event.payload.provider}: ${event.payload.error}`);
+    });
+    return () => {
+      stop.then((unsubscribe) => unsubscribe());
+    };
+  }, []);
+  if (!error) return null;
+  return (
+    <button
+      className="provider-health-error"
+      onClick={() => setError("")}
+      title="Dismiss provider health warning"
+    >
+      <span className="background-dot error" />
+      <span>{error}</span>
+      <b>×</b>
+    </button>
+  );
+}
+function UpdateBanner() {
+  const [update, setUpdate] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    check()
+      .then((value) => setUpdate(value || null))
+      .catch(() => {});
+  }, []);
+  if (!update) return null;
+  const install = async () => {
+    try {
+      setBusy(true);
+      setError("");
+      await update.downloadAndInstall();
+      await relaunch();
+    } catch (value) {
+      setBusy(false);
+      setError(String(value));
+    }
+  };
+  return (
+    <aside className="update-banner" aria-label="Wand update available">
+      <div className="update-banner-icon">
+        <Sparkles size={15} />
+      </div>
+      <div className="update-banner-copy">
+        <strong>Update available</strong>
+        <span>Wand {update.version}</span>
+        {error && <small>{error}</small>}
+      </div>
+      <button onClick={install} disabled={busy}>
+        {busy ? "Installing…" : "Update"}
+      </button>
+    </aside>
+  );
+}
+function RuntimeIdentity() {
+  useEffect(() => {
+    const apply = (name: string) => {
+      const clean = name.trim() || "there";
+      document
+        .querySelectorAll<HTMLElement>(".account-heading strong")
+        .forEach((node) => {
+          node.textContent = clean;
+        });
+    };
+    invoke<string | null>("user_name")
+      .then((name) => apply(name || ""))
+      .catch(() => {});
+    const onName = (event: Event) =>
+      apply((event as CustomEvent<string>).detail || "");
+    window.addEventListener("wand:user-name", onName);
+    return () => window.removeEventListener("wand:user-name", onName);
+  }, []);
+  return null;
+}
+function OnboardingGate() {
+  const [show, setShow] = useState(
+    () => localStorage.getItem("wand.onboarding.complete") !== "true",
+  );
+  const finish = async (name: string) => {
+    await invoke("save_user_name", { name }).catch(() => {});
+    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
+    localStorage.setItem("wand.onboarding.complete", "true");
+    setShow(false);
+  };
+  return (
+    <>
+      <App />
+      <WindowChrome />
+      <BackgroundStatus />
+      <ProviderHealth />
+      <UpdateBanner />
+      <RuntimeIdentity />
+      <ThemePicker />
+      <AccountMenu />
+      <ModalHost />
+      {show && <Onboarding done={finish} />}
+    </>
+  );
+}
+createRoot(document.getElementById("root")!).render(<OnboardingGate />);
+function ThemePicker() {
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("wand.theme") || "mint",
+  );
+  useEffect(() => {
+    document.body.dataset.theme = theme;
+    localStorage.setItem("wand.theme", theme);
+  }, [theme]);
+  return (
+    <div className="theme-dock">
+      <span className="theme-label">Appearance</span>
+      {[
+        "obsidian",
+        "aurora",
+        "amethyst",
+        "ember",
+        "daylight",
+        "paper",
+        "mint",
+        "lavender",
+      ].map((name) => (
+        <button
+          aria-label={name + " theme"}
+          className={"theme-choice " + name + (theme === name ? " active" : "")}
+          onClick={() => setTheme(name)}
+          key={name}
+        />
+      ))}
+    </div>
+  );
+}

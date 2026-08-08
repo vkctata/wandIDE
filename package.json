@@ -8,6 +8,10 @@
     "build": "tsc && vite build",
     "tauri": "tauri"
   },
+  "overrides": {
+    "dompurify": "3.4.13",
+    "esbuild": "0.25.0"
+  },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@tauri-apps/api": "^2.0.0",
@@ -16,7 +20,7 @@
     "@tauri-apps/plugin-process": "^2.2.0",
     "@tauri-apps/plugin-updater": "^2.3.0",
     "lucide-react": "^0.468.0",
-    "monaco-editor": "0.53.0",
+    "monaco-editor": "^0.56.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -26,6 +30,6 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "typescript": "^5.5.4",
-    "vite": "^5.4.2"
+    "vite": "^6.4.3"
   }
 }
