@@ -1092,6 +1092,15 @@ fn finish_run(
         }
     }
 }
+fn fail_task(db: &Arc<Mutex<Connection>>, task_id: &str, run_id: &Option<String>, error: &str) {
+    if let Ok(conn) = db.lock() {
+        let _ = conn.execute(
+            "UPDATE tasks SET status='failed' WHERE id=?1",
+            params![task_id],
+        );
+    }
+    finish_run(db, run_id, "failed", Some(error));
+}
 fn stored_agent_execution(conn: &Connection, agent_id: &str) -> Result<AgentExecution, String> {
     conn.query_row(
         "SELECT cli,model,role,skills FROM agents WHERE id=?1",
@@ -1223,7 +1232,7 @@ fn launch_chain_worker(
                 .and_then(|conn| stored_agent_execution(&conn, agent).ok());
             if config.is_none() {
                 let message = format!("Agent configuration is missing for '{agent}'");
-                finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                fail_task(&db_arc, &req.task_id, &req.run_id, &message);
                 let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
                 return;
             }
@@ -1237,7 +1246,7 @@ fn launch_chain_worker(
                 if !allowed.iter().any(|item| item == &stage_command) {
                     let message =
                         format!("CLI runtime '{stage_command}' is disabled in Wand settings");
-                    finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                    fail_task(&db_arc, &req.task_id, &req.run_id, &message);
                     let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
                     return;
                 }
@@ -2480,6 +2489,44 @@ mod tests {
         assert!(recurring_task_is_runnable("failed"));
         assert!(!recurring_task_is_runnable("running"));
         assert!(!recurring_task_is_runnable("completed"));
+    }
+
+    #[test]
+    fn early_chain_failure_marks_parent_task_and_run_failed() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('task-1','Task','repo','one-off','[]','running',?1)",
+            [Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES ('run-1','task-1',?1,'running')",
+            [Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+        let db = Arc::new(Mutex::new(conn));
+
+        fail_task(
+            &db,
+            "task-1",
+            &Some("run-1".into()),
+            "CLI runtime is disabled",
+        );
+
+        let conn = db.lock().unwrap();
+        let task_status: String = conn
+            .query_row("SELECT status FROM tasks WHERE id='task-1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let run_status: String = conn
+            .query_row("SELECT status FROM task_runs WHERE id='run-1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(task_status, "failed");
+        assert_eq!(run_status, "failed");
     }
 
     #[test]
