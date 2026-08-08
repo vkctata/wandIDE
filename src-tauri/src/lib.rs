@@ -1305,6 +1305,13 @@ fn finish_run(
         }
     }
 }
+fn emit_task_status(app: &AppHandle, task_id: &str, status: &str, error: Option<&str>) {
+    let mut payload = serde_json::json!({"task_id": task_id, "status": status});
+    if let Some(error) = error {
+        payload["error"] = serde_json::Value::String(error.to_string());
+    }
+    let _ = app.emit("wand://task", payload);
+}
 fn begin_task_run(conn: &Connection, task_id: &str) -> rusqlite::Result<bool> {
     conn.execute(
         "UPDATE tasks SET status='running' WHERE id=?1 AND status != 'cancelled'",
@@ -1421,6 +1428,7 @@ fn launch_chain_worker(
         };
         if cancelled_before_start {
             finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
+            emit_task_status(&app, &req.task_id, "cancelled", Some("Cancelled by user"));
             let _ = app.emit(
                 "wand://agent",
                 serde_json::json!({"task_id":req.task_id,"status":"cancelled","error":"Cancelled by user"}),
@@ -1455,6 +1463,7 @@ fn launch_chain_worker(
                 .unwrap_or(false);
             if cancelled {
                 finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
+                emit_task_status(&app, &req.task_id, "cancelled", Some("Cancelled by user"));
                 let _ = app.emit(
                     "wand://agent",
                     serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"cancelled"}),
@@ -1471,6 +1480,7 @@ fn launch_chain_worker(
                     "CLI runtime '{stage_command}' is no longer installed on this machine"
                 );
                 finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                emit_task_status(&app, &req.task_id, "failed", Some(&message));
                 let _ = app.emit(
                     "wand://agent",
                     serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
@@ -1483,6 +1493,7 @@ fn launch_chain_worker(
                     let message =
                         format!("CLI runtime '{stage_command}' is disabled in Wand settings");
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                    emit_task_status(&app, &req.task_id, "failed", Some(&message));
                     let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
                     return;
                 }
@@ -1491,6 +1502,7 @@ fn launch_chain_worker(
                         "CLI runtime '{stage_command}' is no longer installed on this machine"
                     );
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                    emit_task_status(&app, &req.task_id, "failed", Some(&message));
                     let _ = app.emit(
                         "wand://agent",
                         serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
@@ -1593,6 +1605,7 @@ fn launch_chain_worker(
                         );
                     }
                     finish_run(&db_arc, &req.run_id, "failed", Some(&error));
+                    emit_task_status(&app, &req.task_id, "failed", Some(&error));
                     let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));
                     return;
                 }
@@ -1613,6 +1626,19 @@ fn launch_chain_worker(
             );
         }
         finish_run(&db_arc, &req.run_id, "completed", None);
+        let final_status = db_arc
+            .lock()
+            .ok()
+            .and_then(|conn| {
+                conn.query_row(
+                    "SELECT status FROM tasks WHERE id=?1",
+                    params![req.task_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok()
+            })
+            .unwrap_or_else(|| "completed".into());
+        emit_task_status(&app, &req.task_id, &final_status, None);
     });
 }
 fn parse_cron(expr: &str) -> Result<Schedule, String> {
