@@ -2386,7 +2386,11 @@ fn background_status(db: State<Db>) -> Result<Option<SyncEvent>, String> {
     )
     .optional()
     .map_err(|e| e.to_string())
-    .map(|value| va#[tauri::command]\nfn local_hour() -> u32 {\n    chrono::Local::now().hour()\n}\nlue.flatten())
+    .map(|value| value.flatten())
+}
+#[tauri::command]
+fn local_hour() -> u32 {
+    chrono::Local::now().hour()
 }
 #[tauri::command]
 fn workspace_setting(key: String, db: State<Db>) -> Result<Option<String>, String> {
