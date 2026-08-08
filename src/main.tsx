@@ -1029,6 +1029,13 @@ function Agent({
   );
 }
 function CodeWorkspace({ repo }: { repo: Repo }) {
+  const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">(() =>
+    ["daylight", "paper", "mint", "lavender"].includes(
+      document.body.dataset.theme || "mint",
+    )
+      ? "vs"
+      : "vs-dark",
+  );
   const [path, setPath] = useState("README.md");
   const [draftPath, setDraftPath] = useState("README.md");
   const [content, setContent] = useState("");
@@ -1036,6 +1043,19 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
   const [mode, setMode] = useState<"file" | "diff">("file");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    const lightThemes = new Set(["daylight", "paper", "mint", "lavender"]);
+    const sync = () =>
+      setEditorTheme(
+        lightThemes.has(document.body.dataset.theme || "mint")
+          ? "vs"
+          : "vs-dark",
+      );
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
   const load = async () => {
     try {
       setError("");
@@ -1130,7 +1150,7 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
           {mode === "file" ? (
             <LazyEditor
               height="100%"
-              theme="vs-dark"
+              theme={editorTheme}
               language={language}
               value={content}
               onChange={(value) => setContent(value || "")}
@@ -1144,7 +1164,7 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
           ) : (
             <LazyDiffEditor
               height="100%"
-              theme="vs-dark"
+                theme={editorTheme}
               language={language}
               original={original}
               modified={content}
