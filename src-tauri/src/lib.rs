@@ -1231,6 +1231,72 @@ fn validate_azure_org_url(raw: &str) -> Result<String, String> {
     }
     Ok(value.to_string())
 }
+
+fn provider_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("Wand/0.1")
+        .build()
+        .map_err(|error| format!("Unable to configure provider HTTP client: {error}"))
+}
+
+fn validate_github_repo(raw: &str) -> Result<String, String> {
+    let value = raw.trim();
+    let mut parts = value.split('/');
+    let owner = parts.next().unwrap_or_default();
+    let repo = parts.next().unwrap_or_default();
+    if parts.next().is_some()
+        || owner.is_empty()
+        || repo.is_empty()
+        || owner.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
+        || repo.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
+    {
+        return Err("GitHub repository must use the owner/repository form".into());
+    }
+    Ok(value.to_string())
+}
+
+#[tauri::command]
+async fn github_pull_request_action(
+    repo: String,
+    pull_number: u64,
+    action: String,
+    body: Option<String>,
+) -> Result<String, String> {
+    if pull_number == 0 {
+        return Err("Pull request number must be greater than zero".into());
+    }
+    let repo = validate_github_repo(&repo)?;
+    let action = action.trim().to_ascii_lowercase();
+    let token = provider_token("github").await?;
+    let client = provider_http_client()?;
+    let endpoint = match action.as_str() {
+        "comment" => format!("https://api.github.com/repos/{repo}/issues/{pull_number}/comments"),
+        "approve" => format!("https://api.github.com/repos/{repo}/pulls/{pull_number}/reviews"),
+        _ => return Err("Unsupported GitHub pull-request action".into()),
+    };
+    let payload = if action == "approve" {
+        serde_json::json!({"event":"APPROVE","body":body.unwrap_or_default()})
+    } else {
+        let text = body.unwrap_or_default();
+        if text.trim().is_empty() {
+            return Err("A comment cannot be empty".into());
+        }
+        serde_json::json!({"body":text})
+    };
+    let response = client
+        .post(endpoint)
+        .bearer_auth(token)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("GitHub returned {}", response.status()));
+    }
+    Ok(format!("GitHub pull request action completed: {action}"))
+}
 #[tauri::command]
 async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRepo>, String> {
     let token = provider_token("github").await?;
@@ -1633,7 +1699,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn run_agent_cli(
