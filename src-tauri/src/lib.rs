@@ -1370,6 +1370,9 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
                 .send()
                 .await
                 .map_err(|e| e.to_string())?;
+            if !issue_response.status().is_success() {
+                continue;
+            }
             let issue: serde_json::Value = issue_response.json().await.unwrap_or_default();
             if issue["pull_request"].is_null() {
                 continue;
@@ -1465,6 +1468,9 @@ async fn sync_azure_activity(
             continue;
         }
         let threads=client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await.map_err(|e|e.to_string())?;
+        if !threads.status().is_success() {
+            continue;
+        }
         let payload: serde_json::Value = threads.json().await.unwrap_or_default();
         for thread in payload["value"].as_array().cloned().unwrap_or_default() {
             for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
@@ -1600,6 +1606,9 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
             continue;
         }
         let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(_)=>continue};
+        if !response.status().is_success() {
+            continue;
+        }
         let threads: serde_json::Value = match response.json().await {
             Ok(value) => value,
             Err(_) => continue,
