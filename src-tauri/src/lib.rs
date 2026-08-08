@@ -2,6 +2,7 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, sync::{Arc, Mutex}, thread, time::Duration};
+use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Serialize)] struct CliResult { ok: bool, message: String }
 struct Db(Arc<Mutex<Connection>>);
@@ -18,6 +19,10 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(),String> { let conn=db.
 
 #[tauri::command]
 fn list_tasks(db: State<Db>) -> Result<Vec<TaskRow>,String> { let conn=db.0.lock().map_err(|e|e.to_string())?; let mut stmt=conn.prepare("SELECT id,name,repo,cron,agents,status FROM tasks ORDER BY created_at DESC").map_err(|e|e.to_string())?; let rows=stmt.query_map([],|r|Ok(TaskRow{id:r.get(0)?,name:r.get(1)?,repo:r.get(2)?,cron:r.get(3)?,agents:r.get(4)?,status:r.get(5)?})).map_err(|e|e.to_string())?; rows.map(|r|r.map_err(|e|e.to_string())).collect() }
+
+#[derive(Serialize)] struct CliStatus { id:String, name:String, command:String, installed:bool, version:String }
+#[tauri::command]
+fn detect_clis() -> Vec<CliStatus> { let specs=[("claude","Claude","claude"),("codex","Codex","codex"),("kimi","Kimi","kimi"),("gemini","Gemini CLI","gemini")]; specs.iter().map(|(id,name,cmd)|{let path=Command::new("sh").args(["-lc",&format!("command -v {cmd}")]).output().ok().filter(|o|o.status.success()).map(|o|String::from_utf8_lossy(&o.stdout).trim().to_string()); let version=Command::new(cmd).arg("--version").output().ok().map(|o|String::from_utf8_lossy(&o.stdout).lines().next().unwrap_or("").to_string()).unwrap_or_default(); CliStatus{id:id.to_string(),name:name.to_string(),command:cmd.to_string(),installed:path.is_some(),version}}).collect() }
 #[derive(Clone, Serialize)]
 struct SyncEvent { source: String, message: String, timestamp: String }
 
@@ -29,4 +34,4 @@ fn start_background_sync(app: AppHandle) {
   });
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); app.manage(Db(Arc::new(Mutex::new(conn)))); start_background_sync(app.handle().clone()); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,create_task,list_tasks]).run(tauri::generate_context!()).expect("error while running wand"); }
+pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); app.manage(Db(Arc::new(Mutex::new(conn)))); start_background_sync(app.handle().clone()); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,create_task,list_tasks,detect_clis]).run(tauri::generate_context!()).expect("error while running wand"); }
