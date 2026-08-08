@@ -1649,6 +1649,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     built_in: boolean;
   };
   const [items, setItems] = useState<StoredAgent[]>([]);
+  const [workflowMessage, setWorkflowMessage] = useState("");
   const load = () =>
     invoke<any[]>("list_agents")
       .then((rows) =>
@@ -1660,6 +1661,27 @@ function AgentManager({ repos }: { repos: Repo[] }) {
   useEffect(() => {
     load();
   }, []);
+  const importWorkflow = async () => {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      title: "Import a Wand agent workflow",
+      filters: [{ name: "Wand workflow", extensions: ["json"] }],
+    });
+    if (typeof selected !== "string") return;
+    try {
+      const result = await invoke<{ name: string; agents_imported: number; steps: string[] }>(
+        "import_agent_workflow",
+        { path: selected },
+      );
+      setWorkflowMessage(
+        `Imported ${result.name}: ${result.agents_imported} agent${result.agents_imported === 1 ? "" : "s"}${result.steps.length ? ` · ${result.steps.length}-step workflow` : ""}.`,
+      );
+      load();
+    } catch (error) {
+      setWorkflowMessage(String(error));
+    }
+  };
   const edit = async (agent?: StoredAgent) => {
     const values = await askModal(
       agent ? "Edit agent" : "Create an agent",
@@ -1744,7 +1766,11 @@ function AgentManager({ repos }: { repos: Repo[] }) {
         <button className="outline" onClick={() => edit()}>
           <Plus size={14} /> Add agent
         </button>
+        <button className="outline" onClick={importWorkflow}>
+          Import workflow
+        </button>
       </div>
+      {workflowMessage && <p className="provider-message">{workflowMessage}</p>}
       <div className="agent-config-grid">
         {items.map((agent) => (
           <div className="agent-config" key={agent.id}>
