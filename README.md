@@ -18,7 +18,7 @@ The current build provides the desktop-ready product foundation:
   - Code reviewer
   - Sentinel verifier
   - Docs writer
-- Task creation with agent tagging and ordered handoff chains; each stage uses its configured CLI and model
+- Task creation with agent tagging and ordered handoff chains; each stage uses its persisted CLI, model, responsibility, and skills configuration
 - Configurable agent responsibilities (textarea, capped at 1,000 characters), supported CLI runtimes, model choices, skills, and repository scopes; every agent can be edited after creation
 - Repository-scoped agents created automatically when local repositories are scanned
 - Scheduled task execution with five- and seven-field cron expressions, durable run history, and background Rust scheduling
@@ -217,10 +217,13 @@ also reports native OS permission state and can request permission explicitly.
 
 The browser shell keeps a small local-storage fallback for development. The desktop runtime persists repositories, tasks, events, threads, notifications, agents, provider settings, and task runs in SQLite through Tauri, while secrets remain in the OS credential manager.
 
-## Remaining roadmap
+## Current focus
 
-1. Expand provider actions with Azure DevOps approval support and richer review workflows.
-2. Audit further runtime footprint and optional editor loading for smaller packaged installs.
+Wand’s core desktop workflow is implemented: local repositories, persisted agent
+teams, CLI-backed handoffs, background verification, scheduled runs, provider
+sync, threads, notifications, and guarded code review flows. Future work will
+focus on deeper provider coverage, richer review automation, and continued
+runtime performance improvements.
 
 ## License
 
