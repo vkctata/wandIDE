@@ -11,8 +11,14 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import Editor, { DiffEditor, loader } from "@monaco-editor/react";
-import * as monaco from "monaco-editor";
+const LazyEditor = React.lazy(async () => {
+  const module = await import("./editor");
+  return { default: module.CodeEditor };
+});
+const LazyDiffEditor = React.lazy(async () => {
+  const module = await import("./editor");
+  return { default: module.CodeDiffEditor };
+});
 import {
   Activity,
   Bell,
@@ -55,10 +61,6 @@ import "./responsive-fix.css";
 import "./premium-plus.css";
 import "./threads.css";
 import "./native-ui.css";
-
-// Keep the editor self-contained in packaged builds. The default Monaco
-// loader points at jsDelivr, which is inappropriate for a local-first IDE.
-loader.config({ monaco });
 
 const isTauriRuntime = () =>
   typeof window !== "undefined" &&
@@ -1049,8 +1051,9 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
         </div>
       ) : (
         <div className="editor-shell">
+          <React.Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
           {mode === "file" ? (
-            <Editor
+            <LazyEditor
               height="100%"
               theme="vs-dark"
               language={language}
@@ -1064,7 +1067,7 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
               }}
             />
           ) : (
-            <DiffEditor
+            <LazyDiffEditor
               height="100%"
               theme="vs-dark"
               language={language}
@@ -1078,6 +1081,7 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
               }}
             />
           )}
+          </React.Suspense>
         </div>
       )}
     </section>
