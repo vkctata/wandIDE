@@ -2,106 +2,1129 @@ use chrono::Utc;
 use cron::Schedule;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, path::PathBuf, sync::{Arc, Mutex}, thread, time::Duration, str::FromStr};
 use std::process::Command;
+use std::{
+    collections::HashMap,
+    fs,
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 use tauri::{AppHandle, Emitter, Manager, State};
-#[derive(Serialize)] struct CliResult { ok: bool, message: String }
+#[derive(Serialize)]
+struct CliResult {
+    ok: bool,
+    message: String,
+}
 struct Db(Arc<Mutex<Connection>>);
-#[derive(Serialize)] struct TaskRow { id:String, name:String, repo:String, cron:String, agents:String, status:String }
-#[derive(Deserialize)] struct NewTask { id:String, name:String, repo:String, cron:String, agents:Vec<String> }
+#[derive(Serialize)]
+struct TaskRow {
+    id: String,
+    name: String,
+    repo: String,
+    cron: String,
+    agents: String,
+    status: String,
+}
+#[derive(Deserialize)]
+struct NewTask {
+    id: String,
+    name: String,
+    repo: String,
+    cron: String,
+    agents: Vec<String>,
+}
 
-fn migrate(conn: &Connection) -> rusqlite::Result<()> { let _=conn.execute("ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",[]); let _=conn.execute("ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT 'default'",[]); let _=conn.execute("ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",[]); conn.execute_batch(r#"PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo TEXT NOT NULL, cron TEXT NOT NULL, agents TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS repos (name TEXT PRIMARY KEY, path TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'local'); CREATE TABLE IF NOT EXISTS thread_messages (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_thread_messages_repo ON thread_messages(repo, created_at); CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, provider TEXT NOT NULL, repo TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT NOT NULL, author TEXT NOT NULL, unread INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC); CREATE TABLE IF NOT EXISTS provider_settings (provider TEXT PRIMARY KEY, url TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS task_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, scheduled_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, status TEXT NOT NULL, error TEXT, UNIQUE(task_id,scheduled_at)); CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0, cli TEXT NOT NULL DEFAULT 'codex', model TEXT NOT NULL DEFAULT 'default', scope TEXT NOT NULL DEFAULT 'workspace'); INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES ('planner','Planner','Breaks work into executable slices','["planning","repo analysis"]','#a98cff',1,'codex','default','workspace'),('builder','Builder','Implements features and fixes','["typescript","rust","testing"]','#76c6f5',1,'codex','default','workspace'),('reviewer','Code reviewer','Reviews changes and suggests fixes','["code review","security"]','#f9c86a',1,'codex','default','workspace'),('sentinel','Sentinel','Runs verification in the background','["ci","dependency audit","regression"]','#6fdaa0',1,'codex','default','workspace'),('docs','Docs writer','Keeps technical docs current','["documentation","changelog"]','#f38ba8',1,'codex','default','workspace');"#)?; let _=conn.execute("ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",[]); let _=conn.execute("ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT 'default'",[]); let _=conn.execute("ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",[]); Ok(()) }
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute(
+        "ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT 'default'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",
+        [],
+    );
+    conn.execute_batch(r#"PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo TEXT NOT NULL, cron TEXT NOT NULL, agents TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS repos (name TEXT PRIMARY KEY, path TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'local'); CREATE TABLE IF NOT EXISTS thread_messages (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_thread_messages_repo ON thread_messages(repo, created_at); CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, provider TEXT NOT NULL, repo TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT NOT NULL, author TEXT NOT NULL, unread INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC); CREATE TABLE IF NOT EXISTS provider_settings (provider TEXT PRIMARY KEY, url TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS task_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, scheduled_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, status TEXT NOT NULL, error TEXT, UNIQUE(task_id,scheduled_at)); CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0, cli TEXT NOT NULL DEFAULT 'codex', model TEXT NOT NULL DEFAULT 'default', scope TEXT NOT NULL DEFAULT 'workspace'); INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES ('planner','Planner','Breaks work into executable slices','["planning","repo analysis"]','#a98cff',1,'codex','default','workspace'),('builder','Builder','Implements features and fixes','["typescript","rust","testing"]','#76c6f5',1,'codex','default','workspace'),('reviewer','Code reviewer','Reviews changes and suggests fixes','["code review","security"]','#f9c86a',1,'codex','default','workspace'),('sentinel','Sentinel','Runs verification in the background','["ci","dependency audit","regression"]','#6fdaa0',1,'codex','default','workspace'),('docs','Docs writer','Keeps technical docs current','["documentation","changelog"]','#f38ba8',1,'codex','default','workspace');"#)?;
+    let _ = conn.execute(
+        "ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT 'default'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",
+        [],
+    );
+    Ok(())
+}
 
-#[derive(Serialize)] struct FileVersions { original:String, modified:String }
+#[derive(Serialize)]
+struct FileVersions {
+    original: String,
+    modified: String,
+}
 #[tauri::command]
-fn git_file_versions(repo_path:String, relative_path:String)->Result<FileVersions,String>{let root=std::path::Path::new(&repo_path).canonicalize().map_err(|e|e.to_string())?; let target=root.join(&relative_path).canonicalize().map_err(|e|e.to_string())?; if !target.starts_with(&root){return Err("File is outside the selected repository".into())} let modified=fs::read_to_string(&target).map_err(|e|e.to_string())?; let original=Command::new("git").current_dir(&root).args(["show",&format!("HEAD:{relative_path}")]).output().map_err(|e|e.to_string())?; Ok(FileVersions{original:String::from_utf8_lossy(&original.stdout).to_string(),modified})}
-#[derive(Serialize)] struct ScannedRepo { name:String, path:String, provider:String, url:String }
+fn git_file_versions(repo_path: String, relative_path: String) -> Result<FileVersions, String> {
+    let root = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let target = root
+        .join(&relative_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !target.starts_with(&root) {
+        return Err("File is outside the selected repository".into());
+    }
+    let modified = fs::read_to_string(&target).map_err(|e| e.to_string())?;
+    let original = Command::new("git")
+        .current_dir(&root)
+        .args(["show", &format!("HEAD:{relative_path}")])
+        .output()
+        .map_err(|e| e.to_string())?;
+    Ok(FileVersions {
+        original: String::from_utf8_lossy(&original.stdout).to_string(),
+        modified,
+    })
+}
+#[derive(Serialize)]
+struct ScannedRepo {
+    name: String,
+    path: String,
+    provider: String,
+    url: String,
+}
 #[tauri::command]
-fn scan_repositories(root_path:String, db:State<Db>)->Result<Vec<ScannedRepo>,String>{let root=std::path::Path::new(&root_path).canonicalize().map_err(|e|e.to_string())?; let conn=db.0.lock().map_err(|e|e.to_string())?; let mut found=Vec::new(); for entry in fs::read_dir(&root).map_err(|e|e.to_string())?{let entry=entry.map_err(|e|e.to_string())?; let path=entry.path(); if !path.is_dir()||!path.join(".git").exists(){continue} let name=path.file_name().and_then(|x|x.to_str()).unwrap_or_default().to_string(); if name.is_empty(){continue} let path_string=path.to_string_lossy().to_string(); conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'local')",params![name,path_string]).map_err(|e|e.to_string())?; let agent_id=format!("repo:{}:engineer",name); let agent_name=format!("{} engineer",name); conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,'Repository-scoped software engineer','[\"repo analysis\",\"implementation\",\"testing\"]','#76c6f5',0,'codex','default',?3)",params![agent_id,agent_name,format!("repo:{}",name)]).map_err(|e|e.to_string())?; found.push(ScannedRepo{name,path:path_string,provider:"local".into(),url:String::new()});} Ok(found)}
+fn scan_repositories(root_path: String, db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
+    let root = std::path::Path::new(&root_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut found = Vec::new();
+    for entry in fs::read_dir(&root).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if !path.is_dir() || !path.join(".git").exists() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|x| x.to_str())
+            .unwrap_or_default()
+            .to_string();
+        if name.is_empty() {
+            continue;
+        }
+        let path_string = path.to_string_lossy().to_string();
+        conn.execute(
+            "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'local')",
+            params![name, path_string],
+        )
+        .map_err(|e| e.to_string())?;
+        let agent_id = format!("repo:{}:engineer", name);
+        let agent_name = format!("{} engineer", name);
+        conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,'Repository-scoped software engineer','[\"repo analysis\",\"implementation\",\"testing\"]','#76c6f5',0,'codex','default',?3)",params![agent_id,agent_name,format!("repo:{}",name)]).map_err(|e|e.to_string())?;
+        found.push(ScannedRepo {
+            name,
+            path: path_string,
+            provider: "local".into(),
+            url: String::new(),
+        });
+    }
+    Ok(found)
+}
 #[tauri::command]
-fn save_repository(name:String, path:String, db:State<Db>)->Result<ScannedRepo,String>{let name=name.trim().to_string();let root=std::path::Path::new(path.trim()).canonicalize().map_err(|e|e.to_string())?;if name.is_empty()||!root.is_dir(){return Err("A repository name and existing folder are required".into())}if !root.join(".git").exists(){return Err("The selected folder is not a Git repository".into())}let path_string=root.to_string_lossy().to_string();let conn=db.0.lock().map_err(|e|e.to_string())?;conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'local')",params![name,path_string]).map_err(|e|e.to_string())?;let agent_id=format!("repo:{}:engineer",name);let agent_name=format!("{} engineer",name);conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,'Repository-scoped software engineer','[\"repo analysis\",\"implementation\",\"testing\"]','#76c6f5',0,'codex','default',?3)",params![agent_id,agent_name,format!("repo:{}",name)]).map_err(|e|e.to_string())?;Ok(ScannedRepo{name,path:path_string,provider:"local".into(),url:String::new()})}
+fn save_repository(name: String, path: String, db: State<Db>) -> Result<ScannedRepo, String> {
+    let name = name.trim().to_string();
+    let root = std::path::Path::new(path.trim())
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if name.is_empty() || !root.is_dir() {
+        return Err("A repository name and existing folder are required".into());
+    }
+    if !root.join(".git").exists() {
+        return Err("The selected folder is not a Git repository".into());
+    }
+    let path_string = root.to_string_lossy().to_string();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'local')",
+        params![name, path_string],
+    )
+    .map_err(|e| e.to_string())?;
+    let agent_id = format!("repo:{}:engineer", name);
+    let agent_name = format!("{} engineer", name);
+    conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,'Repository-scoped software engineer','[\"repo analysis\",\"implementation\",\"testing\"]','#76c6f5',0,'codex','default',?3)",params![agent_id,agent_name,format!("repo:{}",name)]).map_err(|e|e.to_string())?;
+    Ok(ScannedRepo {
+        name,
+        path: path_string,
+        provider: "local".into(),
+        url: String::new(),
+    })
+}
 
 #[tauri::command]
-fn create_task(task: NewTask, db: State<Db>) -> Result<(),String> { if task.name.trim().is_empty(){return Err("Task name cannot be empty".into())} if task.repo.trim().is_empty(){return Err("A repository is required".into())} if task.cron.trim()!="one-off"{parse_cron(task.cron.trim()).map_err(|error|format!("Invalid cron expression: {error}"))?;} let conn=db.0.lock().map_err(|e|e.to_string())?; conn.execute("INSERT OR REPLACE INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES (?1,?2,?3,?4,?5,'queued',?6)",params![task.id,task.name.trim(),task.repo.trim(),task.cron.trim(),serde_json::to_string(&task.agents).map_err(|e|e.to_string())?,Utc::now().to_rfc3339()]).map_err(|e|e.to_string())?; Ok(()) }
+fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
+    if task.name.trim().is_empty() {
+        return Err("Task name cannot be empty".into());
+    }
+    if task.repo.trim().is_empty() {
+        return Err("A repository is required".into());
+    }
+    if task.cron.trim() != "one-off" {
+        parse_cron(task.cron.trim())
+            .map_err(|error| format!("Invalid cron expression: {error}"))?;
+    }
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("INSERT OR REPLACE INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES (?1,?2,?3,?4,?5,'queued',?6)",params![task.id,task.name.trim(),task.repo.trim(),task.cron.trim(),serde_json::to_string(&task.agents).map_err(|e|e.to_string())?,Utc::now().to_rfc3339()]).map_err(|e|e.to_string())?;
+    Ok(())
+}
 
 #[tauri::command]
-fn list_tasks(db: State<Db>) -> Result<Vec<TaskRow>,String> { let conn=db.0.lock().map_err(|e|e.to_string())?; let mut stmt=conn.prepare("SELECT id,name,repo,cron,agents,status FROM tasks ORDER BY created_at DESC").map_err(|e|e.to_string())?; let rows=stmt.query_map([],|r|Ok(TaskRow{id:r.get(0)?,name:r.get(1)?,repo:r.get(2)?,cron:r.get(3)?,agents:r.get(4)?,status:r.get(5)?})).map_err(|e|e.to_string())?; rows.map(|r|r.map_err(|e|e.to_string())).collect() }
-#[derive(Serialize)] struct AgentRow { id:String, name:String, role:String, skills:String, color:String, cli:String, model:String, system_prompt:String, scope:String, built_in:bool }
-#[derive(Deserialize)] struct NewAgent { id:String, name:String, role:String, skills:Vec<String>, color:String, cli:String, model:String, #[serde(default)] system_prompt:String, #[serde(default = "default_agent_scope")] scope:String }
-fn default_agent_scope()->String { "workspace".into() }
-fn ensure_agent_prompt(conn:&Connection)->rusqlite::Result<()> { let _=conn.execute("ALTER TABLE agents ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''",[]); conn.execute("UPDATE agents SET system_prompt=CASE id WHEN 'planner' THEN 'Break the request into small, verifiable steps. Inspect the repository before proposing work.' WHEN 'builder' THEN 'Implement the requested change carefully. Keep the diff focused and report tests run.' WHEN 'reviewer' THEN 'Review the complete change for correctness, security, regressions, and maintainability.' WHEN 'sentinel' THEN 'Verify the completed work independently. Run relevant checks and report concrete evidence.' WHEN 'docs' THEN 'Keep documentation accurate, concise, and aligned with the implementation.' ELSE system_prompt END WHERE system_prompt=''",[]).map(|_|()) }
-#[derive(Serialize)] struct TaskRunRow { id:String, task_id:String, scheduled_at:String, started_at:Option<String>, finished_at:Option<String>, status:String, error:Option<String> }
+fn list_tasks(db: State<Db>) -> Result<Vec<TaskRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT id,name,repo,cron,agents,status FROM tasks ORDER BY created_at DESC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(TaskRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                repo: r.get(2)?,
+                cron: r.get(3)?,
+                agents: r.get(4)?,
+                status: r.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
+#[derive(Serialize)]
+struct AgentRow {
+    id: String,
+    name: String,
+    role: String,
+    skills: String,
+    color: String,
+    cli: String,
+    model: String,
+    system_prompt: String,
+    scope: String,
+    built_in: bool,
+}
+#[derive(Deserialize)]
+struct NewAgent {
+    id: String,
+    name: String,
+    role: String,
+    skills: Vec<String>,
+    color: String,
+    cli: String,
+    model: String,
+    #[serde(default)]
+    system_prompt: String,
+    #[serde(default = "default_agent_scope")]
+    scope: String,
+}
+fn default_agent_scope() -> String {
+    "workspace".into()
+}
+fn ensure_agent_prompt(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute(
+        "ALTER TABLE agents ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''",
+        [],
+    );
+    conn.execute("UPDATE agents SET system_prompt=CASE id WHEN 'planner' THEN 'Break the request into small, verifiable steps. Inspect the repository before proposing work.' WHEN 'builder' THEN 'Implement the requested change carefully. Keep the diff focused and report tests run.' WHEN 'reviewer' THEN 'Review the complete change for correctness, security, regressions, and maintainability.' WHEN 'sentinel' THEN 'Verify the completed work independently. Run relevant checks and report concrete evidence.' WHEN 'docs' THEN 'Keep documentation accurate, concise, and aligned with the implementation.' ELSE system_prompt END WHERE system_prompt=''",[]).map(|_|())
+}
+#[derive(Serialize)]
+struct TaskRunRow {
+    id: String,
+    task_id: String,
+    scheduled_at: String,
+    started_at: Option<String>,
+    finished_at: Option<String>,
+    status: String,
+    error: Option<String>,
+}
 #[tauri::command]
-fn list_task_runs(limit:Option<i64>, db:State<Db>)->Result<Vec<TaskRunRow>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?;let amount=limit.unwrap_or(20).clamp(1,100);let mut stmt=conn.prepare("SELECT id,task_id,scheduled_at,started_at,finished_at,status,error FROM task_runs ORDER BY scheduled_at DESC LIMIT ?1").map_err(|e|e.to_string())?;let rows=stmt.query_map(params![amount],|r|Ok(TaskRunRow{id:r.get(0)?,task_id:r.get(1)?,scheduled_at:r.get(2)?,started_at:r.get(3)?,finished_at:r.get(4)?,status:r.get(5)?,error:r.get(6)?})).map_err(|e|e.to_string())?;rows.map(|r|r.map_err(|e|e.to_string())).collect()}
+fn list_task_runs(limit: Option<i64>, db: State<Db>) -> Result<Vec<TaskRunRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let amount = limit.unwrap_or(20).clamp(1, 100);
+    let mut stmt=conn.prepare("SELECT id,task_id,scheduled_at,started_at,finished_at,status,error FROM task_runs ORDER BY scheduled_at DESC LIMIT ?1").map_err(|e|e.to_string())?;
+    let rows = stmt
+        .query_map(params![amount], |r| {
+            Ok(TaskRunRow {
+                id: r.get(0)?,
+                task_id: r.get(1)?,
+                scheduled_at: r.get(2)?,
+                started_at: r.get(3)?,
+                finished_at: r.get(4)?,
+                status: r.get(5)?,
+                error: r.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
 #[tauri::command]
-fn list_agents(db:State<Db>)->Result<Vec<AgentRow>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?;ensure_agent_prompt(&conn).map_err(|e|e.to_string())?; let mut stmt=conn.prepare("SELECT id,name,role,skills,color,cli,model,system_prompt,scope,built_in FROM agents ORDER BY built_in DESC,name ASC").map_err(|e|e.to_string())?; let rows=stmt.query_map([],|r|Ok(AgentRow{id:r.get(0)?,name:r.get(1)?,role:r.get(2)?,skills:r.get(3)?,color:r.get(4)?,cli:r.get(5)?,model:r.get(6)?,system_prompt:r.get(7)?,scope:r.get(8)?,built_in:r.get::<_,i64>(9)?!=0})).map_err(|e|e.to_string())?; rows.map(|r|r.map_err(|e|e.to_string())).collect()}
+fn list_agents(db: State<Db>) -> Result<Vec<AgentRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_agent_prompt(&conn).map_err(|e| e.to_string())?;
+    let mut stmt=conn.prepare("SELECT id,name,role,skills,color,cli,model,system_prompt,scope,built_in FROM agents ORDER BY built_in DESC,name ASC").map_err(|e|e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(AgentRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                role: r.get(2)?,
+                skills: r.get(3)?,
+                color: r.get(4)?,
+                cli: r.get(5)?,
+                model: r.get(6)?,
+                system_prompt: r.get(7)?,
+                scope: r.get(8)?,
+                built_in: r.get::<_, i64>(9)? != 0,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
 #[tauri::command]
-fn save_agent(agent:NewAgent, db:State<Db>)->Result<(),String>{if agent.id.trim().is_empty()||agent.name.trim().is_empty(){return Err("Agent id and name are required".into())} let conn=db.0.lock().map_err(|e|e.to_string())?;ensure_agent_prompt(&conn).map_err(|e|e.to_string())?; conn.execute("INSERT OR REPLACE INTO agents(id,name,role,skills,color,cli,model,system_prompt,scope,built_in) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0)",params![agent.id,agent.name,agent.role,serde_json::to_string(&agent.skills).map_err(|e|e.to_string())?,agent.color,agent.cli,agent.model,agent.system_prompt,agent.scope]).map_err(|e|e.to_string())?; Ok(())}
+fn save_agent(agent: NewAgent, db: State<Db>) -> Result<(), String> {
+    if agent.id.trim().is_empty() || agent.name.trim().is_empty() {
+        return Err("Agent id and name are required".into());
+    }
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_agent_prompt(&conn).map_err(|e| e.to_string())?;
+    conn.execute("INSERT OR REPLACE INTO agents(id,name,role,skills,color,cli,model,system_prompt,scope,built_in) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0)",params![agent.id,agent.name,agent.role,serde_json::to_string(&agent.skills).map_err(|e|e.to_string())?,agent.color,agent.cli,agent.model,agent.system_prompt,agent.scope]).map_err(|e|e.to_string())?;
+    Ok(())
+}
 
-#[derive(Serialize)] struct ThreadMessage { id:i64, repo:String, author:String, body:String, created_at:String }
+#[derive(Serialize)]
+struct ThreadMessage {
+    id: i64,
+    repo: String,
+    author: String,
+    body: String,
+    created_at: String,
+}
 #[tauri::command]
-fn list_thread_messages(repo:String, db:State<Db>)->Result<Vec<ThreadMessage>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?; let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?; let rows=stmt.query_map(params![repo],|r|Ok(ThreadMessage{id:r.get(0)?,repo:r.get(1)?,author:r.get(2)?,body:r.get(3)?,created_at:r.get(4)?})).map_err(|e|e.to_string())?; rows.map(|r|r.map_err(|e|e.to_string())).collect()}
+fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?;
+    let rows = stmt
+        .query_map(params![repo], |r| {
+            Ok(ThreadMessage {
+                id: r.get(0)?,
+                repo: r.get(1)?,
+                author: r.get(2)?,
+                body: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
 #[tauri::command]
-fn create_thread_message(repo:String, author:String, body:String, db:State<Db>, app:AppHandle)->Result<ThreadMessage,String>{let body=body.trim().to_string(); if body.is_empty(){return Err("Message cannot be empty".into())} let created_at=Utc::now().to_rfc3339(); let conn=db.0.lock().map_err(|e|e.to_string())?; conn.execute("INSERT INTO thread_messages(repo,author,body,created_at) VALUES (?1,?2,?3,?4)",params![repo,author,body,created_at]).map_err(|e|e.to_string())?; let id=conn.last_insert_rowid(); let message=ThreadMessage{id,repo,author,body,created_at}; let _=app.emit("wand://thread",&message); Ok(message)}
+fn create_thread_message(
+    repo: String,
+    author: String,
+    body: String,
+    db: State<Db>,
+    app: AppHandle,
+) -> Result<ThreadMessage, String> {
+    let body = body.trim().to_string();
+    if body.is_empty() {
+        return Err("Message cannot be empty".into());
+    }
+    let created_at = Utc::now().to_rfc3339();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO thread_messages(repo,author,body,created_at) VALUES (?1,?2,?3,?4)",
+        params![repo, author, body, created_at],
+    )
+    .map_err(|e| e.to_string())?;
+    let id = conn.last_insert_rowid();
+    let message = ThreadMessage {
+        id,
+        repo,
+        author,
+        body,
+        created_at,
+    };
+    let _ = app.emit("wand://thread", &message);
+    Ok(message)
+}
 
-#[derive(Serialize)] struct NotificationRow { id:String, provider:String, repo:String, title:String, body:String, url:String, author:String, unread:bool, created_at:String }
+#[derive(Serialize)]
+struct NotificationRow {
+    id: String,
+    provider: String,
+    repo: String,
+    title: String,
+    body: String,
+    url: String,
+    author: String,
+    unread: bool,
+    created_at: String,
+}
 #[tauri::command]
-fn list_notifications(db:State<Db>)->Result<Vec<NotificationRow>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?; let mut stmt=conn.prepare("SELECT id,provider,repo,title,body,url,author,unread,created_at FROM notifications ORDER BY created_at DESC LIMIT 100").map_err(|e|e.to_string())?; let rows=stmt.query_map([],|r|Ok(NotificationRow{id:r.get(0)?,provider:r.get(1)?,repo:r.get(2)?,title:r.get(3)?,body:r.get(4)?,url:r.get(5)?,author:r.get(6)?,unread:r.get::<_,i64>(7)?!=0,created_at:r.get(8)?})).map_err(|e|e.to_string())?; rows.map(|r|r.map_err(|e|e.to_string())).collect()}
+fn list_notifications(db: State<Db>) -> Result<Vec<NotificationRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt=conn.prepare("SELECT id,provider,repo,title,body,url,author,unread,created_at FROM notifications ORDER BY created_at DESC LIMIT 100").map_err(|e|e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(NotificationRow {
+                id: r.get(0)?,
+                provider: r.get(1)?,
+                repo: r.get(2)?,
+                title: r.get(3)?,
+                body: r.get(4)?,
+                url: r.get(5)?,
+                author: r.get(6)?,
+                unread: r.get::<_, i64>(7)? != 0,
+                created_at: r.get(8)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
 #[tauri::command]
-fn mark_notifications_read(db:State<Db>)->Result<(),String>{let conn=db.0.lock().map_err(|e|e.to_string())?; conn.execute("UPDATE notifications SET unread=0",[]).map_err(|e|e.to_string())?; Ok(())}
+fn mark_notifications_read(db: State<Db>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("UPDATE notifications SET unread=0", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 
-#[derive(Serialize)] struct CliStatus { id:String, name:String, command:String, installed:bool, version:String }
+#[derive(Serialize)]
+struct CliStatus {
+    id: String,
+    name: String,
+    command: String,
+    installed: bool,
+    version: String,
+}
 #[tauri::command]
-fn detect_clis() -> Vec<CliStatus> { let specs=[("claude","Claude","claude"),("codex","Codex","codex"),("kimi","Kimi","kimi"),("gemini","Gemini CLI","gemini")]; specs.iter().map(|(id,name,cmd)|{let path=Command::new("sh").args(["-lc",&format!("command -v {cmd}")]).output().ok().filter(|o|o.status.success()).map(|o|String::from_utf8_lossy(&o.stdout).trim().to_string()); let version=Command::new(cmd).arg("--version").output().ok().map(|o|String::from_utf8_lossy(&o.stdout).lines().next().unwrap_or("").to_string()).unwrap_or_default(); CliStatus{id:id.to_string(),name:name.to_string(),command:cmd.to_string(),installed:path.is_some(),version}}).collect() }
-fn legacy_provider_service(provider:&str)->Result<&'static str,String>{match provider{"github"=>Ok("wand-github-pat"),"azure-devops"=>Ok("wand-azure-devops-pat"),_=>Err("Unsupported provider".into())}}
-fn installation_id()->Result<String,String>{let entry=keyring::Entry::new("wand-installation","id").map_err(|e|e.to_string())?; match entry.get_password(){Ok(value) if !value.trim().is_empty()=>Ok(value),_=>{let value=uuid::Uuid::new_v4().to_string();entry.set_password(&value).map_err(|e|e.to_string())?;Ok(value)}}}
-fn scoped_provider_service(base:&str, install:&str)->String{format!("{base}-{install}")}
-fn provider_service(provider:&str)->Result<String,String>{let base=legacy_provider_service(provider)?;let install=installation_id()?;Ok(scoped_provider_service(base,&install))}
+fn detect_clis() -> Vec<CliStatus> {
+    let specs = [
+        ("claude", "Claude", "claude"),
+        ("codex", "Codex", "codex"),
+        ("kimi", "Kimi", "kimi"),
+        ("gemini", "Gemini CLI", "gemini"),
+    ];
+    specs
+        .iter()
+        .map(|(id, name, cmd)| {
+            let path = Command::new("sh")
+                .args(["-lc", &format!("command -v {cmd}")])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+            let version = Command::new(cmd)
+                .arg("--version")
+                .output()
+                .ok()
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                })
+                .unwrap_or_default();
+            CliStatus {
+                id: id.to_string(),
+                name: name.to_string(),
+                command: cmd.to_string(),
+                installed: path.is_some(),
+                version,
+            }
+        })
+        .collect()
+}
+fn legacy_provider_service(provider: &str) -> Result<&'static str, String> {
+    match provider {
+        "github" => Ok("wand-github-pat"),
+        "azure-devops" => Ok("wand-azure-devops-pat"),
+        _ => Err("Unsupported provider".into()),
+    }
+}
+fn installation_id() -> Result<String, String> {
+    let entry = keyring::Entry::new("wand-installation", "id").map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(value) if !value.trim().is_empty() => Ok(value),
+        _ => {
+            let value = uuid::Uuid::new_v4().to_string();
+            entry.set_password(&value).map_err(|e| e.to_string())?;
+            Ok(value)
+        }
+    }
+}
+fn scoped_provider_service(base: &str, install: &str) -> String {
+    format!("{base}-{install}")
+}
+fn provider_service(provider: &str) -> Result<String, String> {
+    let base = legacy_provider_service(provider)?;
+    let install = installation_id()?;
+    Ok(scoped_provider_service(base, &install))
+}
 #[tauri::command]
-fn save_provider_token(provider:String, token:String)->Result<(),String>{if token.trim().is_empty(){return Err("Token cannot be empty".into())} let service=provider_service(&provider)?; let entry=keyring::Entry::new(&service,"default").map_err(|e|e.to_string())?; entry.set_password(&token).map_err(|e|e.to_string())}
+fn save_provider_token(provider: String, token: String) -> Result<(), String> {
+    if token.trim().is_empty() {
+        return Err("Token cannot be empty".into());
+    }
+    let service = provider_service(&provider)?;
+    let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
+    entry.set_password(&token).map_err(|e| e.to_string())
+}
 #[tauri::command]
-fn provider_status(provider:String)->Result<bool,String>{let service=provider_service(&provider)?; let entry=keyring::Entry::new(&service,"default").map_err(|e|e.to_string())?; if entry.get_password().is_ok(){return Ok(true)} let legacy=legacy_provider_service(&provider)?;Ok(keyring::Entry::new(legacy,"default").ok().and_then(|item|item.get_password().ok()).is_some())}
+fn provider_status(provider: String) -> Result<bool, String> {
+    let service = provider_service(&provider)?;
+    let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
+    if entry.get_password().is_ok() {
+        return Ok(true);
+    }
+    let legacy = legacy_provider_service(&provider)?;
+    Ok(keyring::Entry::new(legacy, "default")
+        .ok()
+        .and_then(|item| item.get_password().ok())
+        .is_some())
+}
 #[tauri::command]
-fn save_provider_url(provider:String, url:String, db:State<Db>)->Result<(),String>{let value=url.trim().trim_end_matches('/').to_string(); if value.is_empty(){return Err("Provider URL cannot be empty".into())} if provider!="azure-devops"{return Err("Only Azure DevOps organization URLs are configurable".into())} let conn=db.0.lock().map_err(|e|e.to_string())?; conn.execute("INSERT OR REPLACE INTO provider_settings(provider,url) VALUES (?1,?2)",params![provider,value]).map_err(|e|e.to_string())?; Ok(())}
+fn save_provider_url(provider: String, url: String, db: State<Db>) -> Result<(), String> {
+    let value = url.trim().trim_end_matches('/').to_string();
+    if value.is_empty() {
+        return Err("Provider URL cannot be empty".into());
+    }
+    if provider != "azure-devops" {
+        return Err("Only Azure DevOps organization URLs are configurable".into());
+    }
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR REPLACE INTO provider_settings(provider,url) VALUES (?1,?2)",
+        params![provider, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
 #[tauri::command]
-fn provider_url(provider:String, db:State<Db>)->Result<Option<String>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?; conn.query_row("SELECT url FROM provider_settings WHERE provider=?1",params![provider],|r|r.get(0)).optional().map_err(|e|e.to_string())}
-#[derive(Deserialize, Clone)] struct AgentExecution { cli:String, model:String }
-#[derive(Deserialize, Clone)] struct ChainRequest { task_id:String, prompt:String, repo_path:String, agents:Vec<String>, cli:String, #[serde(default)] model:String, #[serde(default)] agent_configs:HashMap<String,AgentExecution>, #[serde(default)] run_id:Option<String> }
-fn allowed_cli(cli:&str)->Option<&'static str>{match cli{"claude"=>Some("claude"),"codex"=>Some("codex"),"kimi"=>Some("kimi"),"gemini"=>Some("gemini"),_=>None}}
-fn cli_args(cli:&str, model:&str, prompt:String)->Result<Vec<String>,String>{let use_model=!model.trim().is_empty()&&model!="default";let mut args=match cli{"claude"=>vec!["-p".into()],"codex"=>vec!["exec".into()],"kimi"=>vec!["--print".into()],"gemini"=>vec!["-p".into()],_=>return Err("Unsupported CLI".into())};if use_model{match cli{"claude"|"gemini"=>{args.push("--model".into());args.push(model.into())},"codex"=>{args.push("--model".into());args.push(model.into())},"kimi"=>{args.push("--model".into());args.push(model.into())},_=>{}}}args.push(prompt);Ok(args)}
+fn provider_url(provider: String, db: State<Db>) -> Result<Option<String>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.query_row(
+        "SELECT url FROM provider_settings WHERE provider=?1",
+        params![provider],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+#[derive(Deserialize, Clone)]
+struct AgentExecution {
+    cli: String,
+    model: String,
+}
+#[derive(Deserialize, Clone)]
+struct ChainRequest {
+    task_id: String,
+    prompt: String,
+    repo_path: String,
+    agents: Vec<String>,
+    cli: String,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    agent_configs: HashMap<String, AgentExecution>,
+    #[serde(default)]
+    run_id: Option<String>,
+}
+fn allowed_cli(cli: &str) -> Option<&'static str> {
+    match cli {
+        "claude" => Some("claude"),
+        "codex" => Some("codex"),
+        "kimi" => Some("kimi"),
+        "gemini" => Some("gemini"),
+        _ => None,
+    }
+}
+fn cli_args(cli: &str, model: &str, prompt: String) -> Result<Vec<String>, String> {
+    let use_model = !model.trim().is_empty() && model != "default";
+    let mut args = match cli {
+        "claude" => vec!["-p".into()],
+        "codex" => vec!["exec".into()],
+        "kimi" => vec!["--print".into()],
+        "gemini" => vec!["-p".into()],
+        _ => return Err("Unsupported CLI".into()),
+    };
+    if use_model {
+        match cli {
+            "claude" | "gemini" => {
+                args.push("--model".into());
+                args.push(model.into())
+            }
+            "codex" => {
+                args.push("--model".into());
+                args.push(model.into())
+            }
+            "kimi" => {
+                args.push("--model".into());
+                args.push(model.into())
+            }
+            _ => {}
+        }
+    }
+    args.push(prompt);
+    Ok(args)
+}
 #[tauri::command]
-fn execute_stage(command:&str, model:&str, repo_path:&str, task_prompt:&str, agent:&str, handoff:&str)->Result<String,String>{let model_hint=if model.trim().is_empty()||model=="default"{"Use the CLI's configured default model.".to_string()}else{format!("Prefer the configured model: {model}.")}; let prompt=format!("{task_prompt}\n\nYou are the {agent} stage. {model_hint} Use the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}");let args=cli_args(command,model,prompt)?;let output=Command::new(command).current_dir(repo_path).args(args).output().map_err(|e|e.to_string())?;if output.status.success(){Ok(String::from_utf8_lossy(&output.stdout).to_string())}else{Err(String::from_utf8_lossy(&output.stderr).to_string())}}
-fn finish_run(db:&Arc<Mutex<Connection>>, run_id:&Option<String>, status:&str, error:Option<&str>){if let Some(id)=run_id{if let Ok(conn)=db.lock(){let _=conn.execute("UPDATE task_runs SET status=?2,finished_at=?3,error=?4 WHERE id=?1",params![id,status,Utc::now().to_rfc3339(),error]);}}}
+fn execute_stage(
+    command: &str,
+    model: &str,
+    repo_path: &str,
+    task_prompt: &str,
+    agent: &str,
+    handoff: &str,
+) -> Result<String, String> {
+    let model_hint = if model.trim().is_empty() || model == "default" {
+        "Use the CLI's configured default model.".to_string()
+    } else {
+        format!("Prefer the configured model: {model}.")
+    };
+    let prompt=format!("{task_prompt}\n\nYou are the {agent} stage. {model_hint} Use the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}");
+    let args = cli_args(command, model, prompt)?;
+    let output = Command::new(command)
+        .current_dir(repo_path)
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
+fn finish_run(
+    db: &Arc<Mutex<Connection>>,
+    run_id: &Option<String>,
+    status: &str,
+    error: Option<&str>,
+) {
+    if let Some(id) = run_id {
+        if let Ok(conn) = db.lock() {
+            let _ = conn.execute(
+                "UPDATE task_runs SET status=?2,finished_at=?3,error=?4 WHERE id=?1",
+                params![id, status, Utc::now().to_rfc3339(), error],
+            );
+        }
+    }
+}
 #[tauri::command]
-fn run_agent_chain_v2(mut req:ChainRequest, db:State<Db>, app:AppHandle)->Result<(),String>{let command=allowed_cli(&req.cli).ok_or_else(||"Unsupported CLI".to_string())?.to_string();let run_id=req.run_id.take().unwrap_or_else(||uuid::Uuid::new_v4().to_string());let scheduled_at=Utc::now().to_rfc3339();{let conn=db.0.lock().map_err(|e|e.to_string())?;conn.execute("INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",params![run_id,&req.task_id,scheduled_at]).map_err(|e|e.to_string())?;}req.run_id=Some(run_id);launch_chain_worker(req,command,db.0.clone(),app);Ok(())}
-fn launch_chain_worker(req:ChainRequest, command:String, db_arc:Arc<Mutex<Connection>>, app:AppHandle){thread::spawn(move||{if let Ok(conn)=db_arc.lock(){let _=conn.execute("UPDATE tasks SET status='running' WHERE id=?1",params![req.task_id]); if let Some(run_id)=&req.run_id{let _=conn.execute("UPDATE task_runs SET status='running',started_at=?2 WHERE id=?1",params![run_id,Utc::now().to_rfc3339()]);}} let mut handoff=String::from("No previous stage output. Inspect the repository and begin from the task request."); let mut stages=req.agents.clone(); stages.push("sentinel-verifier".into()); for (index,agent) in stages.iter().enumerate(){let config=req.agent_configs.get(agent);let stage_command=config.and_then(|item|allowed_cli(&item.cli)).unwrap_or(&command).to_string();let stage_model=config.map(|item|item.model.as_str()).unwrap_or(&req.model);let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"})); match execute_stage(&stage_command,stage_model,&req.repo_path,&req.prompt,agent,&handoff){Ok(output)=>{handoff=output.chars().take(12000).collect(); if let Ok(conn)=db_arc.lock(){let _=conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",params![if agent=="sentinel-verifier"{"agent.verified"}else{"agent.completed"},format!("{agent} completed stage {}",index+1),Utc::now().to_rfc3339()]);} let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));},Err(error)=>{if let Ok(conn)=db_arc.lock(){let _=conn.execute("UPDATE tasks SET status='failed' WHERE id=?1",params![req.task_id]);} finish_run(&db_arc,&req.run_id,"failed",Some(&error)); let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));return}}} if let Ok(conn)=db_arc.lock(){let _=conn.execute("UPDATE tasks SET status='completed' WHERE id=?1",params![req.task_id]);} finish_run(&db_arc,&req.run_id,"completed",None);});}
-fn parse_cron(expr:&str)->Result<Schedule,String>{let fields=expr.split_whitespace().count(); let normalized=if fields==5{format!("0 {expr}")}else{expr.to_string()}; Schedule::from_str(&normalized).map_err(|e|e.to_string())}
+fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
+    let command = allowed_cli(&req.cli)
+        .ok_or_else(|| "Unsupported CLI".to_string())?
+        .to_string();
+    let run_id = req
+        .run_id
+        .take()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let scheduled_at = Utc::now().to_rfc3339();
+    {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        conn.execute("INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",params![run_id,&req.task_id,scheduled_at]).map_err(|e|e.to_string())?;
+    }
+    req.run_id = Some(run_id);
+    launch_chain_worker(req, command, db.0.clone(), app);
+    Ok(())
+}
+fn task_completion_status(cron: &str) -> &'static str {
+    if cron.trim().eq_ignore_ascii_case("one-off") {
+        "completed"
+    } else {
+        "queued"
+    }
+}
+fn launch_chain_worker(
+    req: ChainRequest,
+    command: String,
+    db_arc: Arc<Mutex<Connection>>,
+    app: AppHandle,
+) {
+    thread::spawn(move || {
+        if let Ok(conn) = db_arc.lock() {
+            let _ = conn.execute(
+                "UPDATE tasks SET status='running' WHERE id=?1",
+                params![req.task_id],
+            );
+            if let Some(run_id) = &req.run_id {
+                let _ = conn.execute(
+                    "UPDATE task_runs SET status='running',started_at=?2 WHERE id=?1",
+                    params![run_id, Utc::now().to_rfc3339()],
+                );
+            }
+        }
+        let mut handoff = String::from(
+            "No previous stage output. Inspect the repository and begin from the task request.",
+        );
+        let mut stages = req.agents.clone();
+        stages.push("sentinel-verifier".into());
+        for (index, agent) in stages.iter().enumerate() {
+            let config = req.agent_configs.get(agent);
+            let stage_command = config
+                .and_then(|item| allowed_cli(&item.cli))
+                .unwrap_or(&command)
+                .to_string();
+            let stage_model = config.map(|item| item.model.as_str()).unwrap_or(&req.model);
+            let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"}));
+            match execute_stage(
+                &stage_command,
+                stage_model,
+                &req.repo_path,
+                &req.prompt,
+                agent,
+                &handoff,
+            ) {
+                Ok(output) => {
+                    handoff = output.chars().take(12000).collect();
+                    if let Ok(conn) = db_arc.lock() {
+                        let _ = conn.execute(
+                            "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
+                            params![
+                                if agent == "sentinel-verifier" {
+                                    "agent.verified"
+                                } else {
+                                    "agent.completed"
+                                },
+                                format!("{agent} completed stage {}", index + 1),
+                                Utc::now().to_rfc3339()
+                            ],
+                        );
+                    }
+                    let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));
+                }
+                Err(error) => {
+                    if let Ok(conn) = db_arc.lock() {
+                        let _ = conn.execute(
+                            "UPDATE tasks SET status='failed' WHERE id=?1",
+                            params![req.task_id],
+                        );
+                    }
+                    finish_run(&db_arc, &req.run_id, "failed", Some(&error));
+                    let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));
+                    return;
+                }
+            }
+        }
+        if let Ok(conn) = db_arc.lock() {
+            let cron: Result<String, _> = conn.query_row(
+                "SELECT cron FROM tasks WHERE id=?1",
+                params![req.task_id],
+                |r| r.get(0),
+            );
+            let status = cron
+                .map(|value| task_completion_status(&value))
+                .unwrap_or("completed");
+            let _ = conn.execute(
+                "UPDATE tasks SET status=?2 WHERE id=?1",
+                params![req.task_id, status],
+            );
+        }
+        finish_run(&db_arc, &req.run_id, "completed", None);
+    });
+}
+fn parse_cron(expr: &str) -> Result<Schedule, String> {
+    let fields = expr.split_whitespace().count();
+    let normalized = if fields == 5 {
+        format!("0 {expr}")
+    } else {
+        expr.to_string()
+    };
+    Schedule::from_str(&normalized).map_err(|e| e.to_string())
+}
 #[derive(Clone, Serialize)]
-struct SyncEvent { source: String, message: String, timestamp: String }
+struct SyncEvent {
+    source: String,
+    message: String,
+    timestamp: String,
+}
 
-#[derive(Serialize)] struct ProviderRepo { name:String, path:String, provider:String, url:String }
-async fn provider_token(provider:&str)->Result<String,String>{let service=provider_service(provider)?; let entry=keyring::Entry::new(&service,"default").map_err(|e|e.to_string())?; match entry.get_password(){Ok(value)=>Ok(value),Err(_)=>{let legacy=legacy_provider_service(provider)?;let old=keyring::Entry::new(legacy,"default").map_err(|e|e.to_string())?;let value=old.get_password().map_err(|e|e.to_string())?;entry.set_password(&value).map_err(|e|e.to_string())?;Ok(value)}}}
+#[derive(Serialize)]
+struct ProviderRepo {
+    name: String,
+    path: String,
+    provider: String,
+    url: String,
+}
+async fn provider_token(provider: &str) -> Result<String, String> {
+    let service = provider_service(provider)?;
+    let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(value) => Ok(value),
+        Err(_) => {
+            let legacy = legacy_provider_service(provider)?;
+            let old = keyring::Entry::new(legacy, "default").map_err(|e| e.to_string())?;
+            let value = old.get_password().map_err(|e| e.to_string())?;
+            entry.set_password(&value).map_err(|e| e.to_string())?;
+            Ok(value)
+        }
+    }
+}
 #[tauri::command]
-async fn sync_github(db:State<'_,Db>, app:AppHandle)->Result<Vec<ProviderRepo>,String>{let token=provider_token("github").await?; let response=reqwest::Client::new().get("https://api.github.com/user/repos?per_page=100&sort=updated").header("User-Agent","Wand").bearer_auth(token).send().await.map_err(|e|e.to_string())?; if !response.status().is_success(){return Err(format!("GitHub returned {}",response.status()))} let repos:Vec<serde_json::Value>=response.json().await.map_err(|e|e.to_string())?; let mut out=Vec::new(); let conn=db.0.lock().map_err(|e|e.to_string())?; for repo in repos{let name=repo["full_name"].as_str().unwrap_or_default().to_string(); let url=repo["html_url"].as_str().unwrap_or_default().to_string(); let path=repo["clone_url"].as_str().unwrap_or_default().to_string(); if name.is_empty(){continue} conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'github')",params![name,path]).map_err(|e|e.to_string())?; out.push(ProviderRepo{name,path,provider:"github".into(),url});} let _=app.emit("wand://provider",serde_json::json!({"provider":"github","count":out.len()})); Ok(out)}
+async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRepo>, String> {
+    let token = provider_token("github").await?;
+    let response = reqwest::Client::new()
+        .get("https://api.github.com/user/repos?per_page=100&sort=updated")
+        .header("User-Agent", "Wand")
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("GitHub returned {}", response.status()));
+    }
+    let repos: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    for repo in repos {
+        let name = repo["full_name"].as_str().unwrap_or_default().to_string();
+        let url = repo["html_url"].as_str().unwrap_or_default().to_string();
+        let path = repo["clone_url"].as_str().unwrap_or_default().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        conn.execute(
+            "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'github')",
+            params![name, path],
+        )
+        .map_err(|e| e.to_string())?;
+        out.push(ProviderRepo {
+            name,
+            path,
+            provider: "github".into(),
+            url,
+        });
+    }
+    let _ = app.emit(
+        "wand://provider",
+        serde_json::json!({"provider":"github","count":out.len()}),
+    );
+    Ok(out)
+}
 #[tauri::command]
-async fn sync_github_activity(db:State<'_,Db>, app:AppHandle)->Result<u32,String>{let token=provider_token("github").await?; let names:Vec<String>={let conn=db.0.lock().map_err(|e|e.to_string())?; let mut stmt=conn.prepare("SELECT name FROM repos WHERE provider='github'").map_err(|e|e.to_string())?; let rows=stmt.query_map([],|r|r.get(0)).map_err(|e|e.to_string())?; let result=rows.collect::<Result<Vec<String>,_>>().map_err(|e|e.to_string())?; result}; let client=reqwest::Client::new(); let mut added=0; for name in names{let endpoint=format!("https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc"); let response=client.get(endpoint).header("User-Agent","Wand").bearer_auth(&token).send().await.map_err(|e|e.to_string())?; if !response.status().is_success(){continue} let comments:Vec<serde_json::Value>=response.json().await.map_err(|e|e.to_string())?; for comment in comments{let id=format!("github:{}",comment["id"].as_i64().unwrap_or(0)); let issue_url=comment["issue_url"].as_str().unwrap_or_default(); let issue_response=client.get(issue_url).header("User-Agent","Wand").bearer_auth(&token).send().await.map_err(|e|e.to_string())?; let issue:serde_json::Value=issue_response.json().await.unwrap_or_default(); if issue["pull_request"].is_null(){continue} let conn=db.0.lock().map_err(|e|e.to_string())?; let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,?3,?4,?5,?6,1,?7)",params![id,name,issue["title"].as_str().unwrap_or("Pull request comment"),comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]).map_err(|e|e.to_string())?; if changed>0{added+=1;}}} let _=app.emit("wand://notifications",serde_json::json!({"provider":"github","added":added})); Ok(added)}
+async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, String> {
+    let token = provider_token("github").await?;
+    let names: Vec<String> = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT name FROM repos WHERE provider='github'")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        let result = rows
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(|e| e.to_string())?;
+        result
+    };
+    let client = reqwest::Client::new();
+    let mut added = 0;
+    for name in names {
+        let endpoint=format!("https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc");
+        let response = client
+            .get(endpoint)
+            .header("User-Agent", "Wand")
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            continue;
+        }
+        let comments: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
+        for comment in comments {
+            let id = format!("github:{}", comment["id"].as_i64().unwrap_or(0));
+            let issue_url = comment["issue_url"].as_str().unwrap_or_default();
+            let issue_response = client
+                .get(issue_url)
+                .header("User-Agent", "Wand")
+                .bearer_auth(&token)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            let issue: serde_json::Value = issue_response.json().await.unwrap_or_default();
+            if issue["pull_request"].is_null() {
+                continue;
+            }
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,?3,?4,?5,?6,1,?7)",params![id,name,issue["title"].as_str().unwrap_or("Pull request comment"),comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]).map_err(|e|e.to_string())?;
+            if changed > 0 {
+                added += 1;
+            }
+        }
+    }
+    let _ = app.emit(
+        "wand://notifications",
+        serde_json::json!({"provider":"github","added":added}),
+    );
+    Ok(added)
+}
 #[tauri::command]
-async fn sync_azure_devops(provider_url:String, db:State<'_,Db>, app:AppHandle)->Result<Vec<ProviderRepo>,String>{let token=provider_token("azure-devops").await?; let endpoint=provider_url.trim_end_matches('/').to_string()+"/_apis/git/repositories?api-version=7.1"; let response=reqwest::Client::new().get(endpoint).basic_auth("",Some(token)).send().await.map_err(|e|e.to_string())?; if !response.status().is_success(){return Err(format!("Azure DevOps returned {}",response.status()))} let payload:serde_json::Value=response.json().await.map_err(|e|e.to_string())?; let mut out=Vec::new(); let conn=db.0.lock().map_err(|e|e.to_string())?; for repo in payload["value"].as_array().cloned().unwrap_or_default(){let name=repo["name"].as_str().unwrap_or_default().to_string(); let url=repo["webUrl"].as_str().unwrap_or_default().to_string(); let path=repo["remoteUrl"].as_str().unwrap_or_default().to_string(); if name.is_empty(){continue} conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'azure-devops')",params![name,path]).map_err(|e|e.to_string())?; out.push(ProviderRepo{name,path,provider:"azure-devops".into(),url});} let _=app.emit("wand://provider",serde_json::json!({"provider":"azure-devops","count":out.len()})); Ok(out)}
+async fn sync_azure_devops(
+    provider_url: String,
+    db: State<'_, Db>,
+    app: AppHandle,
+) -> Result<Vec<ProviderRepo>, String> {
+    let token = provider_token("azure-devops").await?;
+    let endpoint =
+        provider_url.trim_end_matches('/').to_string() + "/_apis/git/repositories?api-version=7.1";
+    let response = reqwest::Client::new()
+        .get(endpoint)
+        .basic_auth("", Some(token))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("Azure DevOps returned {}", response.status()));
+    }
+    let payload: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    for repo in payload["value"].as_array().cloned().unwrap_or_default() {
+        let name = repo["name"].as_str().unwrap_or_default().to_string();
+        let url = repo["webUrl"].as_str().unwrap_or_default().to_string();
+        let path = repo["remoteUrl"].as_str().unwrap_or_default().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        conn.execute(
+            "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'azure-devops')",
+            params![name, path],
+        )
+        .map_err(|e| e.to_string())?;
+        out.push(ProviderRepo {
+            name,
+            path,
+            provider: "azure-devops".into(),
+            url,
+        });
+    }
+    let _ = app.emit(
+        "wand://provider",
+        serde_json::json!({"provider":"azure-devops","count":out.len()}),
+    );
+    Ok(out)
+}
 #[tauri::command]
-async fn sync_azure_activity(provider_url:String, db:State<'_,Db>, app:AppHandle)->Result<u32,String>{let token=provider_token("azure-devops").await?; let base=provider_url.trim_end_matches('/'); let response=reqwest::Client::new().get(format!("{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1")).basic_auth("",Some(&token)).send().await.map_err(|e|e.to_string())?; if !response.status().is_success(){return Err(format!("Azure DevOps returned {}",response.status()))} let pulls:serde_json::Value=response.json().await.map_err(|e|e.to_string())?; let client=reqwest::Client::new(); let mut added=0; for pull in pulls["value"].as_array().cloned().unwrap_or_default(){let repo_id=pull["repository"]["id"].as_str().unwrap_or_default(); let project=pull["repository"]["project"]["id"].as_str().unwrap_or_default(); let pull_id=pull["pullRequestId"].as_i64().unwrap_or(0); if repo_id.is_empty()||project.is_empty()||pull_id==0{continue} let threads=client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await.map_err(|e|e.to_string())?; let payload:serde_json::Value=threads.json().await.unwrap_or_default(); for thread in payload["value"].as_array().cloned().unwrap_or_default(){for comment in thread["comments"].as_array().cloned().unwrap_or_default(){let id=format!("azure:{}",comment["id"].as_i64().unwrap_or(0)); let conn=db.0.lock().map_err(|e|e.to_string())?; let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'azure-devops',?2,?3,?4,?5,?6,1,?7)",params![id,pull["repository"]["name"].as_str().unwrap_or("Azure repository"),pull["title"].as_str().unwrap_or("Pull request comment"),comment["content"].as_str().unwrap_or_default(),pull["url"].as_str().unwrap_or_default(),comment["author"]["displayName"].as_str().unwrap_or("Azure DevOps"),comment["publishedDate"].as_str().unwrap_or_default()]).map_err(|e|e.to_string())?; if changed>0{added+=1;}}}} let _=app.emit("wand://notifications",serde_json::json!({"provider":"azure-devops","added":added})); Ok(added)}
+async fn sync_azure_activity(
+    provider_url: String,
+    db: State<'_, Db>,
+    app: AppHandle,
+) -> Result<u32, String> {
+    let token = provider_token("azure-devops").await?;
+    let base = provider_url.trim_end_matches('/');
+    let response = reqwest::Client::new()
+        .get(format!(
+            "{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1"
+        ))
+        .basic_auth("", Some(&token))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("Azure DevOps returned {}", response.status()));
+    }
+    let pulls: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    let client = reqwest::Client::new();
+    let mut added = 0;
+    for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
+        let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
+        let project = pull["repository"]["project"]["id"]
+            .as_str()
+            .unwrap_or_default();
+        let pull_id = pull["pullRequestId"].as_i64().unwrap_or(0);
+        if repo_id.is_empty() || project.is_empty() || pull_id == 0 {
+            continue;
+        }
+        let threads=client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await.map_err(|e|e.to_string())?;
+        let payload: serde_json::Value = threads.json().await.unwrap_or_default();
+        for thread in payload["value"].as_array().cloned().unwrap_or_default() {
+            for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
+                let id = format!("azure:{}", comment["id"].as_i64().unwrap_or(0));
+                let conn = db.0.lock().map_err(|e| e.to_string())?;
+                let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'azure-devops',?2,?3,?4,?5,?6,1,?7)",params![id,pull["repository"]["name"].as_str().unwrap_or("Azure repository"),pull["title"].as_str().unwrap_or("Pull request comment"),comment["content"].as_str().unwrap_or_default(),pull["url"].as_str().unwrap_or_default(),comment["author"]["displayName"].as_str().unwrap_or("Azure DevOps"),comment["publishedDate"].as_str().unwrap_or_default()]).map_err(|e|e.to_string())?;
+                if changed > 0 {
+                    added += 1;
+                }
+            }
+        }
+    }
+    let _ = app.emit(
+        "wand://notifications",
+        serde_json::json!({"provider":"azure-devops","added":added}),
+    );
+    Ok(added)
+}
 
-async fn background_github_activity(db:Arc<Mutex<Connection>>, app:AppHandle){let token=match provider_token("github").await{Ok(value)=>value,Err(_)=>return}; let names:Vec<String>={let conn=match db.lock(){Ok(value)=>value,Err(_)=>return}; let mut stmt=match conn.prepare("SELECT name FROM repos WHERE provider='github'"){Ok(value)=>value,Err(_)=>return}; let rows=match stmt.query_map([],|r|r.get(0)){Ok(value)=>value,Err(_)=>return}; match rows.collect::<Result<Vec<String>,_>>(){Ok(value)=>value,Err(_)=>return}}; let client=reqwest::Client::new(); let mut added=0; for name in names{let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(_)=>continue}; if !response.status().is_success(){continue} let comments:Vec<serde_json::Value>=match response.json().await{Ok(value)=>value,Err(_)=>continue}; for comment in comments{let id=format!("github-review:{}",comment["id"].as_i64().unwrap_or(0)); let conn=match db.lock(){Ok(value)=>value,Err(_)=>return}; let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]); if changed.unwrap_or(0)>0{added+=1}}} if added>0{let _=app.emit("wand://notifications",serde_json::json!({"provider":"github","added":added,"background":true}));}}
-async fn report_provider_credentials(app:AppHandle){for provider in ["github","azure-devops"]{if let Err(error)=provider_token(provider).await{let _=app.emit("wand://provider",serde_json::json!({"provider":provider,"status":"error","error":format!("Credential check failed: {error}")}));}}}
-async fn background_azure_activity(db:Arc<Mutex<Connection>>, app:AppHandle){let token=match provider_token("azure-devops").await{Ok(value)=>value,Err(_)=>return}; let base:Option<String>={let conn=match db.lock(){Ok(value)=>value,Err(_)=>return}; conn.query_row("SELECT url FROM provider_settings WHERE provider='azure-devops'",[],|r|r.get(0)).optional().ok().flatten()}; let Some(base)=base else{return}; let client=reqwest::Client::new(); let response=match client.get(format!("{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(_)=>return}; if !response.status().is_success(){return} let pulls:serde_json::Value=match response.json().await{Ok(value)=>value,Err(_)=>return}; let mut added=0; for pull in pulls["value"].as_array().cloned().unwrap_or_default(){let repo_id=pull["repository"]["id"].as_str().unwrap_or_default(); let project=pull["repository"]["project"]["id"].as_str().unwrap_or_default(); let pull_id=pull["pullRequestId"].as_i64().unwrap_or(0); if repo_id.is_empty()||project.is_empty()||pull_id==0{continue} let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(_)=>continue}; let threads:serde_json::Value=match response.json().await{Ok(value)=>value,Err(_)=>continue}; for thread in threads["value"].as_array().cloned().unwrap_or_default(){for comment in thread["comments"].as_array().cloned().unwrap_or_default(){let id=format!("azure:{}",comment["id"].as_i64().unwrap_or(0)); let conn=match db.lock(){Ok(value)=>value,Err(_)=>return}; let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'azure-devops',?2,?3,?4,?5,?6,1,?7)",params![id,pull["repository"]["name"].as_str().unwrap_or("Azure repository"),pull["title"].as_str().unwrap_or("Pull request comment"),comment["content"].as_str().unwrap_or_default(),pull["url"].as_str().unwrap_or_default(),comment["author"]["displayName"].as_str().unwrap_or("Azure DevOps"),comment["publishedDate"].as_str().unwrap_or_default()]); if changed.unwrap_or(0)>0{added+=1}}}} if added>0{let _=app.emit("wand://notifications",serde_json::json!({"provider":"azure-devops","added":added,"background":true}));}}
+async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
+    let token = match provider_token("github").await {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let names: Vec<String> = {
+        let conn = match db.lock() {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let mut stmt = match conn.prepare("SELECT name FROM repos WHERE provider='github'") {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let rows = match stmt.query_map([], |r| r.get(0)) {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        match rows.collect::<Result<Vec<String>, _>>() {
+            Ok(value) => value,
+            Err(_) => return,
+        }
+    };
+    let client = reqwest::Client::new();
+    let mut added = 0;
+    for name in names {
+        let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(_)=>continue};
+        if !response.status().is_success() {
+            continue;
+        }
+        let comments: Vec<serde_json::Value> = match response.json().await {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        for comment in comments {
+            let id = format!("github-review:{}", comment["id"].as_i64().unwrap_or(0));
+            let conn = match db.lock() {
+                Ok(value) => value,
+                Err(_) => return,
+            };
+            let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]);
+            if changed.unwrap_or(0) > 0 {
+                added += 1
+            }
+        }
+    }
+    if added > 0 {
+        let _ = app.emit(
+            "wand://notifications",
+            serde_json::json!({"provider":"github","added":added,"background":true}),
+        );
+    }
+}
+async fn report_provider_credentials(app: AppHandle) {
+    for provider in ["github", "azure-devops"] {
+        if let Err(error) = provider_token(provider).await {
+            let _=app.emit("wand://provider",serde_json::json!({"provider":provider,"status":"error","error":format!("Credential check failed: {error}")}));
+        }
+    }
+}
+async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
+    let token = match provider_token("azure-devops").await {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let base: Option<String> = {
+        let conn = match db.lock() {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        conn.query_row(
+            "SELECT url FROM provider_settings WHERE provider='azure-devops'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    };
+    let Some(base) = base else { return };
+    let client = reqwest::Client::new();
+    let response = match client
+        .get(format!(
+            "{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1"
+        ))
+        .basic_auth("", Some(&token))
+        .send()
+        .await
+    {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    if !response.status().is_success() {
+        return;
+    }
+    let pulls: serde_json::Value = match response.json().await {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let mut added = 0;
+    for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
+        let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
+        let project = pull["repository"]["project"]["id"]
+            .as_str()
+            .unwrap_or_default();
+        let pull_id = pull["pullRequestId"].as_i64().unwrap_or(0);
+        if repo_id.is_empty() || project.is_empty() || pull_id == 0 {
+            continue;
+        }
+        let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(_)=>continue};
+        let threads: serde_json::Value = match response.json().await {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        for thread in threads["value"].as_array().cloned().unwrap_or_default() {
+            for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
+                let id = format!("azure:{}", comment["id"].as_i64().unwrap_or(0));
+                let conn = match db.lock() {
+                    Ok(value) => value,
+                    Err(_) => return,
+                };
+                let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'azure-devops',?2,?3,?4,?5,?6,1,?7)",params![id,pull["repository"]["name"].as_str().unwrap_or("Azure repository"),pull["title"].as_str().unwrap_or("Pull request comment"),comment["content"].as_str().unwrap_or_default(),pull["url"].as_str().unwrap_or_default(),comment["author"]["displayName"].as_str().unwrap_or("Azure DevOps"),comment["publishedDate"].as_str().unwrap_or_default()]);
+                if changed.unwrap_or(0) > 0 {
+                    added += 1
+                }
+            }
+        }
+    }
+    if added > 0 {
+        let _ = app.emit(
+            "wand://notifications",
+            serde_json::json!({"provider":"azure-devops","added":added,"background":true}),
+        );
+    }
+}
 
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
-  thread::spawn(move || {
-    let mut last_due: HashMap<String, String> = HashMap::new();
-    loop {
-      let now = Utc::now();
-      if now.timestamp().rem_euclid(300) < 30 { let poll_db=db.clone(); let poll_app=app.clone(); tauri::async_runtime::spawn(async move { report_provider_credentials(poll_app.clone()).await; background_github_activity(poll_db.clone(),poll_app.clone()).await; background_azure_activity(poll_db,poll_app).await; }); }
-      if let Ok(conn) = db.lock() {
-        if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status != 'completed'") {
+    thread::spawn(move || {
+        let mut last_due: HashMap<String, String> = HashMap::new();
+        loop {
+            let now = Utc::now();
+            if now.timestamp().rem_euclid(300) < 30 {
+                let poll_db = db.clone();
+                let poll_app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    report_provider_credentials(poll_app.clone()).await;
+                    background_github_activity(poll_db.clone(), poll_app.clone()).await;
+                    background_azure_activity(poll_db, poll_app).await;
+                });
+            }
+            if let Ok(conn) = db.lock() {
+                if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status != 'completed'") {
           if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,String>(2)?))) {
             for row in rows.flatten() {
               let (id, name, expr) = row;
@@ -123,75 +1146,257 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
             }
           }
         }
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM tasks WHERE cron != 'one-off' AND status != 'completed'", [], |r| r.get(0)).unwrap_or(0);
-        let event = SyncEvent { source: "scheduler".into(), message: format!("Background scheduler active — {count} recurring task(s) monitored"), timestamp: now.to_rfc3339() };
-        let _ = app.emit("wand://sync", event);
-      }
-      thread::sleep(Duration::from_secs(30));
-    }
-  });
+                let count: i64 = conn.query_row("SELECT COUNT(*) FROM tasks WHERE cron != 'one-off' AND status != 'completed'", [], |r| r.get(0)).unwrap_or(0);
+                let event = SyncEvent {
+                    source: "scheduler".into(),
+                    message: format!(
+                        "Background scheduler active — {count} recurring task(s) monitored"
+                    ),
+                    timestamp: now.to_rfc3339(),
+                };
+                let _ = app.emit("wand://sync", event);
+            }
+            thread::sleep(Duration::from_secs(30));
+        }
+    });
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,save_provider_token,provider_status,save_provider_url,provider_url,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand"); }
+pub fn run() {
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,save_provider_token,provider_status,save_provider_url,provider_url,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+}
 #[tauri::command]
-fn run_agent_cli(provider: String, prompt: String, repo_path: String, db: State<Db>, app: AppHandle) -> CliResult { let message = format!("Queued {provider} task for {repo_path}: {prompt}"); if let Ok(conn)=db.0.lock(){let _=conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",params!["agent.queued",message,Utc::now().to_rfc3339()]);} let _=app.emit("wand://agent", message.clone()); CliResult { ok: true, message } }
+fn run_agent_cli(
+    provider: String,
+    prompt: String,
+    repo_path: String,
+    db: State<Db>,
+    app: AppHandle,
+) -> CliResult {
+    let message = format!("Queued {provider} task for {repo_path}: {prompt}");
+    if let Ok(conn) = db.0.lock() {
+        let _ = conn.execute(
+            "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
+            params!["agent.queued", message, Utc::now().to_rfc3339()],
+        );
+    }
+    let _ = app.emit("wand://agent", message.clone());
+    CliResult { ok: true, message }
+}
 #[tauri::command]
-fn read_repo_file(repo_path:String, relative_path:String)->Result<String,String>{let root=std::path::Path::new(&repo_path).canonicalize().map_err(|e|e.to_string())?; let target=root.join(&relative_path).canonicalize().map_err(|e|e.to_string())?; if !target.starts_with(&root){return Err("File is outside the selected repository".into())} fs::read_to_string(target).map_err(|e|e.to_string())}
+fn read_repo_file(repo_path: String, relative_path: String) -> Result<String, String> {
+    let root = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let target = root
+        .join(&relative_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !target.starts_with(&root) {
+        return Err("File is outside the selected repository".into());
+    }
+    fs::read_to_string(target).map_err(|e| e.to_string())
+}
 #[tauri::command]
-fn write_repo_file(repo_path:String, relative_path:String, content:String)->Result<(),String>{let root=std::path::Path::new(&repo_path).canonicalize().map_err(|e|e.to_string())?;let candidate=root.join(&relative_path);if relative_path.trim().is_empty()||relative_path.contains('\0'){return Err("A valid relative file path is required".into())}let target=if candidate.exists(){candidate.canonicalize().map_err(|e|e.to_string())?}else{candidate};if !target.starts_with(&root){return Err("File is outside the selected repository".into())}if target.exists()&&!target.is_file(){return Err("Refusing to write a directory".into())}fs::write(target,content).map_err(|e|e.to_string())}
+fn write_repo_file(
+    repo_path: String,
+    relative_path: String,
+    content: String,
+) -> Result<(), String> {
+    let root = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let candidate = root.join(&relative_path);
+    if relative_path.trim().is_empty() || relative_path.contains('\0') {
+        return Err("A valid relative file path is required".into());
+    }
+    let target = if candidate.exists() {
+        candidate.canonicalize().map_err(|e| e.to_string())?
+    } else {
+        candidate
+    };
+    if !target.starts_with(&root) {
+        return Err("File is outside the selected repository".into());
+    }
+    if target.exists() && !target.is_file() {
+        return Err("Refusing to write a directory".into());
+    }
+    fs::write(target, content).map_err(|e| e.to_string())
+}
 #[tauri::command]
-fn git_diff(repo_path:String)->Result<String,String>{let output=Command::new("git").current_dir(repo_path).args(["diff","--no-ext-diff","--unified=60"]).output().map_err(|e|e.to_string())?; if output.status.success(){Ok(String::from_utf8_lossy(&output.stdout).to_string())}else{Err(String::from_utf8_lossy(&output.stderr).to_string())}}
-#[derive(Serialize)] struct EventRow { id:i64, kind:String, message:String, created_at:String }
+fn git_diff(repo_path: String) -> Result<String, String> {
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["diff", "--no-ext-diff", "--unified=60"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
+#[derive(Serialize)]
+struct EventRow {
+    id: i64,
+    kind: String,
+    message: String,
+    created_at: String,
+}
 #[tauri::command]
-fn list_events(limit:Option<i64>, db:State<Db>)->Result<Vec<EventRow>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?; let amount=limit.unwrap_or(20).clamp(1,100); let mut stmt=conn.prepare("SELECT id,kind,message,created_at FROM events ORDER BY id DESC LIMIT ?1").map_err(|e|e.to_string())?; let rows=stmt.query_map(params![amount],|r|Ok(EventRow{id:r.get(0)?,kind:r.get(1)?,message:r.get(2)?,created_at:r.get(3)?})).map_err(|e|e.to_string())?; rows.map(|r|r.map_err(|e|e.to_string())).collect()}
+fn list_events(limit: Option<i64>, db: State<Db>) -> Result<Vec<EventRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let amount = limit.unwrap_or(20).clamp(1, 100);
+    let mut stmt = conn
+        .prepare("SELECT id,kind,message,created_at FROM events ORDER BY id DESC LIMIT ?1")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![amount], |r| {
+            Ok(EventRow {
+                id: r.get(0)?,
+                kind: r.get(1)?,
+                message: r.get(2)?,
+                created_at: r.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
 #[tauri::command]
-fn save_workspace_root(root:String, db:State<Db>)->Result<(),String>{let value=root.trim().to_string();if value.is_empty(){return Err("Workspace root cannot be empty".into())}let conn=db.0.lock().map_err(|e|e.to_string())?;conn.execute("INSERT OR REPLACE INTO provider_settings(provider,url) VALUES ('workspace-root',?1)",params![value]).map_err(|e|e.to_string())?;Ok(())}
+fn save_workspace_root(root: String, db: State<Db>) -> Result<(), String> {
+    let value = root.trim().to_string();
+    if value.is_empty() {
+        return Err("Workspace root cannot be empty".into());
+    }
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR REPLACE INTO provider_settings(provider,url) VALUES ('workspace-root',?1)",
+        params![value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
 #[tauri::command]
-fn workspace_root(db:State<Db>)->Result<Option<String>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?;conn.query_row("SELECT url FROM provider_settings WHERE provider='workspace-root'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())}
+fn workspace_root(db: State<Db>) -> Result<Option<String>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.query_row(
+        "SELECT url FROM provider_settings WHERE provider='workspace-root'",
+        [],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
 #[tauri::command]
-fn save_user_name(name:String, db:State<Db>)->Result<(),String>{let value=name.trim().to_string();if value.is_empty(){return Err("Name cannot be empty".into())}let conn=db.0.lock().map_err(|e|e.to_string())?;conn.execute("INSERT OR REPLACE INTO workspace_settings(key,value) VALUES ('user-name',?1)",params![value]).map_err(|e|e.to_string())?;Ok(())}
+fn save_user_name(name: String, db: State<Db>) -> Result<(), String> {
+    let value = name.trim().to_string();
+    if value.is_empty() {
+        return Err("Name cannot be empty".into());
+    }
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR REPLACE INTO workspace_settings(key,value) VALUES ('user-name',?1)",
+        params![value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
 #[tauri::command]
-fn user_name(db:State<Db>)->Result<Option<String>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?;conn.query_row("SELECT value FROM workspace_settings WHERE key='user-name'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())}
+fn user_name(db: State<Db>) -> Result<Option<String>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.query_row(
+        "SELECT value FROM workspace_settings WHERE key='user-name'",
+        [],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
 #[tauri::command]
-fn list_repositories(db:State<Db>)->Result<Vec<ScannedRepo>,String>{let conn=db.0.lock().map_err(|e|e.to_string())?;let mut stmt=conn.prepare("SELECT name,path,provider FROM repos ORDER BY name").map_err(|e|e.to_string())?;let rows=stmt.query_map([],|r|Ok(ScannedRepo{name:r.get(0)?,path:r.get(1)?,provider:r.get(2)?,url:String::new()})).map_err(|e|e.to_string())?;rows.map(|r|r.map_err(|e|e.to_string())).collect()}
+fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT name,path,provider FROM repos ORDER BY name")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(ScannedRepo {
+                name: r.get(0)?,
+                path: r.get(1)?,
+                provider: r.get(2)?,
+                url: String::new(),
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+}
 
 #[cfg(test)]
 mod tests {
-  use super::*;
+    use super::*;
 
-  #[test]
-  fn accepts_user_friendly_five_field_cron() {
-    assert!(parse_cron("0 9 * * 1").is_ok());
-  }
+    #[test]
+    fn accepts_user_friendly_five_field_cron() {
+        assert!(parse_cron("0 9 * * 1").is_ok());
+    }
 
-  #[test]
-  fn keeps_full_cron_expression_support() {
-    assert!(parse_cron("0 0 9 * * 1 *").is_ok());
-  }
+    #[test]
+    fn keeps_full_cron_expression_support() {
+        assert!(parse_cron("0 0 9 * * 1 *").is_ok());
+    }
 
-  #[test]
-  fn scopes_provider_service_per_installation() {
-    assert_ne!(scoped_provider_service("wand-github-pat", "install-a"), scoped_provider_service("wand-github-pat", "install-b"));
-    assert_eq!(scoped_provider_service("wand-github-pat", "install-a"), "wand-github-pat-install-a");
-  }
+    #[test]
+    fn recurring_tasks_remain_active_after_a_successful_run() {
+        assert_eq!(task_completion_status("one-off"), "completed");
+        assert_eq!(task_completion_status("0 9 * * 1"), "queued");
+    }
 
-  #[test]
-  fn builds_distinct_cli_invocation_shapes() {
-    assert_eq!(cli_args("claude", "default", "hello".into()).unwrap(), vec!["-p", "hello"]);
-    assert_eq!(cli_args("codex", "gpt-5", "hello".into()).unwrap(), vec!["exec", "--model", "gpt-5", "hello"]);
-    assert_eq!(cli_args("kimi", "kimi-k2", "hello".into()).unwrap(), vec!["--print", "--model", "kimi-k2", "hello"]);
-    assert_eq!(cli_args("gemini", "gemini-2.5-pro", "hello".into()).unwrap(), vec!["-p", "--model", "gemini-2.5-pro", "hello"]);
-    assert!(cli_args("unknown", "default", "hello".into()).is_err());
-  }
+    #[test]
+    fn scopes_provider_service_per_installation() {
+        assert_ne!(
+            scoped_provider_service("wand-github-pat", "install-a"),
+            scoped_provider_service("wand-github-pat", "install-b")
+        );
+        assert_eq!(
+            scoped_provider_service("wand-github-pat", "install-a"),
+            "wand-github-pat-install-a"
+        );
+    }
 
-  #[test]
-  fn migrates_legacy_agents_table_before_seed() {
-    let conn=Connection::open_in_memory().unwrap();
-    conn.execute("CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0)",[]).unwrap();
-    migrate(&conn).unwrap();
-    let columns:i64=conn.query_row("SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name IN ('cli','model','scope')",[],|row|row.get(0)).unwrap();
-    let seeded:i64=conn.query_row("SELECT COUNT(*) FROM agents WHERE id='planner'",[],|row|row.get(0)).unwrap();
-    assert_eq!(columns,3);
-    assert_eq!(seeded,1);
-  }
+    #[test]
+    fn builds_distinct_cli_invocation_shapes() {
+        assert_eq!(
+            cli_args("claude", "default", "hello".into()).unwrap(),
+            vec!["-p", "hello"]
+        );
+        assert_eq!(
+            cli_args("codex", "gpt-5", "hello".into()).unwrap(),
+            vec!["exec", "--model", "gpt-5", "hello"]
+        );
+        assert_eq!(
+            cli_args("kimi", "kimi-k2", "hello".into()).unwrap(),
+            vec!["--print", "--model", "kimi-k2", "hello"]
+        );
+        assert_eq!(
+            cli_args("gemini", "gemini-2.5-pro", "hello".into()).unwrap(),
+            vec!["-p", "--model", "gemini-2.5-pro", "hello"]
+        );
+        assert!(cli_args("unknown", "default", "hello".into()).is_err());
+    }
+
+    #[test]
+    fn migrates_legacy_agents_table_before_seed() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0)",[]).unwrap();
+        migrate(&conn).unwrap();
+        let columns:i64=conn.query_row("SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name IN ('cli','model','scope')",[],|row|row.get(0)).unwrap();
+        let seeded: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM agents WHERE id='planner'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 3);
+        assert_eq!(seeded, 1);
+    }
 }
