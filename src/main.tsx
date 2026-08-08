@@ -100,7 +100,6 @@ type Agent = {
   scope?: string;
   cli?: string;
   model?: string;
-  system_prompt?: string;
 };
 type Task = {
   id: string;
@@ -610,7 +609,7 @@ function App() {
       .filter(Boolean) as Agent[];
     const chain = selected.map((a) => a.name).join(" → ");
     const instructions = selected
-      .map((a) => `${a.name}: ${a.system_prompt || a.role}`)
+      .map((a) => `${a.name}: ${a.role}`)
       .join("\n");
     const enabled = await invoke<string[]>("cli_access").catch(() =>
       JSON.parse(localStorage.getItem("wand.clis") || "[]") as string[],
@@ -624,7 +623,7 @@ function App() {
         {
           cli: a.cli && enabled.includes(a.cli) ? a.cli : cli,
           model: a.model || "default",
-          responsibility: a.role || a.system_prompt || "",
+          responsibility: a.role || "",
           skills: a.skills,
         },
       ]),
@@ -1994,7 +1993,6 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     color: string;
     cli: string;
     model: string;
-    system_prompt: string;
     scope: string;
     built_in: boolean;
   };
@@ -2102,7 +2100,6 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
-        system_prompt: (values.role || "").slice(0, 1000),
         color: agent?.color || "#a98cff",
         cli: values.cli || "codex",
         model: values.model || "default",
