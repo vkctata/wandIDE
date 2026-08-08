@@ -7,7 +7,12 @@
 /* Quiet ambient — a single, nearly-invisible accent wash               */
 /* Dark-first. Theme-scoped light surfaces come from Codex's layer.     */
 /* ------------------------------------------------------------------ */
+html, body, #root { background: transparent; }
 .app {
+  min-height: 100vh;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .24);
   background:
     radial-gradient(1100px 560px at 78% -10%, color-mix(in srgb, var(--wand-accent, #9678ff) 6%, transparent) 0%, transparent 62%),
     #0b0d14;
@@ -67,6 +72,8 @@ body[data-theme="obsidian"] .app {
   position: relative;
   display: inline-flex;
   align-items: baseline;
+  color: var(--wand-accent, #9678ff);
+  -webkit-text-fill-color: currentColor;
 }
 
 .d-sparkle {
