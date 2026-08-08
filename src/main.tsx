@@ -238,7 +238,7 @@ function App() {
           rows.map((r) => ({
             ...r,
             provider: "Agent chain",
-            active: r.status !== "failed",
+            active: !["failed", "cancelled", "completed"].includes(r.status),
             agents: parseJson<string[]>(r.agents, []),
           })),
         ),
@@ -1255,8 +1255,16 @@ function Tasks({
             </p>
           </div>
           <code>{t.cron}</code>
-          <span className={"tag " + (t.active ? "green" : "blue")}>
-            {t.status === "cancelled" ? "Cancelled" : t.active ? "Active" : "Paused"}
+          <span className={"tag " + (t.active ? "green" : t.status === "failed" ? "red" : "blue")}>
+            {t.status === "cancelled"
+              ? "Cancelled"
+              : t.status === "completed"
+                ? "Completed"
+                : t.status === "failed"
+                  ? "Failed"
+                  : t.active
+                    ? "Active"
+                    : "Paused"}
           </span>
           <button className="run" onClick={() => runTask(t)}>
             <Play size={14} /> Run now
