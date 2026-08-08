@@ -1443,6 +1443,7 @@ fn launch_chain_worker(
                 );
             }
         }
+        emit_task_status(&app, &req.task_id, "running", None);
         let mut handoff = String::from(
             "No previous stage output. Inspect the repository and begin from the task request.",
         );
