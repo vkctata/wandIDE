@@ -1756,10 +1756,20 @@ async fn sync_azure_activity(
     Ok(added)
 }
 
+fn emit_provider_background_error(app: &AppHandle, provider: &str, error: impl std::fmt::Display) {
+    let _ = app.emit(
+        "wand://provider",
+        serde_json::json!({"provider":provider,"status":"error","background":true,"error":error.to_string()}),
+    );
+}
+
 async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     let token = match provider_token("github").await {
         Ok(value) => value,
-        Err(_) => return,
+        Err(error) => {
+            emit_provider_background_error(&app, "github", format!("Credential check failed: {error}"));
+            return;
+        }
     };
     let names: Vec<String> = {
         let conn = match db.lock() {
@@ -1781,17 +1791,24 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     };
     let client = match provider_http_client() {
         Ok(client) => client,
-        Err(_) => return,
+        Err(error) => {
+            emit_provider_background_error(&app, "github", error);
+            return;
+        }
     };
     let mut added = 0;
     for name in names {
-        let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(_)=>continue};
+        let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(error)=>{emit_provider_background_error(&app,"github",format!("Request failed for {name}: {error}"));continue;}};
         if !response.status().is_success() {
+            emit_provider_background_error(&app, "github", format!("GitHub returned {} for {name}", response.status()));
             continue;
         }
         let comments: Vec<serde_json::Value> = match response.json().await {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(error) => {
+                emit_provider_background_error(&app, "github", format!("Invalid response for {name}: {error}"));
+                continue;
+            }
         };
         for comment in comments {
             let id = format!("github-review:{}", comment["id"].as_i64().unwrap_or(0));
@@ -1822,7 +1839,10 @@ async fn report_provider_credentials(app: AppHandle) {
 async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     let token = match provider_token("azure-devops").await {
         Ok(value) => value,
-        Err(_) => return,
+        Err(error) => {
+            emit_provider_background_error(&app, "azure-devops", format!("Credential check failed: {error}"));
+            return;
+        }
     };
     let base: Option<String> = {
         let conn = match db.lock() {
@@ -1841,7 +1861,10 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     let Some(base) = base else { return };
     let client = match provider_http_client() {
         Ok(client) => client,
-        Err(_) => return,
+        Err(error) => {
+            emit_provider_background_error(&app, "azure-devops", error);
+            return;
+        }
     };
     let response = match client
         .get(format!(
@@ -1852,14 +1875,21 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         .await
     {
         Ok(value) => value,
-        Err(_) => return,
+        Err(error) => {
+            emit_provider_background_error(&app, "azure-devops", format!("Request failed: {error}"));
+            return;
+        }
     };
     if !response.status().is_success() {
+        emit_provider_background_error(&app, "azure-devops", format!("Azure DevOps returned {}", response.status()));
         return;
     }
     let pulls: serde_json::Value = match response.json().await {
         Ok(value) => value,
-        Err(_) => return,
+        Err(error) => {
+            emit_provider_background_error(&app, "azure-devops", format!("Invalid pull-request response: {error}"));
+            return;
+        }
     };
     let mut added = 0;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
@@ -1871,13 +1901,17 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         if repo_id.is_empty() || project.is_empty() || pull_id == 0 {
             continue;
         }
-        let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(_)=>continue};
+        let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(error)=>{emit_provider_background_error(&app,"azure-devops",format!("Thread request failed for pull request {pull_id}: {error}"));continue;}};
         if !response.status().is_success() {
+            emit_provider_background_error(&app, "azure-devops", format!("Azure DevOps returned {} for pull request {pull_id}", response.status()));
             continue;
         }
         let threads: serde_json::Value = match response.json().await {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(error) => {
+                emit_provider_background_error(&app, "azure-devops", format!("Invalid thread response for pull request {pull_id}: {error}"));
+                continue;
+            }
         };
         for thread in threads["value"].as_array().cloned().unwrap_or_default() {
             for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
