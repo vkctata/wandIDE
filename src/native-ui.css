@@ -56,6 +56,15 @@ header, .app > main > header {
 .iconbtn:hover, .account-trigger:hover { background: color-mix(in srgb, var(--wand-ink, #fff) 7%, var(--wand-surface, #171a24)); }
 
 .content { max-width: 1120px; padding: 42px 48px 72px; }
+.content, .content > * {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  visibility: visible !important;
+  filter: none !important;
+  mix-blend-mode: normal;
+}
+.content { isolation: isolate; }
 .hero { margin-bottom: 30px; }
 .hero h1 { font-size: clamp(26px, 3vw, 32px); font-weight: 700; }
 .sub, .sectionhead p { color: var(--wand-muted, #81889d); }

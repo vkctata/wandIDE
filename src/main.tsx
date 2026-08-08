@@ -50,6 +50,7 @@ import "./provider-ui.css";
 import "./responsive-fix.css";
 import "./premium-plus.css";
 import "./threads.css";
+import "./native-ui.css";
 
 // Keep the editor self-contained in packaged builds. The default Monaco
 // loader points at jsDelivr, which is inappropriate for a local-first IDE.
@@ -98,6 +99,7 @@ type Task = {
   active: boolean;
   agents: string[];
 };
+type AgentWorkflow = { name: string; agents: string[]; steps: string[] };
 const defaultRepos: Repo[] = [];
 const agents: Agent[] = [
   {
@@ -146,6 +148,13 @@ const emptyRepo: Repo = {
 const load = <T,>(key: string, fallback: T): T => {
   try {
     return JSON.parse(localStorage.getItem(key) || "") as T;
+  } catch {
+    return fallback;
+  }
+};
+const parseJson = <T,>(value: string | null | undefined, fallback: T): T => {
+  try {
+    return value ? (JSON.parse(value) as T) : fallback;
   } catch {
     return fallback;
   }
@@ -212,6 +221,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
+  const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
   useEffect(
     () => localStorage.setItem("wand.repos", JSON.stringify(repos)),
     [repos],
@@ -228,7 +238,7 @@ function App() {
             ...r,
             provider: "Agent chain",
             active: r.status !== "failed",
-            agents: JSON.parse(r.agents || "[]"),
+            agents: parseJson<string[]>(r.agents, []),
           })),
         ),
       )
@@ -236,10 +246,13 @@ function App() {
     invoke<any[]>("list_agents")
       .then((rows) =>
         setAgentCatalog(
-          rows.map((r) => ({ ...r, skills: JSON.parse(r.skills || "[]") })),
+          rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) })),
         ),
       )
       .catch(() => {});
+    invoke<AgentWorkflow[]>("list_agent_workflows")
+      .then(setWorkflows)
+      .catch(() => setWorkflows([]));
     invoke<string | null>("user_name")
       .then((value) => {
         if (value) setUserName(value);
@@ -444,6 +457,13 @@ function App() {
           label: "Cron expression",
           placeholder: "Leave blank for one-off",
         },
+        ...(workflows.length
+          ? [{
+              id: "workflow",
+              label: "Imported workflow (optional)",
+              options: ["Manual agent tags", ...workflows.map((workflow) => workflow.name)],
+            }]
+          : []),
         ...available.map((a) => ({
           id: `agent:${a.id}`,
           label: `Tag ${a.name} · ${a.skills.join(", ")}`,
@@ -457,6 +477,8 @@ function App() {
     const selected = available
       .filter((a) => values[`agent:${a.id}`] === "true")
       .map((a) => a.id);
+    const workflow = workflows.find((item) => item.name === values.workflow);
+    const workflowAgents = workflow?.steps?.length ? workflow.steps : workflow?.agents;
     const task = {
       id: crypto.randomUUID(),
       name: values.name.trim(),
@@ -464,8 +486,10 @@ function App() {
       repo: repo.name,
       cron: values.cron?.trim() || "one-off",
       active: true,
-      agents: selected.length
-        ? selected
+      agents: workflowAgents?.length
+        ? workflowAgents
+        : selected.length
+          ? selected
         : ["planner", "builder", "reviewer", "sentinel"],
     };
     try {
@@ -715,6 +739,8 @@ function Home({
   const reviews = events.filter(
     (e) => e.kind.includes("comment") || e.kind.includes("notification"),
   ).length;
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   return (
     <section className="content">
       <div className="hero">
@@ -722,7 +748,7 @@ function Home({
           <p className="eyebrow">
             <span className="pulse" /> LOCAL WORKSPACE
           </p>
-          <h1>Good morning, {userName}.</h1>
+          <h1>{greeting}, {userName}.</h1>
           <p className="sub">
             Your agents are ready to work across your repositories.
           </p>
@@ -1354,8 +1380,8 @@ function Notifications() {
         items.map((item) => (
           <a
             className={"notice " + (item.unread ? "unread" : "")}
-            href={item.url || "#"}
-            target="_blank"
+            href={item.url || undefined}
+            target={item.url ? "_blank" : undefined}
             rel="noreferrer"
             key={item.id}
           >
@@ -1705,7 +1731,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     invoke<any[]>("list_agents")
       .then((rows) =>
         setItems(
-          rows.map((r) => ({ ...r, skills: JSON.parse(r.skills || "[]") })),
+          rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) })),
         ),
       )
       .catch(() => {});
@@ -1961,7 +1987,7 @@ function NotificationPreferencesSection() {
   };
   const [prefs, setPrefs] = useState<Prefs>(() => ({
     ...defaults,
-    ...JSON.parse(localStorage.getItem("wand.notification-prefs") || "{}"),
+    ...parseJson<Partial<Prefs>>(localStorage.getItem("wand.notification-prefs"), {}),
   }));
   const [saved, setSaved] = useState(false);
   useEffect(() => {
@@ -2689,9 +2715,21 @@ function UpdateBanner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
+    if (!isTauriRuntime()) return;
     check()
-      .then((value) => setUpdate(value || null))
-      .catch(() => {});
+      .then(async (value) => {
+        if (!value) return;
+        setUpdate(value);
+        try {
+          setBusy(true);
+          await value.downloadAndInstall();
+          await relaunch();
+        } catch (reason) {
+          setBusy(false);
+          setError(String(reason));
+        }
+      })
+      .catch((reason) => setError(String(reason)));
   }, []);
   if (!update) return null;
   const install = async () => {
@@ -2711,12 +2749,12 @@ function UpdateBanner() {
         <Sparkles size={15} />
       </div>
       <div className="update-banner-copy">
-        <strong>Update available</strong>
+        <strong>{busy ? "Installing update…" : "Update available"}</strong>
         <span>Wand {update.version}</span>
         {error && <small>{error}</small>}
       </div>
       <button onClick={install} disabled={busy}>
-        {busy ? "Installing…" : "Update"}
+        {busy ? "Installing…" : "Retry"}
       </button>
     </aside>
   );
@@ -2760,7 +2798,6 @@ function OnboardingGate() {
       <UpdateBanner />
       <RuntimeIdentity />
       <ThemePicker />
-      <AccountMenu />
       <ModalHost />
       {show && <Onboarding done={finish} />}
     </>

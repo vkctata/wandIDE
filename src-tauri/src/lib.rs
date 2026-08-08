@@ -81,6 +81,12 @@ struct FileVersions {
 }
 #[tauri::command]
 fn git_file_versions(repo_path: String, relative_path: String) -> Result<FileVersions, String> {
+    if relative_path.trim().is_empty()
+        || std::path::Path::new(&relative_path).is_absolute()
+        || relative_path.contains('\0')
+    {
+        return Err("A valid relative file path is required".into());
+    }
     let root = std::path::Path::new(&repo_path)
         .canonicalize()
         .map_err(|e| e.to_string())?;
@@ -94,7 +100,7 @@ fn git_file_versions(repo_path: String, relative_path: String) -> Result<FileVer
     let modified = fs::read_to_string(&target).map_err(|e| e.to_string())?;
     let original = Command::new("git")
         .current_dir(&root)
-        .args(["show", &format!("HEAD:{relative_path}")])
+        .args(["show", &format!("HEAD:{relative_path}"), "--"])
         .output()
         .map_err(|e| e.to_string())?;
     Ok(FileVersions {
@@ -281,9 +287,15 @@ struct ImportedAgent {
     #[serde(default = "default_agent_scope")]
     scope: String,
 }
-fn default_agent_color() -> String { "#76c6f5".into() }
-fn default_agent_cli() -> String { "codex".into() }
-fn default_agent_model() -> String { "default".into() }
+fn default_agent_color() -> String {
+    "#76c6f5".into()
+}
+fn default_agent_cli() -> String {
+    "codex".into()
+}
+fn default_agent_model() -> String {
+    "default".into()
+}
 #[derive(Deserialize, Serialize)]
 struct ImportedWorkflow {
     #[serde(default = "default_workflow_version")]
@@ -294,8 +306,12 @@ struct ImportedWorkflow {
     #[serde(default)]
     steps: Vec<String>,
 }
-fn default_workflow_version() -> u32 { 1 }
-fn default_workflow_name() -> String { "Imported Wand workflow".into() }
+fn default_workflow_version() -> u32 {
+    1
+}
+fn default_workflow_name() -> String {
+    "Imported Wand workflow".into()
+}
 fn default_agent_scope() -> String {
     "workspace".into()
 }
@@ -401,13 +417,55 @@ struct WorkflowImportResult {
     agents_imported: usize,
     steps: Vec<String>,
 }
+#[derive(Serialize)]
+struct WorkflowRow {
+    name: String,
+    agents: Vec<String>,
+    steps: Vec<String>,
+}
+#[tauri::command]
+fn list_agent_workflows(db: State<Db>) -> Result<Vec<WorkflowRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT value FROM workspace_settings WHERE key LIKE 'agent-workflow:%' ORDER BY key ASC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut workflows = Vec::new();
+    for raw in rows {
+        let workflow: ImportedWorkflow = serde_json::from_str(&raw.map_err(|e| e.to_string())?)
+            .map_err(|e| format!("Stored workflow is invalid: {e}"))?;
+        let agents = workflow
+            .agents
+            .iter()
+            .map(|agent| {
+                agent.id.clone().unwrap_or_else(|| {
+                    agent
+                        .name
+                        .to_lowercase()
+                        .replace(|ch: char| !ch.is_ascii_alphanumeric(), "-")
+                })
+            })
+            .collect();
+        workflows.push(WorkflowRow {
+            name: workflow.name,
+            agents,
+            steps: workflow.steps,
+        });
+    }
+    Ok(workflows)
+}
 #[tauri::command]
 fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportResult, String> {
     let raw = fs::read_to_string(&path).map_err(|e| format!("Unable to read workflow: {e}"))?;
-    let workflow: ImportedWorkflow = serde_json::from_str(&raw)
-        .map_err(|e| format!("Invalid Wand workflow JSON: {e}"))?;
+    let workflow: ImportedWorkflow =
+        serde_json::from_str(&raw).map_err(|e| format!("Invalid Wand workflow JSON: {e}"))?;
     if workflow.version != 1 {
-        return Err(format!("Unsupported workflow version: {}", workflow.version));
+        return Err(format!(
+            "Unsupported workflow version: {}",
+            workflow.version
+        ));
     }
     if workflow.agents.is_empty() || workflow.agents.len() > 100 {
         return Err("A workflow must contain between 1 and 100 agents".into());
@@ -417,31 +475,52 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
     let mut ids = Vec::new();
     for imported in &workflow.agents {
         let id = imported.id.clone().unwrap_or_else(|| {
-            imported.name.to_lowercase().replace(|ch: char| !ch.is_ascii_alphanumeric(), "-")
+            imported
+                .name
+                .to_lowercase()
+                .replace(|ch: char| !ch.is_ascii_alphanumeric(), "-")
         });
         if id.trim().is_empty() || imported.name.trim().is_empty() {
             return Err("Every imported agent needs a name and id".into());
         }
         if imported.role.chars().count() > 1000 {
-            return Err(format!("Agent '{}' exceeds the 1000 character responsibility limit", imported.name));
+            return Err(format!(
+                "Agent '{}' exceeds the 1000 character responsibility limit",
+                imported.name
+            ));
         }
         if allowed_cli(&imported.cli).is_none() {
-            return Err(format!("Agent '{}' uses an unsupported CLI runtime", imported.name));
+            return Err(format!(
+                "Agent '{}' uses an unsupported CLI runtime",
+                imported.name
+            ));
         }
         if imported.model.trim().is_empty() {
             return Err(format!("Agent '{}' needs a model", imported.name));
         }
         if imported.scope != "workspace" {
             let repo = imported.scope.strip_prefix("repo:").unwrap_or_default();
-            let exists: bool = conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM repos WHERE name=?1)", params![repo], |row| row.get(0)
-            ).map_err(|e| e.to_string())?;
-            if !exists { return Err(format!("Unknown repository scope: {}", imported.scope)); }
+            let exists: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM repos WHERE name=?1)",
+                    params![repo],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if !exists {
+                return Err(format!("Unknown repository scope: {}", imported.scope));
+            }
         }
-        let built_in: bool = conn.query_row(
-            "SELECT COALESCE((SELECT built_in FROM agents WHERE id=?1),0)", params![id], |row| row.get(0)
-        ).map_err(|e| e.to_string())?;
-        if built_in { return Err(format!("Workflow cannot replace built-in agent '{id}'")); }
+        let built_in: bool = conn
+            .query_row(
+                "SELECT COALESCE((SELECT built_in FROM agents WHERE id=?1),0)",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if built_in {
+            return Err(format!("Workflow cannot replace built-in agent '{id}'"));
+        }
         conn.execute(
             "INSERT OR REPLACE INTO agents(id,name,role,skills,color,built_in,cli,model,system_prompt,scope) VALUES (?1,?2,?3,?4,0,?5,?6,?7,?3,?8)",
             params![id, imported.name, imported.role, serde_json::to_string(&imported.skills).map_err(|e| e.to_string())?, 0, imported.cli, imported.model, imported.scope],
@@ -450,15 +529,31 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
     }
     for step in &workflow.steps {
         if !ids.iter().any(|id| id == step) {
-            return Err(format!("Workflow step references an agent not in the import: {step}"));
+            return Err(format!(
+                "Workflow step references an agent not in the import: {step}"
+            ));
         }
     }
-    let workflow_key = format!("agent-workflow:{}", workflow.name.to_lowercase().replace(|ch: char| !ch.is_ascii_alphanumeric(), "-"));
+    let workflow_key = format!(
+        "agent-workflow:{}",
+        workflow
+            .name
+            .to_lowercase()
+            .replace(|ch: char| !ch.is_ascii_alphanumeric(), "-")
+    );
     conn.execute(
         "INSERT OR REPLACE INTO workspace_settings(key,value) VALUES (?1,?2)",
-        params![workflow_key, serde_json::to_string(&workflow).map_err(|e| e.to_string())?],
-    ).map_err(|e| e.to_string())?;
-    Ok(WorkflowImportResult { name: workflow.name, agents_imported: ids.len(), steps: workflow.steps })
+        params![
+            workflow_key,
+            serde_json::to_string(&workflow).map_err(|e| e.to_string())?
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(WorkflowImportResult {
+        name: workflow.name,
+        agents_imported: ids.len(),
+        steps: workflow.steps,
+    })
 }
 
 #[derive(Serialize)]
@@ -809,6 +904,7 @@ fn cli_args(cli: &str, model: &str, prompt: String) -> Result<Vec<String>, Strin
     Ok(args)
 }
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn execute_stage(
     command: &str,
     model: &str,
@@ -871,7 +967,9 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         let allowed = cli_access_from_db(&conn)?;
         if !allowed.iter().any(|item| item == &command) {
-            return Err(format!("CLI runtime '{command}' is disabled in Wand settings"));
+            return Err(format!(
+                "CLI runtime '{command}' is disabled in Wand settings"
+            ));
         }
         let (repo_name, stored_path): (String, String) = conn
             .query_row(
@@ -953,7 +1051,8 @@ fn launch_chain_worker(
             if let Ok(conn) = db_arc.lock() {
                 let allowed = cli_access_from_db(&conn).unwrap_or_default();
                 if !allowed.iter().any(|item| item == &stage_command) {
-                    let message = format!("CLI runtime '{stage_command}' is disabled in Wand settings");
+                    let message =
+                        format!("CLI runtime '{stage_command}' is disabled in Wand settings");
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
                     let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
                     return;
@@ -1184,10 +1283,8 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
         let rows = stmt
             .query_map([], |r| r.get(0))
             .map_err(|e| e.to_string())?;
-        let result = rows
-            .collect::<Result<Vec<String>, _>>()
-            .map_err(|e| e.to_string())?;
-        result
+        rows.collect::<Result<Vec<String>, _>>()
+            .map_err(|e| e.to_string())?
     };
     let client = reqwest::Client::new();
     let mut added = 0;
@@ -1536,7 +1633,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,import_agent_workflow,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn run_agent_cli(
