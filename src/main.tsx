@@ -14,6 +14,7 @@ import './chrome-redesign.css';
 import './chrome-fixes.css';
 import './ui-corrections.css';
 import './provider-ui.css';
+import './responsive-fix.css';
 
 type View = 'home'|'threads'|'tasks'|'notifications'|'settings';
 type Repo = { name:string; path:string; color:string; count:number };
