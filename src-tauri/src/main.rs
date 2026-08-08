@@ -1,1 +1,3 @@
-fn main() { wand_lib::run() }
+fn main() {
+    wand_lib::run()
+}

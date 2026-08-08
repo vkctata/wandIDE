@@ -1,8 +1,8 @@
 use chrono::Utc;
 use cron::Schedule;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
@@ -11,7 +11,7 @@ use std::{
     str::FromStr,
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Serialize)]
@@ -46,6 +46,62 @@ fn runtime_command(program: &str) -> Command {
     let mut command = Command::new(program);
     command.env("PATH", runtime_path());
     command
+}
+const CLI_STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+fn run_cli_with_timeout(
+    mut command: Command,
+    timeout: Duration,
+) -> Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>), String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "CLI stdout pipe was unavailable".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "CLI stderr pipe was unavailable".to_string())?;
+    let stdout_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut reader = stdout;
+        let _ = reader.read_to_end(&mut bytes);
+        bytes
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut reader = stderr;
+        let _ = reader.read_to_end(&mut bytes);
+        bytes
+    });
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait().map_err(|error| error.to_string())? {
+            Some(status) => break status,
+            None if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!(
+                    "CLI stage timed out after {} seconds",
+                    timeout.as_secs()
+                ));
+            }
+            None => thread::sleep(Duration::from_millis(100)),
+        }
+    };
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "CLI stdout reader failed".to_string())?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "CLI stderr reader failed".to_string())?;
+    Ok((status, stdout, stderr))
 }
 struct Db(Arc<Mutex<Connection>>);
 #[derive(Serialize)]
@@ -1007,15 +1063,18 @@ fn execute_stage(
         "{task_prompt}\n\nYou are the {agent} stage. {model_hint}\nRESPONSIBILITY: {responsibility}\nSKILLS: {skills_text}\nUse the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}"
     );
     let args = cli_args(command, model, prompt)?;
-    let output = runtime_command(command)
-        .current_dir(repo_path)
-        .args(args)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let mut process = runtime_command(command);
+    process.current_dir(repo_path).args(args);
+    let (status, stdout, stderr) = run_cli_with_timeout(process, CLI_STAGE_TIMEOUT)?;
+    if status.success() {
+        Ok(String::from_utf8_lossy(&stdout).to_string())
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
+        let message = String::from_utf8_lossy(&stderr).trim().to_string();
+        if message.is_empty() {
+            Err(format!("CLI exited with status {status}"))
+        } else {
+            Err(message)
+        }
     }
 }
 fn finish_run(
@@ -1785,7 +1844,11 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     let token = match provider_token("github").await {
         Ok(value) => value,
         Err(error) => {
-            emit_provider_background_error(&app, "github", format!("Credential check failed: {error}"));
+            emit_provider_background_error(
+                &app,
+                "github",
+                format!("Credential check failed: {error}"),
+            );
             return;
         }
     };
@@ -1818,13 +1881,21 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     for name in names {
         let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(error)=>{emit_provider_background_error(&app,"github",format!("Request failed for {name}: {error}"));continue;}};
         if !response.status().is_success() {
-            emit_provider_background_error(&app, "github", format!("GitHub returned {} for {name}", response.status()));
+            emit_provider_background_error(
+                &app,
+                "github",
+                format!("GitHub returned {} for {name}", response.status()),
+            );
             continue;
         }
         let comments: Vec<serde_json::Value> = match response.json().await {
             Ok(value) => value,
             Err(error) => {
-                emit_provider_background_error(&app, "github", format!("Invalid response for {name}: {error}"));
+                emit_provider_background_error(
+                    &app,
+                    "github",
+                    format!("Invalid response for {name}: {error}"),
+                );
                 continue;
             }
         };
@@ -1858,7 +1929,11 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     let token = match provider_token("azure-devops").await {
         Ok(value) => value,
         Err(error) => {
-            emit_provider_background_error(&app, "azure-devops", format!("Credential check failed: {error}"));
+            emit_provider_background_error(
+                &app,
+                "azure-devops",
+                format!("Credential check failed: {error}"),
+            );
             return;
         }
     };
@@ -1894,18 +1969,30 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     {
         Ok(value) => value,
         Err(error) => {
-            emit_provider_background_error(&app, "azure-devops", format!("Request failed: {error}"));
+            emit_provider_background_error(
+                &app,
+                "azure-devops",
+                format!("Request failed: {error}"),
+            );
             return;
         }
     };
     if !response.status().is_success() {
-        emit_provider_background_error(&app, "azure-devops", format!("Azure DevOps returned {}", response.status()));
+        emit_provider_background_error(
+            &app,
+            "azure-devops",
+            format!("Azure DevOps returned {}", response.status()),
+        );
         return;
     }
     let pulls: serde_json::Value = match response.json().await {
         Ok(value) => value,
         Err(error) => {
-            emit_provider_background_error(&app, "azure-devops", format!("Invalid pull-request response: {error}"));
+            emit_provider_background_error(
+                &app,
+                "azure-devops",
+                format!("Invalid pull-request response: {error}"),
+            );
             return;
         }
     };
@@ -1921,13 +2008,24 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         }
         let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(error)=>{emit_provider_background_error(&app,"azure-devops",format!("Thread request failed for pull request {pull_id}: {error}"));continue;}};
         if !response.status().is_success() {
-            emit_provider_background_error(&app, "azure-devops", format!("Azure DevOps returned {} for pull request {pull_id}", response.status()));
+            emit_provider_background_error(
+                &app,
+                "azure-devops",
+                format!(
+                    "Azure DevOps returned {} for pull request {pull_id}",
+                    response.status()
+                ),
+            );
             continue;
         }
         let threads: serde_json::Value = match response.json().await {
             Ok(value) => value,
             Err(error) => {
-                emit_provider_background_error(&app, "azure-devops", format!("Invalid thread response for pull request {pull_id}: {error}"));
+                emit_provider_background_error(
+                    &app,
+                    "azure-devops",
+                    format!("Invalid thread response for pull request {pull_id}: {error}"),
+                );
                 continue;
             }
         };
@@ -2058,14 +2156,17 @@ fn run_agent_cli(
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         let allowed = cli_access_from_db(&conn)?;
         if !allowed.iter().any(|item| item == command) {
-            return Err(format!("CLI runtime '{command}' is disabled in Wand settings"));
+            return Err(format!(
+                "CLI runtime '{command}' is disabled in Wand settings"
+            ));
         }
         drop(conn);
         let path = canonical_existing_directory(&repo_path)?;
         execute_stage(
             command,
             "default",
-            path.to_str().ok_or_else(|| "Repository path is not valid UTF-8".to_string())?,
+            path.to_str()
+                .ok_or_else(|| "Repository path is not valid UTF-8".to_string())?,
             &prompt,
             "legacy-cli",
             "No previous stage output.",
@@ -2419,6 +2520,47 @@ mod tests {
     }
 
     #[test]
+    fn captures_successful_cli_output_and_errors_without_shell_specific_output_api() {
+        #[cfg(unix)]
+        let command = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "printf success; printf failure >&2"]);
+            command
+        };
+        #[cfg(windows)]
+        let command = {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "echo success & echo failure 1>&2"]);
+            command
+        };
+
+        let (status, stdout, stderr) =
+            run_cli_with_timeout(command, Duration::from_secs(5)).unwrap();
+        assert!(status.success());
+        assert!(String::from_utf8_lossy(&stdout).contains("success"));
+        assert!(String::from_utf8_lossy(&stderr).contains("failure"));
+    }
+
+    #[test]
+    fn terminates_a_cli_stage_that_exceeds_its_timeout() {
+        #[cfg(unix)]
+        let command = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "sleep 2"]);
+            command
+        };
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("powershell");
+            command.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 2"]);
+            command
+        };
+
+        let error = run_cli_with_timeout(command, Duration::from_millis(50)).unwrap_err();
+        assert!(error.contains("timed out"));
+    }
+
+    #[test]
     fn runtime_path_keeps_existing_path_entries() {
         let path = runtime_path();
         let entries = std::env::split_paths(&path).collect::<Vec<_>>();
@@ -2463,10 +2605,7 @@ mod tests {
     fn agent_execution_path_requires_an_existing_directory() {
         let directory = canonical_existing_directory(".").unwrap();
         assert_eq!(directory, std::path::Path::new(".").canonicalize().unwrap());
-        assert!(canonical_existing_directory(
-            "this-path-does-not-exist-for-wand-tests"
-        )
-        .is_err());
+        assert!(canonical_existing_directory("this-path-does-not-exist-for-wand-tests").is_err());
         assert!(canonical_existing_directory("src/lib.rs").is_err());
     }
 
@@ -2509,10 +2648,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(parts, ("acme".into(), "Platform".into(), "wand".into(), 42));
-        assert!(
-            azure_pull_request_parts("https://example.com/acme/Platform/_git/wand/pullrequest/42")
-                .is_err()
-        );
+        assert!(azure_pull_request_parts(
+            "https://example.com/acme/Platform/_git/wand/pullrequest/42"
+        )
+        .is_err());
     }
 
     #[test]
