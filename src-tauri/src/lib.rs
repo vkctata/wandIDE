@@ -230,6 +230,18 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
     if !repo_exists {
         return Err(format!("Unknown repository: {}", task.repo.trim()));
     }
+    let (provider, repository_path): (String, String) = conn
+        .query_row(
+            "SELECT provider,path FROM repos WHERE name=?1",
+            params![task.repo.trim()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    if provider != "local" {
+        return Err("Tasks can run only against a local repository selected from your workspace folder".into());
+    }
+    canonical_existing_directory(&repository_path)
+        .map_err(|_| "The selected repository folder is no longer available".to_string())?;
     for agent_id in &task.agents {
         let scope: String = conn
             .query_row(
