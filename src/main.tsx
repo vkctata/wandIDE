@@ -8,6 +8,7 @@ import { Bell, Bot, CheckCircle2, ChevronDown, Clock3, Code2, FolderGit2, GitPul
 import './styles.css';
 import './layout.css';
 import './theme.css';
+import './premium.css';
 
 type View = 'home'|'threads'|'tasks'|'notifications'|'settings';
 type Repo = { name:string; path:string; color:string; count:number };
