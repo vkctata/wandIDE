@@ -344,7 +344,8 @@ fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage
                 author: r.get(2)?,
                 body: r.get(3)?,
                 created_at: r.get(4)?,
-                agent_ids: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(5)?).unwrap_or_default(),
+                agent_ids: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(5)?)
+                    .unwrap_or_default(),
             })
         })
         .map_err(|e| e.to_string())?;
@@ -367,10 +368,17 @@ fn create_thread_message(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let agent_ids = agent_ids.unwrap_or_default();
     for agent_id in &agent_ids {
-        let scope: String = conn.query_row("SELECT scope FROM agents WHERE id=?1", params![agent_id], |row| row.get(0))
+        let scope: String = conn
+            .query_row(
+                "SELECT scope FROM agents WHERE id=?1",
+                params![agent_id],
+                |row| row.get(0),
+            )
             .map_err(|_| format!("Unknown agent mention: {agent_id}"))?;
         if scope != "workspace" && scope != format!("repo:{repo}") {
-            return Err(format!("Agent {agent_id} is not available in repository {repo}"));
+            return Err(format!(
+                "Agent {agent_id} is not available in repository {repo}"
+            ));
         }
     }
     let agent_ids_json = serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?;
@@ -441,6 +449,22 @@ struct CliStatus {
     installed: bool,
     version: String,
 }
+fn installed_cli_path(command: &str) -> Option<String> {
+    let lookup = if cfg!(windows) {
+        Command::new("where").arg(command).output().ok()
+    } else {
+        Command::new("which").arg(command).output().ok()
+    }?;
+    if !lookup.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&lookup.stdout)
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
 #[tauri::command]
 fn detect_clis() -> Vec<CliStatus> {
     let specs = [
@@ -452,22 +476,17 @@ fn detect_clis() -> Vec<CliStatus> {
     specs
         .iter()
         .map(|(id, name, cmd)| {
-            let path = Command::new("sh")
-                .args(["-lc", &format!("command -v {cmd}")])
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-            let version = Command::new(cmd)
-                .arg("--version")
-                .output()
-                .ok()
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .next()
-                        .unwrap_or("")
-                        .to_string()
+            let path = installed_cli_path(cmd);
+            let version = path
+                .as_ref()
+                .and_then(|_| Command::new(cmd).arg("--version").output().ok())
+                .map(|output| {
+                    let text = if output.stdout.is_empty() {
+                        String::from_utf8_lossy(&output.stderr)
+                    } else {
+                        String::from_utf8_lossy(&output.stdout)
+                    };
+                    text.lines().next().unwrap_or("").trim().to_string()
                 })
                 .unwrap_or_default();
             CliStatus {
@@ -1161,7 +1180,11 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
     thread::spawn(move || {
         let mut last_due: HashMap<String, String> = HashMap::new();
         let mut previous_poll = Utc::now() - chrono::Duration::seconds(30);
-        let startup = SyncEvent { source: "startup".into(), message: "Background workers active — scheduler and provider polling started".into(), timestamp: Utc::now().to_rfc3339() };
+        let startup = SyncEvent {
+            source: "startup".into(),
+            message: "Background workers active — scheduler and provider polling started".into(),
+            timestamp: Utc::now().to_rfc3339(),
+        };
         let _ = app.emit("wand://sync", startup);
         loop {
             let now = Utc::now();
@@ -1187,7 +1210,10 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                     let message = format!("Scheduled task due: {name}");
                     let _ = conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)", params!["scheduler.due", message, now.to_rfc3339()]);
                     let _ = app.emit("wand://scheduler", serde_json::json!({"task_id":id,"name":name,"status":"due","at":now.to_rfc3339()}));
-                    let cli = ["claude","codex","kimi","gemini"].iter().find(|candidate| Command::new("sh").args(["-lc",&format!("command -v {candidate}")]).output().map(|out|out.status.success()).unwrap_or(false)).copied();
+                    let cli = ["claude", "codex", "kimi", "gemini"]
+                        .iter()
+                        .find(|candidate| installed_cli_path(candidate).is_some())
+                        .copied();
                     if let Some(cli) = cli { if let Ok((agents_json, repo_name)) = conn.query_row("SELECT agents,repo FROM tasks WHERE id=?1",params![id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))) { if let Ok(agents) = serde_json::from_str::<Vec<String>>(&agents_json) { if let Ok(repo_path) = conn.query_row("SELECT path FROM repos WHERE name=?1",params![repo_name],|r|r.get::<_,String>(0)) { let run_id=format!("{}-{}",id,slot); let run_inserted=conn.execute("INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",params![run_id,id,slot]).unwrap_or(0); if run_inserted>0 { launch_chain_worker(ChainRequest{task_id:id.clone(),prompt:format!("Scheduled task: {name}"),repo_path,agents,cli:cli.to_string(),model:"default".into(),agent_configs:HashMap::new(),run_id:Some(run_id)},cli.to_string(),db.clone(),app.clone()); } } } } }
                   }
                 }
@@ -1454,7 +1480,13 @@ mod tests {
         conn.execute("CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0)",[]).unwrap();
         migrate(&conn).unwrap();
         let columns:i64=conn.query_row("SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name IN ('cli','model','scope')",[],|row|row.get(0)).unwrap();
-        let thread_columns:i64=conn.query_row("SELECT COUNT(*) FROM pragma_table_info('thread_messages') WHERE name='agent_ids'",[],|row|row.get(0)).unwrap();
+        let thread_columns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('thread_messages') WHERE name='agent_ids'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         let seeded: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM agents WHERE id='planner'",
