@@ -882,9 +882,18 @@ fn cli_access_from_db(conn: &Connection) -> Result<Vec<String>, String> {
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    Ok(value
-        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
-        .unwrap_or_default())
+    if let Some(raw) = value {
+        return Ok(serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default());
+    }
+
+    // On first launch, make installed allowlisted runtimes immediately usable.
+    // Once the user saves Preferences, including an intentionally empty list,
+    // the persisted choice is authoritative.
+    Ok(detect_clis()
+        .into_iter()
+        .filter(|cli| cli.installed)
+        .map(|cli| cli.id)
+        .collect())
 }
 fn preferred_allowed_cli(conn: &Connection) -> Option<String> {
     let allowed = cli_access_from_db(conn).ok()?;
@@ -1122,7 +1131,14 @@ fn fail_task(db: &Arc<Mutex<Connection>>, task_id: &str, run_id: &Option<String>
 fn task_is_cancelled(db: &Arc<Mutex<Connection>>, task_id: &str) -> bool {
     db.lock()
         .ok()
-        .and_then(|conn| conn.query_row("SELECT status FROM tasks WHERE id=?1", params![task_id], |row| row.get::<_, String>(0)).ok())
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT status FROM tasks WHERE id=?1",
+                params![task_id],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+        })
         .map(|status| status == "cancelled")
         .unwrap_or(false)
 }
@@ -1251,7 +1267,10 @@ fn launch_chain_worker(
         for (index, agent) in stages.iter().enumerate() {
             if task_is_cancelled(&db_arc, &req.task_id) {
                 finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
-                let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"status":"cancelled"}));
+                let _ = app.emit(
+                    "wand://agent",
+                    serde_json::json!({"task_id":req.task_id,"status":"cancelled"}),
+                );
                 return;
             }
             // The database is the source of truth. The request snapshot is retained only
@@ -2661,10 +2680,11 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_runtime_requires_saved_cli_access() {
+    fn scheduler_runtime_uses_detected_access_until_user_saves_a_choice() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
-        assert!(preferred_allowed_cli(&conn).is_none());
+        let installed = detect_clis().into_iter().any(|cli| cli.installed);
+        assert_eq!(preferred_allowed_cli(&conn).is_some(), installed);
         conn.execute(
             "INSERT OR REPLACE INTO workspace_settings(key,value) VALUES ('allowed-clis', ?1)",
             ["[\"not-a-cli\"]"],
