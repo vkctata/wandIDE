@@ -726,6 +726,7 @@ function Home({
     created_at: string;
   };
   const [events, setEvents] = useState<Event[]>([]);
+  const [localHour, setLocalHour] = useState<number | null>(null);
   const refresh = () =>
     invoke<Event[]>("list_events", { limit: 12 })
       .then(setEvents)
@@ -738,11 +739,19 @@ function Home({
       stops.forEach((stop) => stop.then((fn) => fn()));
     };
   }, []);
+  useEffect(() => {
+    const readLocalHour = () => {
+      invoke<number>("local_hour").then(setLocalHour).catch(() => setLocalHour(new Date().getHours()));
+    };
+    readLocalHour();
+    const timer = window.setInterval(readLocalHour, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const runs = events.filter((e) => e.kind.startsWith("agent.")).length;
   const reviews = events.filter(
     (e) => e.kind.includes("comment") || e.kind.includes("notification"),
   ).length;
-  const hour = new Date().getHours();
+  const hour = localHour ?? new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   return (
     <section className="content">
