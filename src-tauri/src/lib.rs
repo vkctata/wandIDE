@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 struct Db(Arc<Mutex<Connection>>);
@@ -1777,6 +1777,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
     thread::spawn(move || {
         let mut last_due: HashMap<String, String> = HashMap::new();
         let mut previous_poll = Utc::now() - chrono::Duration::seconds(30);
+        let mut last_provider_poll: Option<Instant> = None;
         let startup = SyncEvent {
             source: "startup".into(),
             message: "Background workers active — scheduler and provider polling started".into(),
@@ -1791,7 +1792,11 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
         let _ = app.emit("wand://sync", startup);
         loop {
             let now = Utc::now();
-            if now.timestamp().rem_euclid(300) < 30 {
+            let provider_poll_due = last_provider_poll
+                .map(|started| started.elapsed() >= Duration::from_secs(300))
+                .unwrap_or(true);
+            if provider_poll_due {
+                last_provider_poll = Some(Instant::now());
                 let poll_db = db.clone();
                 let poll_app = app.clone();
                 tauri::async_runtime::spawn(async move {
