@@ -84,7 +84,13 @@ const listen = <T = unknown,>(
 
 type View =
   "home" | "code" | "threads" | "tasks" | "notifications" | "settings";
-type Repo = { name: string; path: string; color: string; count: number };
+type Repo = {
+  name: string;
+  path: string;
+  color: string;
+  count: number;
+  provider?: string;
+};
 type Agent = {
   id: string;
   name: string;
@@ -305,6 +311,7 @@ function App() {
         const next = rows.map((r) => ({
           name: r.name,
           path: r.path,
+          provider: r.provider || "local",
           color: "#89b4fa",
           count: 0,
         }));
@@ -354,6 +361,7 @@ function App() {
           const next = rows.map((r) => ({
             name: r.name,
             path: r.path,
+            provider: r.provider || "local",
             color: "#89b4fa",
             count: 0,
           }));
@@ -475,11 +483,18 @@ function App() {
     }
   };
   const addTask = async () => {
-    if (!repos.length) {
+    const localRepos = repos.filter(
+      (item) => !item.provider || item.provider === "local",
+    );
+    if (!localRepos.length) {
       setNotice(
         "Choose a repository folder in Settings before scheduling a task.",
       );
       setView("settings");
+      return;
+    }
+    if (repo.provider && repo.provider !== "local") {
+      setNotice("Tasks run against local folders. Choose a local repository first.");
       return;
     }
     const available = agentCatalog.filter(

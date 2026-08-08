@@ -212,15 +212,21 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
             .map_err(|error| format!("Invalid cron expression: {error}"))?;
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let repo_exists: bool = conn
+    let repo_provider: Option<String> = conn
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM repos WHERE name=?1)",
+            "SELECT provider FROM repos WHERE name=?1",
             params![task.repo.trim()],
             |row| row.get(0),
         )
         .map_err(|e| e.to_string())?;
-    if !repo_exists {
+    let Some(repo_provider) = repo_provider else {
         return Err(format!("Unknown repository: {}", task.repo.trim()));
+    };
+    if repo_provider != "local" {
+        return Err(format!(
+            "Repository '{}' is provider-synced but has no local folder. Add its local folder in Settings before creating a task.",
+            task.repo.trim()
+        ));
     }
     for agent_id in &task.agents {
         let scope: String = conn
