@@ -1132,6 +1132,13 @@ fn finish_run(
         }
     }
 }
+fn begin_task_run(conn: &Connection, task_id: &str) -> rusqlite::Result<bool> {
+    conn.execute(
+        "UPDATE tasks SET status='running' WHERE id=?1 AND status != 'cancelled'",
+        params![task_id],
+    )
+    .map(|changed| changed > 0)
+}
 #[tauri::command]
 fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
     let command = allowed_cli(&req.cli)
@@ -1206,13 +1213,7 @@ fn launch_chain_worker(
     thread::spawn(move || {
         let cancelled_before_start = match db_arc.lock() {
             Ok(conn) => {
-                let changed = conn
-                    .execute(
-                        "UPDATE tasks SET status='running' WHERE id=?1 AND status != 'cancelled'",
-                        params![req.task_id],
-                    )
-                    .unwrap_or(0);
-                changed == 0
+                !begin_task_run(&conn, &req.task_id).unwrap_or(false)
                     && conn
                         .query_row(
                             "SELECT status FROM tasks WHERE id=?1",
@@ -2597,6 +2598,25 @@ mod tests {
         assert_eq!(recurring, "queued");
         assert_eq!(one_off, "failed");
         assert_eq!(failed_runs, 2);
+    }
+
+    #[test]
+    fn cancelled_task_cannot_transition_back_to_running() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('task','Task','repo','one-off','[]','cancelled','now')",
+            [],
+        )
+        .unwrap();
+
+        assert!(!begin_task_run(&conn, "task").unwrap());
+        let status: String = conn
+            .query_row("SELECT status FROM tasks WHERE id='task'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "cancelled");
     }
 
     #[test]
