@@ -1279,9 +1279,22 @@ function Notifications() {
   const sync = async () => {
     setLoading(true);
     try {
-      await invoke("sync_github_activity");
+      const results = await Promise.allSettled([
+        invoke("sync_github_activity"),
+        invoke<string | null>("provider_url", { provider: "azure-devops" }).then(
+          (providerUrl) =>
+            providerUrl
+              ? invoke("sync_azure_activity", { providerUrl })
+              : undefined,
+        ),
+      ]);
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length === results.length) {
+        throw new Error("No connected provider could be synced");
+      }
       await load();
-    } catch {
+    } catch (error) {
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -1304,7 +1317,7 @@ function Notifications() {
         </div>
         <div className="notice-actions">
           <button className="outline" onClick={sync}>
-            {loading ? "Syncing…" : "Sync GitHub"}
+            {loading ? "Syncing…" : "Sync providers"}
           </button>
           <button className="textbtn" onClick={mark}>
             Mark all read
