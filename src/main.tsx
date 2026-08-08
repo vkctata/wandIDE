@@ -1918,6 +1918,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     built_in: boolean;
   };
   const [items, setItems] = useState<StoredAgent[]>([]);
+  const [enabledClis, setEnabledClis] = useState<string[]>([]);
   const [workflowMessage, setWorkflowMessage] = useState("");
   const load = () =>
     invoke<any[]>("list_agents")
@@ -1929,6 +1930,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
       .catch(() => {});
   useEffect(() => {
     load();
+    invoke<string[]>("cli_access").then(setEnabledClis).catch(() => {});
   }, []);
   const importWorkflow = async () => {
     const selected = await open({
@@ -1952,6 +1954,18 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     }
   };
   const edit = async (agent?: StoredAgent) => {
+    const cliOptions = (enabledClis.length ? enabledClis : ["codex"]).filter(
+      (cli) => cli !== "kimi" || enabledClis.includes("kimi"),
+    );
+    const modelOptions: Record<string, string[]> = {
+      claude: ["default", "sonnet", "opus"],
+      codex: ["default", "gpt-5-codex"],
+      gemini: ["default", "gemini-2.5-pro"],
+      kimi: ["default", "kimi-k2"],
+    };
+    const selectedCli = cliOptions.includes(agent?.cli || "")
+      ? agent?.cli || cliOptions[0]
+      : cliOptions[0];
     const values = await askModal(
       agent ? "Edit agent" : "Create an agent",
       [
@@ -1978,21 +1992,14 @@ function AgentManager({ repos }: { repos: Repo[] }) {
         {
           id: "cli",
           label: "CLI runtime",
-          value: agent?.cli || "codex",
-          options: ["claude", "codex", "kimi", "gemini"],
+          value: selectedCli,
+          options: cliOptions,
         },
         {
           id: "model",
           label: "Model",
           value: agent?.model || "default",
-          options: [
-            "default",
-            "sonnet",
-            "opus",
-            "gpt-5-codex",
-            "gemini-2.5-pro",
-            "kimi-k2",
-          ],
+          options: modelOptions[selectedCli || "codex"] || ["default"],
         },
         {
           id: "scope",

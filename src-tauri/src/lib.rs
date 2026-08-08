@@ -476,6 +476,13 @@ fn save_agent(agent: NewAgent, db: State<Db>) -> Result<(), String> {
         return Err("Agent model is required".into());
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let enabled_clis = cli_access_from_db(&conn)?;
+    if !enabled_clis.iter().any(|cli| cli == &agent.cli) {
+        return Err(format!(
+            "CLI runtime '{}' is not enabled in Wand settings",
+            agent.cli
+        ));
+    }
     if agent.scope != "workspace" {
         let repo_name = agent
             .scope
