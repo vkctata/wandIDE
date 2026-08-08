@@ -17,6 +17,7 @@ html, body, #root { background: transparent; }
     radial-gradient(1100px 560px at 78% -10%, color-mix(in srgb, var(--wand-accent, #9678ff) 6%, transparent) 0%, transparent 62%),
     #0b0d14;
 }
+.content { max-width: 1140px; }
 /* Ambient wash only for the default + obsidian (all other themes keep
    Codex's own theme backgrounds, light and dark). */
 body[data-theme="obsidian"] .app {

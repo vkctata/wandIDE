@@ -742,7 +742,7 @@ function Home({
           icon={TimerReset}
           value={String(events.length)}
           label="Recent events"
-          hint="SQLite event history"
+          hint="Recent activity"
         />
       </div>
       <div className="sectionhead">
@@ -2116,7 +2116,7 @@ function WhatsNewSection() {
 
 function ThemeSection() {
   const [theme, setTheme] = useState(
-    () => localStorage.getItem("wand.theme") || "obsidian",
+    () => localStorage.getItem("wand.theme") || "mint",
   );
   const isLight = ["daylight", "paper", "mint", "lavender"].includes(theme);
   const choose = (name: string) => {
@@ -2729,7 +2729,7 @@ function OnboardingGate() {
 createRoot(document.getElementById("root")!).render(<OnboardingGate />);
 function ThemePicker() {
   const [theme, setTheme] = useState(
-    () => localStorage.getItem("wand.theme") || "obsidian",
+    () => localStorage.getItem("wand.theme") || "mint",
   );
   useEffect(() => {
     document.body.dataset.theme = theme;
