@@ -736,7 +736,8 @@ fn create_thread_message(
     let message;
     {
         let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-        let tx = tx.transaction().map_err(|e| e.to_string())?;
+        let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
         for agent_id in &agent_ids {
             let scope: String = tx
                 .query_row(
