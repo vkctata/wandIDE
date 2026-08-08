@@ -2982,12 +2982,19 @@ function BackgroundStatus() {
   const [status, setStatus] = useState("Starting background workers…");
   const [when, setWhen] = useState("");
   const [heartbeat, setHeartbeat] = useState(0);
+  const [unavailable, setUnavailable] = useState(false);
   const [, setClock] = useState(0);
   useEffect(() => {
+    if (!isTauriRuntime()) {
+      setStatus("Background workers run in the installed desktop app");
+      setWhen("Browser preview");
+      return;
+    }
     const refresh = () => {
       invoke<{ message: string; timestamp: string } | null>("background_status")
         .then((event) => {
           if (!event) return;
+          setUnavailable(false);
           setStatus(event.message);
           setHeartbeat(new Date(event.timestamp).getTime());
           setWhen(
@@ -2997,7 +3004,11 @@ function BackgroundStatus() {
             }),
           );
         })
-        .catch(() => {});
+        .catch(() => {
+          setUnavailable(true);
+          setStatus("Background worker status is unavailable");
+          setWhen("Retrying…");
+        });
     };
     refresh();
     const timer = window.setInterval(() => {
@@ -3022,12 +3033,13 @@ function BackgroundStatus() {
       stop.then((unsubscribe) => unsubscribe());
     };
   }, []);
-  const stale = heartbeat > 0 && Date.now() - heartbeat > 90_000;
+  const stale = unavailable || (heartbeat > 0 && Date.now() - heartbeat > 90_000);
+  const preview = !isTauriRuntime();
   return (
     <div className="background-status" title={stale ? "No background worker heartbeat in the last 90 seconds" : status}>
-      <span className={"background-dot" + (stale ? " error" : "")} />
-      <span>{stale ? "Background workers unavailable" : "Background workers"}</span>
-      <small>{when ? `Checked ${when}` : "Starting…"}</small>
+      <span className={"background-dot" + (stale ? " error" : preview ? " preview" : "")} />
+      <span>{preview ? "Desktop workers" : stale ? "Background workers unavailable" : "Background workers"}</span>
+      <small>{when ? (preview ? when : `Checked ${when}`) : "Starting…"}</small>
     </div>
   );
 }
