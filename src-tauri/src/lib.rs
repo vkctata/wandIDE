@@ -502,6 +502,12 @@ fn save_agent(agent: NewAgent, db: State<Db>) -> Result<(), String> {
             agent.cli
         ));
     }
+    if installed_cli_path(&agent.cli).is_none() {
+        return Err(format!(
+            "CLI runtime '{}' is not installed on this machine",
+            agent.cli
+        ));
+    }
     if agent.scope != "workspace" {
         let repo_name = agent
             .scope
