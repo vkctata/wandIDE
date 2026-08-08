@@ -588,8 +588,9 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
     if workflow.agents.is_empty() || workflow.agents.len() > 100 {
         return Err("A workflow must contain between 1 and 100 agents".into());
     }
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    ensure_agent_prompt(&conn).map_err(|e| e.to_string())?;
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    ensure_agent_prompt(&tx).map_err(|e| e.to_string())?;
     let mut ids = Vec::new();
     for imported in &workflow.agents {
         let id = imported.id.clone().unwrap_or_else(|| {
@@ -616,6 +617,19 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
         if imported.model.trim().is_empty() {
             return Err(format!("Agent '{}' needs a model", imported.name));
         }
+        let enabled_clis = cli_access_from_db(&tx)?;
+        if !enabled_clis.iter().any(|cli| cli == &imported.cli) {
+            return Err(format!(
+                "Agent '{}' uses CLI runtime '{}' that is not enabled in Wand settings",
+                imported.name, imported.cli
+            ));
+        }
+        if installed_cli_path(&imported.cli).is_none() {
+            return Err(format!(
+                "Agent '{}' uses CLI runtime '{}' that is not installed on this machine",
+                imported.name, imported.cli
+            ));
+        }
         if imported.scope != "workspace" {
             let repo = imported.scope.strip_prefix("repo:").unwrap_or_default();
             let exists: bool = conn
@@ -639,7 +653,7 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
         if built_in {
             return Err(format!("Workflow cannot replace built-in agent '{id}'"));
         }
-        conn.execute(
+        tx.execute(
             "INSERT OR REPLACE INTO agents(id,name,role,skills,color,built_in,cli,model,system_prompt,scope) VALUES (?1,?2,?3,?4,0,?5,?6,?7,?3,?8)",
             params![id, imported.name, imported.role, serde_json::to_string(&imported.skills).map_err(|e| e.to_string())?, 0, imported.cli, imported.model, imported.scope],
         ).map_err(|e| e.to_string())?;
@@ -659,7 +673,7 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
             .to_lowercase()
             .replace(|ch: char| !ch.is_ascii_alphanumeric(), "-")
     );
-    conn.execute(
+    tx.execute(
         "INSERT OR REPLACE INTO workspace_settings(key,value) VALUES (?1,?2)",
         params![
             workflow_key,
@@ -667,6 +681,7 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
         ],
     )
     .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(WorkflowImportResult {
         name: workflow.name,
         agents_imported: ids.len(),
