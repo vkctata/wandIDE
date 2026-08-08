@@ -1180,7 +1180,6 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
                 ));
             }
         }
-    }
     for agent_id in &req.agents {
         if agent_id == "sentinel-verifier" {
             continue;
@@ -1201,6 +1200,7 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
                 skills: serde_json::from_str(&skills_json).unwrap_or_default(),
             },
         );
+    }
     }
     let run_id = req
         .run_id
