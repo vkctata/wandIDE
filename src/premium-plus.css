@@ -30,18 +30,118 @@ body[data-theme="obsidian"] .app {
 .eyebrow { letter-spacing: .14em; }
 
 /* ------------------------------------------------------------------ */
-/* Brand mark — a drawn wand, perfectly still, softly lit               */
+/* Brand Wordmark — ultra-sleek typographic identity (no graphic icon) */
 /* ------------------------------------------------------------------ */
-.brand .mark {
-  border-radius: 10px;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), 0 4px 14px rgba(0,0,0,.35);
-  transition: none;
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px 26px;
+  width: 100%;
 }
-.brand .mark svg, .onboard-mark svg { display: block; }
-.wand-tip { opacity: .92; }
+
+.wand-wordmark {
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 24px;
+  font-weight: 850;
+  letter-spacing: -0.065em;
+  text-transform: lowercase;
+  line-height: 1;
+  background: linear-gradient(135deg, #ffffff 0%, color-mix(in srgb, var(--wand-accent, #9678ff) 80%, #ffffff) 40%, var(--wand-accent, #9678ff) 80%, var(--wand-accent-2, #6e56db) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  filter: drop-shadow(0 2px 10px color-mix(in srgb, var(--wand-accent, #9678ff) 30%, transparent));
+  transition: filter 0.25s ease, transform 0.25s ease;
+  user-select: none;
+}
+
+.wand-wordmark:hover {
+  filter: drop-shadow(0 3px 14px color-mix(in srgb, var(--wand-accent, #9678ff) 55%, transparent));
+}
+
+.wand-d {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.d-sparkle {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  width: 10px;
+  height: 10px;
+  color: color-mix(in srgb, var(--wand-accent, #c7b7ff) 90%, #fff);
+  filter: drop-shadow(0 0 5px var(--wand-accent, #9678ff));
+  pointer-events: none;
+  opacity: 0.95;
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+.d-sparkle-sm {
+  position: absolute;
+  top: 5px;
+  right: -9px;
+  width: 5px;
+  height: 5px;
+  color: color-mix(in srgb, var(--wand-accent, #e5dbff) 95%, #fff);
+  filter: drop-shadow(0 0 4px var(--wand-accent, #9678ff));
+  pointer-events: none;
+  opacity: 0.85;
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+.wand-wordmark:hover .d-sparkle {
+  transform: scale(1.15) rotate(6deg);
+  filter: drop-shadow(0 0 8px var(--wand-accent, #9678ff));
+}
+
+.wand-wordmark:hover .d-sparkle-sm {
+  transform: scale(1.25) rotate(-10deg);
+  filter: drop-shadow(0 0 6px var(--wand-accent, #9678ff));
+}
+
+.wand-wordmark-lg {
+  font-size: 44px;
+  letter-spacing: -0.07em;
+  filter: drop-shadow(0 4px 20px color-mix(in srgb, var(--wand-accent, #9678ff) 40%, transparent));
+}
+
+.wand-wordmark-lg::after {
+  width: 8px;
+  height: 8px;
+  margin-left: 3px;
+  margin-bottom: 6px;
+  box-shadow: 0 0 14px var(--wand-accent, #9678ff);
+}
+
+.wand-wordmark-lg .d-sparkle {
+  top: -10px;
+  right: -13px;
+  width: 18px;
+  height: 18px;
+  filter: drop-shadow(0 0 8px var(--wand-accent, #9678ff));
+}
+
+.wand-wordmark-lg .d-sparkle-sm {
+  top: 8px;
+  right: -20px;
+  width: 11px;
+  height: 11px;
+  filter: drop-shadow(0 0 6px var(--wand-accent, #9678ff));
+}
+
 .onboard-mark {
-  border-radius: 16px;
-  box-shadow: 0 14px 34px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.12);
+  background: transparent !important;
+  box-shadow: none !important;
+  width: auto !important;
+  height: auto !important;
+  margin-bottom: 16px;
+  display: block;
 }
 
 /* ------------------------------------------------------------------ */
@@ -54,7 +154,7 @@ body[data-theme="obsidian"] .app {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.10);
   color: #fff;
 }
-.nav.active svg { color: #d7d2ff; }
+.nav.active svg { color: color-mix(in srgb, var(--wand-accent, #d7d2ff) 80%, #fff); }
 .repo.selected { box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
 
 /* ------------------------------------------------------------------ */
@@ -122,6 +222,63 @@ body[data-theme="obsidian"] .app {
 .code { border-radius: 6px; }
 
 /* ------------------------------------------------------------------ *
+ * Modal + form fields — theme-aware, always legible                    *
+ * (ui-corrections only styled `.modal-field input`; textarea/select    *
+ *  fell back to UA styles and `--ink-strong` was never defined, so     *
+ *  typed text could become invisible on light surfaces.)                *
+ * ------------------------------------------------------------------ */
+.wand-modal {
+  --ink-strong: #f0f2fc;
+  --ink-muted: #8b91a6;
+}
+body[data-theme="daylight"] .wand-modal,
+body[data-theme="paper"] .wand-modal,
+body[data-theme="mint"] .wand-modal,
+body[data-theme="lavender"] .wand-modal {
+  --ink-strong: #222c3d;
+  --ink-muted: #5d6c89;
+}
+.modal-field input,
+.modal-field textarea,
+.modal-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 13px;
+  border: 1px solid var(--wand-border, #292d3e);
+  border-radius: 9px;
+  background: var(--wand-surface-2, #1b1e2d);
+  color: var(--ink-strong, #f0f2fc);
+  font: 13px/1.45 'Manrope';
+  outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.modal-field textarea {
+  min-height: 110px;
+  resize: vertical;
+  line-height: 1.55;
+}
+.modal-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 8l3-3.5' fill='none' stroke='%238b91a6' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+}
+.modal-field textarea:focus,
+.modal-field select:focus,
+.modal-field input:focus {
+  border-color: var(--wand-accent, #9678ff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wand-accent, #9678ff) 17%, transparent);
+}
+.modal-field span { print-color-adjust: exact; }
+.wand-modal-top h2,
+.modal-check {
+  color: var(--ink-strong, #f0f2fc);
+}
+.wand-modal-top p { color: var(--ink-muted, #8b91a6); }
+
+/* ------------------------------------------------------------------ *
  * Discovery / removal of prior tinsel                                   *
  * ------------------------------------------------------------------ */
 /* neutralize the earlier colored hover halos and shape-jump animations */
@@ -135,11 +292,15 @@ body[data-theme="obsidian"] .app {
 .stat svg { filter: none; }
 
 /* Light themes: keep chrome legible where my dark-first rules linger */
-body[data-theme="daylight"] .brand .mark,
-body[data-theme="paper"] .brand .mark,
-body[data-theme="mint"] .brand .mark,
-body[data-theme="lavender"] .brand .mark {
-  box-shadow: inset 0 0 0 1px rgba(15,23,42,.10), 0 4px 14px rgba(30,42,66,.16);
+body[data-theme="daylight"] .wand-wordmark,
+body[data-theme="paper"] .wand-wordmark,
+body[data-theme="mint"] .wand-wordmark,
+body[data-theme="lavender"] .wand-wordmark {
+  background: linear-gradient(135deg, #1e293b 0%, var(--wand-accent, #3478d4) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--wand-accent, #3478d4) 25%, transparent));
 }
 body[data-theme="daylight"],
 body[data-theme="paper"],
@@ -193,6 +354,142 @@ body[data-theme="lavender"] {
   border: 2px solid transparent; background-clip: padding-box;
 }
 ::selection { background: color-mix(in srgb, var(--wand-accent, #9678ff) 32%, transparent); color: #fff; }
+
+/* ------------------------------------------------------------------ */
+/* Account Menu & Top-Right Settings Dropdown Polish                  */
+/* ------------------------------------------------------------------ */
+.account-trigger {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  background: var(--wand-surface-2, #1b1e2d);
+  border: 1px solid var(--wand-border, #292d3e);
+  color: var(--wand-accent, #9678ff);
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  transition: all 0.2s ease;
+}
+
+.account-trigger:hover,
+.account-trigger.open {
+  border-color: var(--wand-accent, #9678ff);
+  background: color-mix(in srgb, var(--wand-accent, #9678ff) 18%, var(--wand-surface-2, #1b1e2d));
+  color: var(--wand-accent, #9678ff);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--wand-accent, #9678ff) 25%, transparent);
+}
+
+.account-dropdown {
+  position: absolute;
+  right: 0;
+  top: 46px;
+  width: 210px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--wand-surface, #151823) 95%, #000);
+  border: 1px solid color-mix(in srgb, var(--wand-border, #292d3e) 70%, var(--wand-accent, #9678ff) 30%);
+  border-radius: 12px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45), 0 0 0 1px color-mix(in srgb, var(--wand-accent, #9678ff) 15%, transparent);
+  backdrop-filter: blur(20px);
+  animation: account-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+
+.account-heading {
+  padding: 6px 8px 10px;
+  border-bottom: 1px solid var(--wand-border, #292d3e);
+  margin-bottom: 6px;
+}
+
+.account-heading strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wand-ink, #f1f5f9);
+}
+
+.account-heading small {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--wand-accent, #9678ff) 75%, var(--wand-ink, #94a3b8));
+  margin-top: 2px;
+}
+
+.account-dropdown button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  color: var(--wand-ink, #cbd5e1);
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.account-dropdown button svg {
+  color: var(--wand-accent, #9678ff);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.account-dropdown button:hover {
+  background: color-mix(in srgb, var(--wand-accent, #9678ff) 16%, transparent);
+  color: var(--wand-accent, #9678ff);
+}
+
+.account-dropdown button:hover svg {
+  transform: scale(1.1);
+  color: var(--wand-accent, #9678ff);
+}
+
+/* Light mode overrides */
+body[data-theme="daylight"] .account-dropdown,
+body[data-theme="paper"] .account-dropdown,
+body[data-theme="mint"] .account-dropdown,
+body[data-theme="lavender"] .account-dropdown {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-color: var(--wand-border) !important;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.12) !important;
+}
+
+body[data-theme="daylight"] .account-heading strong,
+body[data-theme="paper"] .account-heading strong,
+body[data-theme="mint"] .account-heading strong,
+body[data-theme="lavender"] .account-heading strong {
+  color: #1e293b !important;
+}
+
+body[data-theme="daylight"] .account-dropdown button,
+body[data-theme="paper"] .account-dropdown button,
+body[data-theme="mint"] .account-dropdown button,
+body[data-theme="lavender"] .account-dropdown button {
+  color: #334155 !important;
+}
+
+body[data-theme="daylight"] .account-dropdown button:hover,
+body[data-theme="paper"] .account-dropdown button:hover,
+body[data-theme="mint"] .account-dropdown button:hover,
+body[data-theme="lavender"] .account-dropdown button:hover {
+  background: color-mix(in srgb, var(--wand-accent) 12%, transparent) !important;
+  color: var(--wand-accent) !important;
+}
+
+.settings-nav-divider {
+  border: 0;
+  border-top: 1px solid var(--wand-border, rgba(255, 255, 255, 0.08));
+  margin: 10px 8px;
+}
+
+.whats-new-nav {
+  color: color-mix(in srgb, var(--wand-accent, #9678ff) 90%, var(--wand-ink, #94a3b8));
+}
 
 /* ------------------------------------------------------------------ *
  * Reduced motion — no entrance, no wiggle                              *

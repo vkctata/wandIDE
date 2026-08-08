@@ -12,6 +12,12 @@ doc prevents clobbering. Update it when handing off a problem.
   pure-CSS tuning of the existing stylesheets. It must NOT edit `lib.rs` or
   `main.tsx` logic unless the user explicitly asks. If opencode finds a logic
   or build bug, it records it here for Codex instead of fixing it.
+- opencode ALSO owns: **the security review of the whole codebase**, tracked in
+  `SECURITY.md` (local ledger, not committed, alongside the REQUIREMENTS rule).
+  Cadence: refresh after any backend change, dependency change, or CSP/updater
+  change, plus monthly. Kick it off with `npm audit` + `cargo audit` when
+  available. Findings are logged in SECURITY.md and handed to Codex to fix its
+  lane; opencode does not patch Codex lanes from the ledger.
 
 ## User rules (both agents)
 
@@ -58,6 +64,21 @@ Ledger claims to update when Codex next edits REQUIREMENTS.md:
 - UI lane (`premium-plus.css`): restrained pass done (entrance fade, quiet
   hover, crisp focus rings, magic-wand SVG logo, breadcrumb/title removed).
   Watch Contrast/lint; keep motion light and reduced-motion honored.
+- 2026-08-08 opencode: swapped UI font DM Sans → Manrope (display=swap; DM Mono
+  kept for mono/code). Retinted every hardcoded accent-purple to the theme
+  accent: `.agenticon/.threadicon/.taskicon` (was #a98cff/#292445),
+  `.stat svg`, `.purple` chip + `.tag.purple`, `.mark`, `.wandmark`,
+  `.onboard-mark`, `.toast`, `.sideplus`, `.eyebrow`, `.badge`, `.nav.active
+  svg`, hero h1 gradient, provider `.notice.unread`. All now use
+  `var(--wand-accent)` (+ color-mix), falling back to the old hex when the var
+  is unset. `npm run build` clean.
+- 2026-08-08 opencode: fixed header Bell iconbtn (was inert) → navigates to
+  notifications view in `src/main.tsx:56`. Fixed modal `textarea`/`select`/
+  `input` legibility: ui-corrections only styled `.modal-field input` and
+  `--ink-strong` was undefined (white-on-light). premium-plus.css now styles
+  all three uniformly + defines ink vars per theme. Attn Codex for next
+  REQUIREMENTS pass: agent models selector exists; `task_utils`/run-history
+  still not exposed in UI.
 
 ## Handoff protocol
 
