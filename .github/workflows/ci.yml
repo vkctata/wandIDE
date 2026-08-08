@@ -3,7 +3,9 @@ name: Build
 on:
   push:
     branches: [main]
+    tags: ['wand-v*']
   pull_request:
+  workflow_dispatch:
 
 jobs:
   web-build:
@@ -30,6 +32,7 @@ jobs:
   desktop-build:
     name: Desktop (${{ matrix.target }})
     needs: web-build
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
