@@ -2685,7 +2685,7 @@ mod tests {
 
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
-        let registered = registered_path.to_string_lossy().to_string();
+        let registered = registered_path.canonicalize().unwrap().to_string_lossy().to_string();
         conn.execute(
             "INSERT INTO repos(name,path,provider) VALUES ('registered',?1,'local')",
             params![registered],
