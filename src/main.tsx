@@ -1361,7 +1361,9 @@ function Notifications() {
     try {
       const message = item.provider === "github"
         ? await invoke<string>("github_pull_request_action", { repo: match![1], pullNumber: Number(match![2]), action, body: values.body || "" })
-        : await invoke<string>("azure_pull_request_comment", { pullRequestUrl: item.url, body: values.body || "" });
+        : action === "approve"
+          ? await invoke<string>("azure_pull_request_approve", { pullRequestUrl: item.url })
+          : await invoke<string>("azure_pull_request_comment", { pullRequestUrl: item.url, body: values.body || "" });
       setActionMessage(message);
       await sync();
     } catch (error) {
@@ -1414,7 +1416,7 @@ function Notifications() {
             <div className="notice-actions">
               <a className="textbtn" href={item.url || "#"} target="_blank" rel="noreferrer">Open</a>
               {(item.provider === "github" || item.provider === "azure-devops") && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
-              {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
+              {(item.provider === "github" || item.provider === "azure-devops") && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
             </div>
           </div>
         ))
