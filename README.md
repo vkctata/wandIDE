@@ -1,8 +1,6 @@
 # Wand
 
-Wand is a local-first AI engineering IDE for Tauri 2, React, and TypeScript. Build with a team of focused agents, keep every handoff visible, and finish with background verification.
-
-Project guidance: [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md) · [License](LICENSE)
+Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
 
 ## What is in this repository
 
@@ -20,7 +18,7 @@ The current build provides the desktop-ready product foundation:
   - Code reviewer
   - Sentinel verifier
   - Docs writer
-- Task creation with agent tagging and ordered handoff chains; each stage uses its persisted CLI, model, responsibility, and skills configuration
+- Task creation with agent tagging and ordered handoff chains; each stage uses its configured CLI and model
 - Configurable agent responsibilities (textarea, capped at 1,000 characters), supported CLI runtimes, model choices, skills, and repository scopes; every agent can be edited after creation
 - Repository-scoped agents created automatically when local repositories are scanned
 - Scheduled task execution with five- and seven-field cron expressions, durable run history, and background Rust scheduling
@@ -28,11 +26,7 @@ The current build provides the desktop-ready product foundation:
 - GitHub and Azure DevOps repository and pull-request comment synchronization
 - Repository threads with live human/agent messages and persisted agent handoff comments
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
-- Explicit native notification permission status and request flow in Settings
 - Monaco file editor with guarded repository saves and Git original-versus-modified diff viewer
-- Isolated `.wand/worktrees` creation and validated unified patch application
-- Durable per-stage agent transcripts in SQLite, expandable from task run history
-- GitHub and Azure DevOps pull-request actions for opening, commenting, and supported approvals
 - Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
 - Tauri icon and desktop configuration for macOS and Windows
 - Linux x64 packaging through GitHub Actions (`.deb` and `.AppImage`)
@@ -110,14 +104,13 @@ GitHub Actions builds these installers for tagged releases and attaches them to 
 
 ## Wand website
 
-The complete static product site lives in `website/` at the repository root and
-is published by `.github/workflows/pages.yml` to [GitHub Pages](https://vkctata.github.io/wandIDE/).
-It includes the product walkthrough, screenshots, animated agent-team hero,
-and platform cards that resolve the latest GitHub Release asset for direct
-macOS, Windows, or Linux downloads. If a matching asset is unavailable, the
-card falls back to the release page. GitHub Pages cannot safely send email by
-itself; configure `window.WAND_NEWSLETTER_ENDPOINT` with a provider-owned
-HTTPS endpoint or serverless function and keep its API key off the site.
+The static product site lives in `website/` and is published through
+`.github/workflows/pages.yml` to GitHub Pages whenever the site changes on
+`main`. It includes release-aware download links, product screenshots, and a
+responsive newsletter signup surface. GitHub Pages cannot safely send email by
+itself; configure `window.WAND_NEWSLETTER_ENDPOINT` in the site deployment to
+point at a provider-owned HTTPS endpoint or a small serverless function. Keep
+any provider API key on that service, never in the Pages bundle.
 
 ## Validation
 
@@ -163,7 +156,7 @@ TAURI_SIGNING_PRIVATE_KEY
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
-The private key must never be committed. The public key is embedded in the desktop configuration and is safe to publish. The release workflow creates signed updater artifacts and a GitHub Release; publish the draft after reviewing the generated assets so the website download links and updater endpoint become live.
+The private key must never be committed. The public key is embedded in the desktop configuration and is safe to publish. The release workflow creates signed updater artifacts and drafts a GitHub Release for approval.
 
 ## Product concepts
 
@@ -207,29 +200,22 @@ agents cannot be overwritten by an import.
 
 ### Repositories
 
-Repositories are selected from a local workspace folder and scanned for Git repositories. Each local repository becomes a navigable workspace tag, a repository-scoped engineering agent, and a context boundary for threads, tasks, agent runs, and provider events. GitHub and Azure DevOps sync may also surface remote repository metadata for activity and pull-request notifications; those entries must be selected locally before Wand can run CLI-backed tasks against them.
+Repositories are selected from a local workspace folder and scanned for Git repositories. Each repository becomes a navigable workspace tag, a repository-scoped engineering agent, and a context boundary for threads, tasks, agent runs, and provider events.
 
 ### Integrations
 
-GitHub and Azure DevOps can be connected from Settings with PATs stored through the operating system credential manager. Repository sync and pull-request comment polling run in Rust background adapters, with normalized events sent to React. Notifications can open GitHub pull requests, post comments to GitHub or Azure DevOps, and approve GitHub pull requests without exposing credentials to the browser layer.
-
-Task runs keep a durable per-stage transcript in SQLite. Open Tasks → Run history and expand any run to inspect each agent's handoff, verification result, or failure after restarting Wand.
-
-The Code view can create an isolated `.wand/worktrees` checkout and apply a
-unified patch after `git apply --check` validates it. Settings → Notifications
-also reports native OS permission state and can request permission explicitly.
+GitHub and Azure DevOps can be connected from Settings with PATs stored through the operating system credential manager. Repository sync and pull-request comment polling run in Rust background adapters, with normalized events sent to React.
 
 ### Local-first data
 
 The browser shell keeps a small local-storage fallback for development. The desktop runtime persists repositories, tasks, events, threads, notifications, agents, provider settings, and task runs in SQLite through Tauri, while secrets remain in the OS credential manager.
 
-## Current focus
+## Remaining roadmap
 
-Wand’s core desktop workflow is implemented: local repositories, persisted agent
-teams, CLI-backed handoffs, background verification, scheduled runs, provider
-sync, threads, notifications, and guarded code review flows. Future work will
-focus on deeper provider coverage, richer review automation, and continued
-runtime performance improvements.
+1. Add streaming agent output and a durable per-stage transcript view.
+2. Add worktree creation and patch application controls around the Monaco diff surface.
+3. Add richer provider actions such as opening, approving, and commenting on pull requests from Wand.
+4. Add configurable per-notification-category OS permission onboarding.
 
 ## License
 

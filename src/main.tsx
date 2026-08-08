@@ -1,12 +1,14 @@
-import React, { lazy, Suspense, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { sendNotification } from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import Editor, { DiffEditor, loader } from "@monaco-editor/react";
+import * as monaco from "monaco-editor";
 import {
   Activity,
   Bell,
@@ -48,10 +50,11 @@ import "./provider-ui.css";
 import "./responsive-fix.css";
 import "./premium-plus.css";
 import "./threads.css";
+import "./native-ui.css";
 
-// Load Monaco only when the user opens Code. The editor remains self-contained
-// in packaged builds, while the rest of Wand starts without its worker payload.
-const EditorSurface = lazy(() => import("./EditorSurface"));
+// Keep the editor self-contained in packaged builds. The default Monaco
+// loader points at jsDelivr, which is inappropriate for a local-first IDE.
+loader.config({ monaco });
 
 const isTauriRuntime = () =>
   typeof window !== "undefined" &&
@@ -71,11 +74,7 @@ const listen = <T = unknown,>(
   event: string,
   handler: (event: { payload: T }) => void,
 ): Promise<() => void> =>
-  !isTauriRuntime()
-    ? Promise.resolve(() => {})
-    : Promise.resolve()
-        .then(() => tauriListen<T>(event, handler))
-        .catch(() => () => {});
+  isTauriRuntime() ? tauriListen<T>(event, handler) : Promise.resolve(() => {});
 
 type View =
   "home" | "code" | "threads" | "tasks" | "notifications" | "settings";
@@ -91,14 +90,6 @@ type Agent = {
   model?: string;
   system_prompt?: string;
 };
-const timeGreeting = (date: Date) => {
-  const hour = date.getHours();
-  if (hour < 5) return "Good night";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  if (hour < 22) return "Good evening";
-  return "Good night";
-};
 type Task = {
   id: string;
   name: string;
@@ -107,7 +98,6 @@ type Task = {
   cron: string;
   active: boolean;
   agents: string[];
-  status?: string;
 };
 type AgentWorkflow = { name: string; agents: string[]; steps: string[] };
 const defaultRepos: Repo[] = [];
@@ -158,6 +148,13 @@ const emptyRepo: Repo = {
 const load = <T,>(key: string, fallback: T): T => {
   try {
     return JSON.parse(localStorage.getItem(key) || "") as T;
+  } catch {
+    return fallback;
+  }
+};
+const parseJson = <T,>(value: string | null | undefined, fallback: T): T => {
+  try {
+    return value ? (JSON.parse(value) as T) : fallback;
   } catch {
     return fallback;
   }
@@ -240,9 +237,8 @@ function App() {
           rows.map((r) => ({
             ...r,
             provider: "Agent chain",
-            active: r.status !== "failed" && r.status !== "cancelled",
-            status: r.status,
-            agents: JSON.parse(r.agents || "[]"),
+            active: r.status !== "failed",
+            agents: parseJson<string[]>(r.agents, []),
           })),
         ),
       )
@@ -250,7 +246,7 @@ function App() {
     invoke<any[]>("list_agents")
       .then((rows) =>
         setAgentCatalog(
-          rows.map((r) => ({ ...r, skills: JSON.parse(r.skills || "[]") })),
+          rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) })),
         ),
       )
       .catch(() => {});
@@ -331,14 +327,8 @@ function App() {
         .catch(() => {});
     const subscriptions = [
       listen<any>("wand://provider", (event) => {
-        const provider = event.payload?.provider || "Provider";
-        if (event.payload?.status === "error") {
-          const error = event.payload?.error || "Provider sync failed.";
-          setNotice(`${provider} sync failed`);
-          notifyDesktop("provider", `${provider} sync failed`, error);
-          return;
-        }
         refreshRepos();
+        const provider = event.payload?.provider || "Provider";
         const count = event.payload?.count ?? 0;
         setNotice(`${provider} sync completed · ${count} repositories`);
         notifyDesktop(
@@ -524,10 +514,6 @@ function App() {
     setView("tasks");
   };
   const runTask = async (t: Task) => {
-    if (t.status === "cancelled") {
-      setNotice("Cancelled tasks cannot be run again. Create a new task instead.");
-      return;
-    }
     const selected = t.agents
       .map((id) => agentCatalog.find((a) => a.id === id))
       .filter(Boolean) as Agent[];
@@ -567,28 +553,19 @@ function App() {
       setNotice(
         `Started ${chain || "agent chain"} using enabled runtimes; verifier queued`,
       );
-    } catch (error) {
-      const message = String(error).replace(/^Error:\s*/i, "");
+    } catch {
       setNotice(
-        message || `Unable to start ${chain || "agent chain"}. Check CLI access in Settings.`,
+        `Queued: ${chain || "agent chain"}. Enable a local CLI in Settings to execute it.`,
       );
-    }
-  };
-  const cancelTask = async (task: Task) => {
-    try {
-      await invoke("cancel_task", { taskId: task.id });
-      setTasks((current) => current.map((item) => item.id === task.id
-        ? { ...item, active: false, status: "cancelled" }
-        : item));
-      setNotice(`Cancelled ${task.name}`);
-    } catch (error) {
-      setNotice(String(error).replace(/^Error:\s*/i, ""));
     }
   };
   const nav = (v: View) => (
     <button
       className={view === v ? "nav active" : "nav"}
-      onClick={() => setView(v)}
+      onClick={() => {
+        setQuery("");
+        setView(v);
+      }}
     >
       {v === "home" ? (
         <LayoutDashboard />
@@ -661,17 +638,7 @@ function App() {
         </div>
       </aside>
       <main>
-        <header
-          data-tauri-drag-region
-          onMouseDown={(event) => {
-            if ((event.target as HTMLElement).closest("input,button,a,select,textarea")) return;
-            try {
-              getCurrentWindow().startDragging().catch(() => {});
-            } catch {
-              // The browser shell has no native window to drag.
-            }
-          }}
-        >
+        <header>
           <div className="actions">
             <div className="search">
               <Search size={15} />
@@ -735,7 +702,7 @@ function App() {
         ) : view === "threads" ? (
           <Threads repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
-          <Tasks tasks={tasks} addTask={addTask} runTask={runTask} cancelTask={cancelTask} />
+          <Tasks tasks={tasks} addTask={addTask} runTask={runTask} />
         ) : view === "notifications" ? (
           <Notifications />
         ) : (
@@ -752,11 +719,6 @@ function Home({
   setView: (v: View) => void;
   userName: string;
 }) {
-  const [clock, setClock] = useState(() => new Date());
-  useEffect(() => {
-    const timer = window.setInterval(() => setClock(new Date()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
   type Event = {
     id: number;
     kind: string;
@@ -780,6 +742,8 @@ function Home({
   const reviews = events.filter(
     (e) => e.kind.includes("comment") || e.kind.includes("notification"),
   ).length;
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   return (
     <section className="content">
       <div className="hero">
@@ -787,7 +751,7 @@ function Home({
           <p className="eyebrow">
             <span className="pulse" /> LOCAL WORKSPACE
           </p>
-          <h1>{timeGreeting(clock)}, {userName}.</h1>
+          <h1>{greeting}, {userName}.</h1>
           <p className="sub">
             Your agents are ready to work across your repositories.
           </p>
@@ -956,16 +920,6 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
       setError(String(e));
     }
   };
-  const createWorktree = async () => {
-    const values = await askModal("Create a repository worktree", [{ id: "branch", label: "Branch name", placeholder: "wand/feature-name", value: "wand/" }], "Wand creates an isolated worktree under .wand/worktrees.");
-    if (!values?.branch) return;
-    try { const path = await invoke<string>("create_git_worktree", { repoPath: repo.path, branch: values.branch }); setError(`Worktree ready: ${path}`); } catch (e) { setError(String(e)); }
-  };
-  const applyPatch = async () => {
-    const values = await askModal("Apply a Git patch", [{ id: "patch", label: "Unified diff", placeholder: "diff --git …", multiline: true, maxLength: 200000 }], "Wand validates the patch with git apply --check before applying it to the selected repository.");
-    if (!values?.patch) return;
-    try { await invoke("apply_git_patch", { repoPath: repo.path, patch: values.patch }); await load(); setError("Patch applied successfully."); } catch (e) { setError(String(e)); }
-  };
   const save = async () => {
     try {
       setSaving(true);
@@ -1030,8 +984,6 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
           >
             {saving ? "Saving…" : "Save"}
           </button>
-          <button className="outline" onClick={createWorktree}>Worktree</button>
-          <button className="outline" onClick={applyPatch}>Apply patch</button>
           <button className="primary" onClick={load}>
             Open
           </button>
@@ -1044,9 +996,35 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
         </div>
       ) : (
         <div className="editor-shell">
-          <Suspense fallback={<div className="editor-loading">Loading editor…</div>}>
-            <EditorSurface mode={mode} language={language} content={content} original={original} onChange={(value) => setContent(value || "")} />
-          </Suspense>
+          {mode === "file" ? (
+            <Editor
+              height="100%"
+              theme="vs-dark"
+              language={language}
+              value={content}
+              onChange={(value) => setContent(value || "")}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                automaticLayout: true,
+                tabSize: 2,
+              }}
+            />
+          ) : (
+            <DiffEditor
+              height="100%"
+              theme="vs-dark"
+              language={language}
+              original={original}
+              modified={content}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                readOnly: true,
+                automaticLayout: true,
+              }}
+            />
+          )}
         </div>
       )}
     </section>
@@ -1178,12 +1156,10 @@ function Tasks({
   tasks,
   addTask,
   runTask,
-  cancelTask,
 }: {
   tasks: Task[];
   addTask: () => void;
   runTask: (t: Task) => void;
-  cancelTask: (t: Task) => void;
 }) {
   type Run = {
     id: string;
@@ -1194,13 +1170,7 @@ function Tasks({
     status: string;
     error?: string;
   };
-  type Transcript = {
-    id: number; run_id: string; task_id: string; repo: string; agent: string;
-    stage: number; status: string; content: string; created_at: string;
-  };
   const [runs, setRuns] = useState<Run[]>([]);
-  const [transcripts, setTranscripts] = useState<Record<string, Transcript[]>>({});
-  const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const load = () =>
     invoke<Run[]>("list_task_runs", { limit: 30 })
       .then(setRuns)
@@ -1217,25 +1187,15 @@ function Tasks({
     running: runs.filter((r) => r.status === "running").length,
     completed: runs.filter((r) => r.status === "completed").length,
     failed: runs.filter((r) => r.status === "failed").length,
-    cancelled: runs.filter((r) => r.status === "cancelled").length,
   };
   const summaryItems: Array<[string, number, string]> = [
     ["running", summary.running, "Running"],
     ["completed", summary.completed, "Completed"],
     ["failed", summary.failed, "Failed"],
-    ["cancelled", summary.cancelled, "Cancelled"],
   ];
   const retry = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (task) runTask(task);
-  };
-  const toggleTranscript = async (run: Run) => {
-    if (expandedRun === run.id) { setExpandedRun(null); return; }
-    setExpandedRun(run.id);
-    if (!transcripts[run.id]) {
-      const rows = await invoke<Transcript[]>("list_agent_transcripts", { taskId: run.task_id }).catch(() => []);
-      setTranscripts((current) => ({ ...current, [run.id]: rows.filter((row) => row.run_id === run.id) }));
-    }
   };
   return (
     <section className="content">
@@ -1265,15 +1225,12 @@ function Tasks({
             </p>
           </div>
           <code>{t.cron}</code>
-          <span className={"tag " + (t.status === "cancelled" ? "red" : t.active ? "green" : "blue")}>
-            {t.status === "cancelled" ? "Cancelled" : t.active ? "Active" : "Paused"}
+          <span className={"tag " + (t.active ? "green" : "blue")}>
+            {t.active ? "Active" : "Paused"}
           </span>
-          {t.status !== "cancelled" && <button className="run" onClick={() => runTask(t)}>
+          <button className="run" onClick={() => runTask(t)}>
             <Play size={14} /> Run now
-          </button>}
-          {(t.status === "queued" || t.status === "running" || t.active) && <button className="retry-run" onClick={() => cancelTask(t)}>
-            Cancel
-          </button>}
+          </button>
         </div>
       ))}
       <div className="sectionhead">
@@ -1310,8 +1267,7 @@ function Tasks({
           </div>
         ) : (
           runs.map((run) => (
-            <React.Fragment key={run.id}>
-            <div className="run-row">
+            <div className="run-row" key={run.id}>
               <div>
                 <b>
                   {tasks.find((t) => t.id === run.task_id)?.name || run.task_id}
@@ -1333,9 +1289,6 @@ function Tasks({
               >
                 {run.status}
               </span>
-              <button className="retry-run" onClick={() => toggleTranscript(run)}>
-                <ChevronDown size={13} /> {expandedRun === run.id ? "Hide transcript" : "View transcript"}
-              </button>
               {run.status === "failed" ? (
                 <button
                   className="retry-run"
@@ -1352,17 +1305,6 @@ function Tasks({
                 </button>
               ) : null}
             </div>
-            {expandedRun === run.id && (
-              <div className="transcript-panel">
-                {(transcripts[run.id] || []).length === 0 ? <p className="sub">No persisted stage output for this run yet.</p> : transcripts[run.id].map((stage) => (
-                  <article className="transcript-stage" key={stage.id}>
-                    <div><b>Stage {stage.stage} · {stage.agent}</b><span className={"tag " + (stage.status === "failed" ? "red" : stage.status === "verified" ? "green" : "blue")}>{stage.status}</span></div>
-                    <pre>{stage.content}</pre>
-                  </article>
-                ))}
-              </div>
-            )}
-            </React.Fragment>
           ))
         )}
       </div>
@@ -1398,22 +1340,9 @@ function Notifications() {
   const sync = async () => {
     setLoading(true);
     try {
-      const results = await Promise.allSettled([
-        invoke("sync_github_activity"),
-        invoke<string | null>("provider_url", { provider: "azure-devops" }).then(
-          (providerUrl) =>
-            providerUrl
-              ? invoke("sync_azure_activity", { providerUrl })
-              : undefined,
-        ),
-      ]);
-      const failures = results.filter((result) => result.status === "rejected");
-      if (failures.length === results.length) {
-        throw new Error("No connected provider could be synced");
-      }
+      await invoke("sync_github_activity");
       await load();
-    } catch (error) {
-      setItems([]);
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -1423,24 +1352,20 @@ function Notifications() {
     setItems(items.map((x) => ({ ...x, unread: false })));
   };
   const actOnPullRequest = async (item: Notice, action: "comment" | "approve") => {
-    const match = item.provider === "github" ? item.url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/i) : null;
-    if (item.provider !== "github" && item.provider !== "azure-devops") return;
-    if (item.provider === "github" && !match) {
+    if (item.provider !== "github") return;
+    const match = item.url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/i);
+    if (!match) {
       setActionMessage("This notification does not contain a GitHub pull-request URL.");
       return;
     }
     const values = await askModal(
       action === "approve" ? "Approve pull request" : "Comment on pull request",
       [{ id: "body", label: action === "approve" ? "Optional review note" : "Comment", placeholder: "Share context with the team…", multiline: true, maxLength: 4000 }],
-      item.provider === "github" ? `${match![1]} · pull request #${match![2]}` : "Azure DevOps pull request",
+      `${match[1]} · pull request #${match[2]}`,
     );
     if (!values) return;
     try {
-      const message = item.provider === "github"
-        ? await invoke<string>("github_pull_request_action", { repo: match![1], pullNumber: Number(match![2]), action, body: values.body || "" })
-        : action === "approve"
-          ? await invoke<string>("azure_pull_request_approve", { pullRequestUrl: item.url })
-          : await invoke<string>("azure_pull_request_comment", { pullRequestUrl: item.url, body: values.body || "" });
+      const message = await invoke<string>("github_pull_request_action", { repo: match[1], pullNumber: Number(match[2]), action, body: values.body || "" });
       setActionMessage(message);
       await sync();
     } catch (error) {
@@ -1461,7 +1386,7 @@ function Notifications() {
         </div>
         <div className="notice-actions">
           <button className="outline" onClick={sync}>
-            {loading ? "Syncing…" : "Sync providers"}
+            {loading ? "Syncing…" : "Sync GitHub"}
           </button>
           <button className="textbtn" onClick={mark}>
             Mark all read
@@ -1479,7 +1404,10 @@ function Notifications() {
         </div>
       ) : (
         items.map((item) => (
-          <div className={"notice " + (item.unread ? "unread" : "")} key={item.id}>
+          <div
+            className={"notice " + (item.unread ? "unread" : "")}
+            key={item.id}
+          >
             <div className="eventicon purple">
               <MessageSquare size={17} />
             </div>
@@ -1492,8 +1420,8 @@ function Notifications() {
             <span>{item.provider}</span>
             <div className="notice-actions">
               <a className="textbtn" href={item.url || "#"} target="_blank" rel="noreferrer">Open</a>
-              {(item.provider === "github" || item.provider === "azure-devops") && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
-              {(item.provider === "github" || item.provider === "azure-devops") && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
+              {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
+              {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
             </div>
           </div>
         ))
@@ -1740,21 +1668,6 @@ function ProviderAccess() {
     await invoke("save_provider_token", { provider, token: values.token });
     refresh();
   };
-  const disconnect = async (provider: string, name: string) => {
-    const confirmed = await askModal(
-      `Disconnect ${name}?`,
-      [],
-      "Wand will remove the PAT from the native credential store and stop syncing this provider.",
-    );
-    if (confirmed === null) return;
-    try {
-      await invoke("disconnect_provider", { provider });
-      await refresh();
-      setMessage(`${name} disconnected.`);
-    } catch (e) {
-      setMessage(String(e));
-    }
-  };
   const sync = async (provider: string) => {
     try {
       setSyncing(provider);
@@ -1821,15 +1734,6 @@ function ProviderAccess() {
           >
             {syncing === id ? "Syncing…" : "Sync repos"}
           </button>
-          {status[id] && (
-            <button
-              className="outline danger"
-              disabled={!!syncing}
-              onClick={() => disconnect(id, name)}
-            >
-              Disconnect
-            </button>
-          )}
         </div>
       ))}
       {message && <p className="provider-message">{message}</p>}
@@ -1855,7 +1759,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     invoke<any[]>("list_agents")
       .then((rows) =>
         setItems(
-          rows.map((r) => ({ ...r, skills: JSON.parse(r.skills || "[]") })),
+          rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) })),
         ),
       )
       .catch(() => {});
@@ -2111,10 +2015,9 @@ function NotificationPreferencesSection() {
   };
   const [prefs, setPrefs] = useState<Prefs>(() => ({
     ...defaults,
-    ...JSON.parse(localStorage.getItem("wand.notification-prefs") || "{}"),
+    ...parseJson<Partial<Prefs>>(localStorage.getItem("wand.notification-prefs"), {}),
   }));
   const [saved, setSaved] = useState(false);
-  const [permission, setPermission] = useState<"granted" | "denied" | "checking" | "unavailable">("checking");
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "notification-prefs" })
       .then((value) => {
@@ -2127,16 +2030,6 @@ function NotificationPreferencesSection() {
       })
       .catch(() => {});
   }, []);
-  useEffect(() => {
-    if (!isTauriRuntime()) { setPermission("unavailable"); return; }
-    isPermissionGranted().then((granted) => setPermission(granted ? "granted" : "denied")).catch(() => setPermission("unavailable"));
-  }, []);
-  const enableDesktopNotifications = async () => {
-    try {
-      const next = await requestPermission();
-      setPermission(next === "granted" ? "granted" : "denied");
-    } catch { setPermission("unavailable"); }
-  };
   const toggle = (key: keyof Prefs) => {
     const next = { ...prefs, [key]: !prefs[key] };
     setPrefs(next);
@@ -2198,14 +2091,6 @@ function NotificationPreferencesSection() {
             />
           </label>
         ))}
-      </div>
-      <div className="notification-permission-row">
-        <div>
-          <b>Desktop notification permission</b>
-          <small>{permission === "granted" ? "Wand can show native OS notifications." : permission === "denied" ? "Allow notifications to receive background updates." : permission === "unavailable" ? "Available in the installed desktop app." : "Checking system permission…"}</small>
-        </div>
-        {permission !== "granted" && permission !== "unavailable" && <button className="outline" onClick={enableDesktopNotifications}>Enable desktop notifications</button>}
-        {permission === "granted" && <span className="tag green">Enabled</span>}
       </div>
     </div>
   );
@@ -2750,12 +2635,7 @@ function WindowChrome() {
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
     return null;
   const isMac = navigator.platform.toLowerCase().includes("mac");
-  let appWindow: ReturnType<typeof getCurrentWindow>;
-  try {
-    appWindow = getCurrentWindow();
-  } catch {
-    return null;
-  }
+  const appWindow = getCurrentWindow();
   const runWindowCommand = (name: string, command: () => Promise<void>) => {
     command().catch((error) =>
       console.error(`Unable to ${name} the Wand window`, error),
@@ -2765,13 +2645,21 @@ function WindowChrome() {
     <div className={"window-chrome" + (isMac ? " mac" : "")}>
       <div className="window-drag" data-tauri-drag-region />
       <div className="window-controls">
-        <button className="window-minimize" aria-label="Minimize Wand" onClick={() => runWindowCommand("minimize", () => appWindow.minimize())}>
+        <button
+          className="window-minimize"
+          aria-label="Minimize Wand"
+          onClick={() =>
+            runWindowCommand("minimize", () => appWindow.minimize())
+          }
+        >
           <Minus size={13} />
         </button>
         <button
           className="window-maximize"
           aria-label="Maximize Wand"
-          onClick={() => runWindowCommand("maximize", () => appWindow.toggleMaximize())}
+          onClick={() =>
+            runWindowCommand("maximize", () => appWindow.toggleMaximize())
+          }
         >
           <Square size={12} />
         </button>
@@ -2827,35 +2715,21 @@ function BackgroundStatus() {
   );
 }
 function ProviderHealth() {
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
   useEffect(() => {
     const stop = listen<any>("wand://provider", (event) => {
-      const provider = event.payload?.provider || "provider";
-      if (event.payload?.status === "error") {
-        setErrors((current) => ({
-          ...current,
-          [provider]: event.payload?.error || "Provider sync failed.",
-        }));
-      } else {
-        setErrors((current) => {
-          const next = { ...current };
-          delete next[provider];
-          return next;
-        });
-      }
+      if (event.payload?.status === "error")
+        setError(`${event.payload.provider}: ${event.payload.error}`);
     });
     return () => {
       stop.then((unsubscribe) => unsubscribe());
     };
   }, []);
-  const error = Object.entries(errors)
-    .map(([provider, message]) => `${provider}: ${message}`)
-    .join(" · ");
   if (!error) return null;
   return (
     <button
       className="provider-health-error"
-      onClick={() => setErrors({})}
+      onClick={() => setError("")}
       title="Dismiss provider health warning"
     >
       <span className="background-dot error" />
@@ -2869,9 +2743,21 @@ function UpdateBanner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
+    if (!isTauriRuntime()) return;
     check()
-      .then((value) => setUpdate(value || null))
-      .catch(() => {});
+      .then(async (value) => {
+        if (!value) return;
+        setUpdate(value);
+        try {
+          setBusy(true);
+          await value.downloadAndInstall();
+          await relaunch();
+        } catch (reason) {
+          setBusy(false);
+          setError(String(reason));
+        }
+      })
+      .catch((reason) => setError(String(reason)));
   }, []);
   if (!update) return null;
   const install = async () => {
@@ -2891,12 +2777,12 @@ function UpdateBanner() {
         <Sparkles size={15} />
       </div>
       <div className="update-banner-copy">
-        <strong>Update available</strong>
+        <strong>{busy ? "Installing update…" : "Update available"}</strong>
         <span>Wand {update.version}</span>
         {error && <small>{error}</small>}
       </div>
       <button onClick={install} disabled={busy}>
-        {busy ? "Installing…" : "Update"}
+        {busy ? "Installing…" : "Retry"}
       </button>
     </aside>
   );
@@ -2925,22 +2811,9 @@ function OnboardingGate() {
   const [show, setShow] = useState(
     () => localStorage.getItem("wand.onboarding.complete") !== "true",
   );
-  useEffect(() => {
-    invoke<string | null>("user_name")
-      .then((name) => {
-        const hasSavedName = Boolean(name?.trim());
-        setShow(!hasSavedName);
-        if (hasSavedName) localStorage.setItem("wand.onboarding.complete", "true");
-      })
-      .catch(() => {
-        // Browser preview has no SQLite boundary; retain its local onboarding state.
-      });
-  }, []);
   const finish = async (name: string) => {
-    const cleanName = name.trim();
-    if (!cleanName) return;
-    await invoke("save_user_name", { name: cleanName }).catch(() => {});
-    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: cleanName }));
+    await invoke("save_user_name", { name }).catch(() => {});
+    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
     localStorage.setItem("wand.onboarding.complete", "true");
     setShow(false);
   };
@@ -2953,7 +2826,6 @@ function OnboardingGate() {
       <UpdateBanner />
       <RuntimeIdentity />
       <ThemePicker />
-      <AccountMenu />
       <ModalHost />
       {show && <Onboarding done={finish} />}
     </>
