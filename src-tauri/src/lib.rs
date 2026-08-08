@@ -611,8 +611,11 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
     if workflow.agents.is_empty() || workflow.agents.len() > 100 {
         return Err("A workflow must contain between 1 and 100 agents".into());
     }
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     ensure_agent_prompt(&conn).map_err(|e| e.to_string())?;
+    let conn = conn
+        .transaction()
+        .map_err(|e| format!("Unable to start workflow import: {e}"))?;
     let mut ids = Vec::new();
     for imported in &workflow.agents {
         let id = imported.id.clone().unwrap_or_else(|| {
@@ -690,11 +693,14 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
         ],
     )
     .map_err(|e| e.to_string())?;
-    Ok(WorkflowImportResult {
+    let result = WorkflowImportResult {
         name: workflow.name,
         agents_imported: ids.len(),
         steps: workflow.steps,
-    })
+    };
+    conn.commit()
+        .map_err(|e| format!("Unable to commit workflow import: {e}"))?;
+    Ok(result)
 }
 
 #[derive(Serialize)]
