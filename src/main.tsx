@@ -265,25 +265,34 @@ function App() {
     };
   }, []);
   const [view, setView] = useState<View>("home");
-  const [repos, setRepos] = useState(() => load("wand.repos", defaultRepos));
-  const [tasks, setTasks] = useState(() => load("wand.tasks", defaultTasks));
-  const [repo, setRepo] = useState<Repo>(
-    () => load<Repo[]>("wand.repos", defaultRepos)[0] || emptyRepo,
+  const [repos, setRepos] = useState(() =>
+    isTauriRuntime() ? defaultRepos : load("wand.repos", defaultRepos),
   );
+  const [tasks, setTasks] = useState(() =>
+    isTauriRuntime() ? defaultTasks : load("wand.tasks", defaultTasks),
+  );
+  const [repo, setRepo] = useState<Repo>(() => {
+    const initial = isTauriRuntime()
+      ? defaultRepos
+      : load<Repo[]>("wand.repos", defaultRepos);
+    return initial[0] || emptyRepo;
+  });
   const [userName, setUserName] = useState("there");
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
   const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
   const [enabledClis, setEnabledClis] = useState<string[]>([]);
-  useEffect(
-    () => localStorage.setItem("wand.repos", JSON.stringify(repos)),
-    [repos],
-  );
-  useEffect(
-    () => localStorage.setItem("wand.tasks", JSON.stringify(tasks)),
-    [tasks],
-  );
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      localStorage.setItem("wand.repos", JSON.stringify(repos));
+    }
+  }, [repos]);
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      localStorage.setItem("wand.tasks", JSON.stringify(tasks));
+    }
+  }, [tasks]);
   useEffect(() => {
     const refreshTasks = () =>
       invoke<any[]>("list_tasks")
