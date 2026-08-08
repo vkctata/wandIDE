@@ -492,6 +492,62 @@ body[data-theme="lavender"] .account-dropdown button:hover {
 }
 
 /* ------------------------------------------------------------------ *
+ * What’s New — Compact Typography                                    *
+ * ------------------------------------------------------------------ */
+.whats-new-section .settings-section-head h2 {
+  font-size: 15px !important;
+  margin-bottom: 2px;
+}
+
+.whats-new-section .settings-section-head p {
+  font-size: 12px !important;
+  color: var(--wand-muted, #81889d);
+}
+
+.whats-new-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.whats-new-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  background: var(--wand-surface-2, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--wand-border, rgba(255, 255, 255, 0.08));
+  border-radius: 9px;
+}
+
+.whats-new-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--wand-accent, #9678ff) 14%, transparent);
+  color: var(--wand-accent, #9678ff);
+}
+
+.whats-new-card h3 {
+  font-size: 12.5px !important;
+  font-weight: 600;
+  margin: 0 0 2px 0;
+  color: var(--wand-text, #dfe2ef);
+  line-height: 1.35;
+}
+
+.whats-new-card p {
+  font-size: 11px !important;
+  color: var(--wand-muted, #81889d);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------------ *
  * Reduced motion — no entrance, no wiggle                              *
  * ------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
