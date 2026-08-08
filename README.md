@@ -25,7 +25,7 @@ The current build provides the desktop-ready product foundation:
 - GitHub and Azure DevOps repository and pull-request comment synchronization
 - Repository threads with live human/agent messages and persisted agent handoff comments
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
-- Monaco file editor and Git original-versus-modified diff viewer
+- Monaco file editor with guarded repository saves and Git original-versus-modified diff viewer
 - Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
 - Tauri icon and desktop configuration for macOS and Windows
 - Linux x64 packaging through GitHub Actions (`.deb` and `.AppImage`)
