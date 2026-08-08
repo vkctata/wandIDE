@@ -2004,15 +2004,38 @@ fn run_agent_cli(
     db: State<Db>,
     app: AppHandle,
 ) -> CliResult {
-    let message = format!("Queued {provider} task for {repo_path}: {prompt}");
+    let result = (|| -> Result<String, String> {
+        let command = allowed_cli(&provider).ok_or_else(|| "Unsupported CLI".to_string())?;
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let allowed = cli_access_from_db(&conn)?;
+        if !allowed.iter().any(|item| item == command) {
+            return Err(format!("CLI runtime '{command}' is disabled in Wand settings"));
+        }
+        drop(conn);
+        let path = canonical_existing_directory(&repo_path)?;
+        execute_stage(
+            command,
+            "default",
+            path.to_str().ok_or_else(|| "Repository path is not valid UTF-8".to_string())?,
+            &prompt,
+            "legacy-cli",
+            "No previous stage output.",
+            "Execute the requested task and report the result.",
+            &[],
+        )
+    })();
+    let (ok, message, kind) = match result {
+        Ok(output) => (true, output, "agent.completed"),
+        Err(error) => (false, error, "agent.failed"),
+    };
     if let Ok(conn) = db.0.lock() {
         let _ = conn.execute(
             "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
-            params!["agent.queued", message, Utc::now().to_rfc3339()],
+            params![kind, &message, Utc::now().to_rfc3339()],
         );
     }
-    let _ = app.emit("wand://agent", message.clone());
-    CliResult { ok: true, message }
+    let _ = app.emit("wand://agent", serde_json::json!({"agent":"legacy-cli","status":if ok {"completed"} else {"failed"},"message":message}));
+    CliResult { ok, message }
 }
 #[tauri::command]
 fn read_repo_file(repo_path: String, relative_path: String) -> Result<String, String> {
