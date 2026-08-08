@@ -1,6 +1,6 @@
 # Wand
 
-Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
+Wand is a local-first AI engineering IDE for Tauri 2, React, and TypeScript. Build with a team of focused agents, keep every handoff visible, and finish with background verification.
 
 ## What is in this repository
 
@@ -104,13 +104,14 @@ GitHub Actions builds these installers for tagged releases and attaches them to 
 
 ## Wand website
 
-The static product site lives in `website/` and is published through
-`.github/workflows/pages.yml` to GitHub Pages whenever the site changes on
-`main`. It includes release-aware download links, product screenshots, and a
-responsive newsletter signup surface. GitHub Pages cannot safely send email by
-itself; configure `window.WAND_NEWSLETTER_ENDPOINT` in the site deployment to
-point at a provider-owned HTTPS endpoint or a small serverless function. Keep
-any provider API key on that service, never in the Pages bundle.
+The complete static product site lives in `website/` at the repository root and
+is published by `.github/workflows/pages.yml` to [GitHub Pages](https://vkctata.github.io/wandIDE/).
+It includes the product walkthrough, screenshots, animated agent-team hero,
+and platform cards that resolve the latest GitHub Release asset for direct
+macOS, Windows, or Linux downloads. If a matching asset is unavailable, the
+card falls back to the release page. GitHub Pages cannot safely send email by
+itself; configure `window.WAND_NEWSLETTER_ENDPOINT` with a provider-owned
+HTTPS endpoint or serverless function and keep its API key off the site.
 
 ## Validation
 
