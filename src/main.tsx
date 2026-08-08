@@ -1965,10 +1965,26 @@ function NotificationPreferencesSection() {
     ...JSON.parse(localStorage.getItem("wand.notification-prefs") || "{}"),
   }));
   const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    invoke<string | null>("workspace_setting", { key: "notification-prefs" })
+      .then((value) => {
+        if (!value) return;
+        try {
+          setPrefs({ ...defaults, ...JSON.parse(value) });
+        } catch {
+          // Keep the safe defaults when a legacy value is malformed.
+        }
+      })
+      .catch(() => {});
+  }, []);
   const toggle = (key: keyof Prefs) => {
     const next = { ...prefs, [key]: !prefs[key] };
     setPrefs(next);
     localStorage.setItem("wand.notification-prefs", JSON.stringify(next));
+    void invoke("save_workspace_setting", {
+      key: "notification-prefs",
+      value: JSON.stringify(next),
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
   };
