@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Wand is a local-first AI engineering IDE for teams of coding agents." />
+    <title>Wand — engineering, with a little magic</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-nav">
+      <a class="brand" href="#top" aria-label="Wand home"><span>wand.</span><i>✦</i></a>
+      <nav><a href="#how">How it works</a><a href="#screenshots">Screenshots</a><a href="#download">Download</a></nav>
+      <a class="nav-cta" href="#download">Get Wand</a>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="kicker"><span></span> LOCAL-FIRST AI ENGINEERING</p>
+          <h1>A little magic<br /><em>for serious</em> software.</h1>
+          <p class="lede">Wand brings your coding agents, repositories, tasks, reviews, and background verification into one calm desktop workspace.</p>
+          <div class="hero-actions"><a class="button primary" href="#download">Download Wand <span>↗</span></a><a class="text-link" href="https://github.com/vkctata/wandIDE" target="_blank" rel="noreferrer">View on GitHub <span>↗</span></a></div>
+          <div class="platform-note"><span class="status-dot"></span> macOS · Windows · Linux &nbsp;·&nbsp; private by default</div>
+        </div>
+        <div class="hero-orbit" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="sparkle">✦</div></div>
+      </section>
+
+      <section id="how" class="feature-section">
+        <p class="kicker"><span></span> YOUR ENGINEERING CREW</p>
+        <div class="section-heading"><h2>Agents that move<br /><em>the work forward.</em></h2><p>Tag the right specialist, let each stage hand off its findings, and keep a verifier running in the background until the work is truly done.</p></div>
+        <div class="feature-grid"><article><b>01</b><h3>Compose your team</h3><p>Import workflows or configure agents with their own responsibility, skills, CLI runtime, model, and repository scope.</p></article><article><b>02</b><h3>Keep the thread</h3><p>Every repository gets a persistent chat, activity timeline, task history, and a VS Code-style diff surface.</p></article><article><b>03</b><h3>Verify in the background</h3><p>Recurring tasks, provider sync, handoffs, and final verification run locally with durable SQLite history.</p></article></div>
+      </section>
+
+      <section id="screenshots" class="screens-section"><div class="section-heading"><div><p class="kicker"><span></span> INSIDE WAND</p><h2>Quiet surface.<br /><em>Serious depth.</em></h2></div><p>Designed to fit the way engineers actually work: focused, responsive, and ready when you are.</p></div><figure><img src="./assets/wand-home.png" alt="Wand home dashboard showing activity, repositories, and engineering agents" /><figcaption>Wand home · local activity, repositories, and active agents</figcaption></figure></section>
+
+      <section id="download" class="download-section"><div><p class="kicker"><span></span> START YOUR NEXT RUN</p><h2>Bring your whole<br /><em>crew along.</em></h2><p>Download the latest signed release for your platform. Wand checks GitHub Releases for updates and asks before installing anything.</p></div><div class="download-grid"><a class="download-card" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noreferrer"><strong></strong><span>macOS</span><small>Apple Silicon & Intel · DMG</small><b>Download ↗</b></a><a class="download-card" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noreferrer"><strong>⊞</strong><span>Windows</span><small>x64 · MSI / EXE</small><b>Download ↗</b></a><a class="download-card" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noreferrer"><strong>◉</strong><span>Linux</span><small>x64 · AppImage / DEB</small><b>Download ↗</b></a></div></section>
+
+      <section class="newsletter"><div><p class="kicker"><span></span> THE WAND LETTER</p><h2>New spells,<br /><em>when they land.</em></h2><p>Occasional notes about releases, new agent capabilities, and useful engineering workflows.</p></div><form id="newsletter-form"><label for="email">Your email</label><div class="email-row"><input id="email" name="email" type="email" required placeholder="you@example.com" autocomplete="email" /><button class="button primary" type="submit">Keep me posted</button></div><p class="form-note" id="form-note">No noise. Unsubscribe anytime.</p></form></section>
+    </main>
+    <footer><a class="brand" href="#top"><span>wand.</span><i>✦</i></a><span>Local-first tools for thoughtful software.</span><a href="https://github.com/vkctata/wandIDE" target="_blank" rel="noreferrer">GitHub ↗</a></footer>
+    <script src="./main.js"></script>
+  </body>
+</html>

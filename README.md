@@ -102,6 +102,16 @@ Installers are published on the [Wand Releases page](https://github.com/vkctata/
 
 GitHub Actions builds these installers for tagged releases and attaches them to the release. Linux users may need the WebKitGTK and related system libraries documented in the [Tauri Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
 
+## Wand website
+
+The static product site lives in `website/` and is published through
+`.github/workflows/pages.yml` to GitHub Pages whenever the site changes on
+`main`. It includes release-aware download links, product screenshots, and a
+responsive newsletter signup surface. GitHub Pages cannot safely send email by
+itself; configure `window.WAND_NEWSLETTER_ENDPOINT` in the site deployment to
+point at a provider-owned HTTPS endpoint or a small serverless function. Keep
+any provider API key on that service, never in the Pages bundle.
+
 ## Validation
 
 Run the frontend build:
