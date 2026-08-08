@@ -84,27 +84,15 @@ body[data-theme="obsidian"] .app {
 
 .d-sparkle {
   position: absolute;
-  top: -5px;
-  right: -7px;
-  width: 10px;
-  height: 10px;
+  top: -8px;
+  right: -17px;
+  width: 22px;
+  height: 15px;
   color: color-mix(in srgb, var(--wand-accent, #c7b7ff) 90%, #fff);
+  fill: currentColor;
   filter: drop-shadow(0 0 5px var(--wand-accent, #9678ff));
   pointer-events: none;
   opacity: 0.95;
-  transition: transform 0.25s ease, filter 0.25s ease;
-}
-
-.d-sparkle-sm {
-  position: absolute;
-  top: 5px;
-  right: -9px;
-  width: 5px;
-  height: 5px;
-  color: color-mix(in srgb, var(--wand-accent, #e5dbff) 95%, #fff);
-  filter: drop-shadow(0 0 4px var(--wand-accent, #9678ff));
-  pointer-events: none;
-  opacity: 0.85;
   transition: transform 0.25s ease, filter 0.25s ease;
 }
 
@@ -113,39 +101,18 @@ body[data-theme="obsidian"] .app {
   filter: drop-shadow(0 0 8px var(--wand-accent, #9678ff));
 }
 
-.wand-wordmark:hover .d-sparkle-sm {
-  transform: scale(1.25) rotate(-10deg);
-  filter: drop-shadow(0 0 6px var(--wand-accent, #9678ff));
-}
-
 .wand-wordmark-lg {
   font-size: 44px;
   letter-spacing: -0.07em;
   filter: drop-shadow(0 4px 20px color-mix(in srgb, var(--wand-accent, #9678ff) 40%, transparent));
 }
 
-.wand-wordmark-lg::after {
-  width: 8px;
-  height: 8px;
-  margin-left: 3px;
-  margin-bottom: 6px;
-  box-shadow: 0 0 14px var(--wand-accent, #9678ff);
-}
-
 .wand-wordmark-lg .d-sparkle {
-  top: -10px;
-  right: -13px;
-  width: 18px;
-  height: 18px;
+  top: -15px;
+  right: -31px;
+  width: 39px;
+  height: 27px;
   filter: drop-shadow(0 0 8px var(--wand-accent, #9678ff));
-}
-
-.wand-wordmark-lg .d-sparkle-sm {
-  top: 8px;
-  right: -20px;
-  width: 11px;
-  height: 11px;
-  filter: drop-shadow(0 0 6px var(--wand-accent, #9678ff));
 }
 
 .onboard-mark {
@@ -156,9 +123,6 @@ body[data-theme="obsidian"] .app {
   margin-bottom: 16px;
   display: block;
 }
-.onboard-w { font-size: 44px; font-weight: 850; line-height: 1; letter-spacing: -.08em; color: var(--wand-ink, #fff); text-shadow: 0 0 22px color-mix(in srgb, var(--wand-accent) 45%, transparent); }
-.onboard-sparkles { display: inline-block; margin-left: 4px; vertical-align: top; color: var(--wand-accent, #a98cff); font-size: 20px; animation: sparkle-float 2.6s ease-in-out infinite; }
-@keyframes sparkle-float { 50% { transform: translateY(-3px) rotate(8deg); opacity: .72; } }
 
 /* ------------------------------------------------------------------ */
 /* Compact top bar — slimmer header + search + right-hand controls      */

@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
     fs,
+    io::Read,
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
@@ -918,7 +919,9 @@ fn installed_cli_path(command: &str) -> Option<String> {
         .next()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+        .and_then(|value| Path::new(value).canonicalize().ok())
+        .filter(|value| value.is_file())
+        .map(|value| value.to_string_lossy().into_owned())
 }
 #[tauri::command]
 fn detect_clis() -> Vec<CliStatus> {
@@ -934,7 +937,7 @@ fn detect_clis() -> Vec<CliStatus> {
             let path = installed_cli_path(cmd);
             let version = path
                 .as_ref()
-                .and_then(|_| Command::new(cmd).arg("--version").output().ok())
+                .and_then(|binary| Command::new(binary).arg("--version").output().ok())
                 .map(|output| {
                     let text = if output.stdout.is_empty() {
                         String::from_utf8_lossy(&output.stderr)
@@ -1188,6 +1191,35 @@ fn cli_args(cli: &str, model: &str, prompt: String) -> Result<Vec<String>, Strin
     args.push(prompt);
     Ok(args)
 }
+
+const MAX_STAGE_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+
+fn read_bounded<R: Read>(mut reader: R) -> Result<(Vec<u8>, bool), String> {
+    let mut stored = Vec::new();
+    let mut buffer = [0_u8; 16 * 1024];
+    let mut truncated = false;
+    loop {
+        let read = reader.read(&mut buffer).map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        let remaining = MAX_STAGE_OUTPUT_BYTES.saturating_sub(stored.len());
+        if remaining > 0 {
+            stored.extend_from_slice(&buffer[..read.min(remaining)]);
+        }
+        truncated |= read > remaining;
+    }
+    Ok((stored, truncated))
+}
+
+fn bounded_output_text(output: Vec<u8>, truncated: bool) -> String {
+    let mut text = String::from_utf8_lossy(&output).to_string();
+    if truncated {
+        text.push_str("\n\n[Wand truncated stage output after 4 MiB]");
+    }
+    text
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 fn execute_stage(
@@ -1217,31 +1249,45 @@ fn execute_stage(
     };
     let prompt = format!("{task_prompt}\n\nYou are the {agent} stage. {model_hint}\nRESPONSIBILITY: {responsibility}\nSKILLS: {skills_text}\nUse the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}");
     let args = cli_args(command, model, prompt)?;
-    let mut child = Command::new(command)
+    let binary = installed_cli_path(command)
+        .ok_or_else(|| format!("CLI runtime '{command}' is no longer installed"))?;
+    let mut child = Command::new(binary)
         .current_dir(repo_path)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take().ok_or_else(|| "Unable to capture CLI output".to_string())?;
+    let stderr = child.stderr.take().ok_or_else(|| "Unable to capture CLI errors".to_string())?;
+    let stdout_reader = thread::spawn(move || read_bounded(stdout));
+    let stderr_reader = thread::spawn(move || read_bounded(stderr));
     const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-    if child
+    let status = if let Some(status) = child
         .wait_timeout(STAGE_TIMEOUT)
         .map_err(|e| e.to_string())?
-        .is_none()
     {
+        status
+    } else {
         let _ = child.kill();
-        let _ = child.wait_with_output();
+        let _ = child.wait();
+        let _ = stdout_reader.join();
+        let _ = stderr_reader.join();
         return Err(format!(
             "CLI stage timed out after {} minutes",
             STAGE_TIMEOUT.as_secs() / 60
         ));
-    }
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    };
+    let (stdout, stdout_truncated) = stdout_reader
+        .join()
+        .map_err(|_| "CLI output reader failed".to_string())??;
+    let (stderr, stderr_truncated) = stderr_reader
+        .join()
+        .map_err(|_| "CLI error reader failed".to_string())??;
+    if status.success() {
+        Ok(bounded_output_text(stdout, stdout_truncated))
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
+        Err(bounded_output_text(stderr, stderr_truncated))
     }
 }
 fn finish_run(
@@ -2771,6 +2817,18 @@ mod tests {
             vec!["-p", "--model", "gemini-2.5-pro", "hello"]
         );
         assert!(cli_args("unknown", "default", "hello".into()).is_err());
+    }
+
+    #[test]
+    fn bounds_cli_output_while_draining_the_stream() {
+        let source = vec![b'x'; MAX_STAGE_OUTPUT_BYTES + 1024];
+        let (output, truncated) = read_bounded(source.as_slice()).unwrap();
+
+        assert_eq!(output.len(), MAX_STAGE_OUTPUT_BYTES);
+        assert!(truncated);
+        assert!(bounded_output_text(output, truncated).ends_with(
+            "[Wand truncated stage output after 4 MiB]"
+        ));
     }
 
     #[test]
