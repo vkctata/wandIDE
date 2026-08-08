@@ -316,8 +316,14 @@ function App() {
         .catch(() => {});
     const subscriptions = [
       listen<any>("wand://provider", (event) => {
-        refreshRepos();
         const provider = event.payload?.provider || "Provider";
+        if (event.payload?.status === "error") {
+          const error = event.payload?.error || "Provider sync failed.";
+          setNotice(`${provider} sync failed`);
+          notifyDesktop("provider", `${provider} sync failed`, error);
+          return;
+        }
+        refreshRepos();
         const count = event.payload?.count ?? 0;
         setNotice(`${provider} sync completed · ${count} repositories`);
         notifyDesktop(
