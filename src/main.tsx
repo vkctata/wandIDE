@@ -2776,24 +2776,35 @@ function BackgroundStatus() {
   );
 }
 function ProviderHealth() {
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
   useEffect(() => {
     const stop = listen<any>("wand://provider", (event) => {
+      const provider = event.payload?.provider || "provider";
       if (event.payload?.status === "error") {
-        setError(`${event.payload.provider}: ${event.payload.error}`);
+        setErrors((current) => ({
+          ...current,
+          [provider]: event.payload?.error || "Provider sync failed.",
+        }));
       } else {
-        setError("");
+        setErrors((current) => {
+          const next = { ...current };
+          delete next[provider];
+          return next;
+        });
       }
     });
     return () => {
       stop.then((unsubscribe) => unsubscribe());
     };
   }, []);
+  const error = Object.entries(errors)
+    .map(([provider, message]) => `${provider}: ${message}`)
+    .join(" · ");
   if (!error) return null;
   return (
     <button
       className="provider-health-error"
-      onClick={() => setError("")}
+      onClick={() => setErrors({})}
       title="Dismiss provider health warning"
     >
       <span className="background-dot error" />
