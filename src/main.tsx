@@ -562,7 +562,10 @@ function App() {
   const nav = (v: View) => (
     <button
       className={view === v ? "nav active" : "nav"}
-      onClick={() => setView(v)}
+      onClick={() => {
+        setQuery("");
+        setView(v);
+      }}
     >
       {v === "home" ? (
         <LayoutDashboard />
