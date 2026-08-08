@@ -25,6 +25,7 @@ The current build provides the desktop-ready product foundation:
 - Background provider polling and normalized `wand://` events to the UI, with a persistent worker heartbeat indicator and provider health errors
 - GitHub and Azure DevOps repository and pull-request comment synchronization
 - Repository threads with live human/agent messages and persisted agent handoff comments
+- Tagging an agent in a repository thread creates a persisted one-off task and starts the ordered handoff plus final Sentinel verification chain; tagged work appears immediately in Tasks
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
 - Monaco file editor with guarded repository saves and Git original-versus-modified diff viewer
 - Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
@@ -141,7 +142,7 @@ The release matrix covers Apple Silicon macOS, Intel macOS, Windows x64, and Lin
 
 ## Credential security
 
-Provider PATs are never stored in Wand's SQLite database, browser storage, a `.pfx` file, or a repository. Wand stores them through the native OS credential manager: macOS Keychain, Windows Credential Manager, or the Linux Secret Service/keyring backend. Each installation gets a random installation namespace in the same OS credential manager, so one installation cannot accidentally reuse another installation's credential slot. Existing legacy Wand credentials are migrated into the installation-scoped slot on first use.
+Provider PATs can be disconnected from Settings at any time; disconnect removes the installation-scoped and legacy credential entries and clears Azure organization settings. Provider PATs are never stored in Wand's SQLite database, browser storage, a `.pfx` file, or a repository. Wand stores them through the native OS credential manager: macOS Keychain, Windows Credential Manager, or the Linux Secret Service/keyring backend. Each installation gets a random installation namespace in the same OS credential manager, so one installation cannot accidentally reuse another installation's credential slot. Existing legacy Wand credentials are migrated into the installation-scoped slot on first use.
 
 Wand intentionally does not create portable `.pfx` files for PATs. PFX is a certificate container and would require a separate password/key; keeping that password beside the file would be weaker than the native credential stores. No PAT value crosses into React or is written to disk by the Rust database layer.
 
@@ -162,7 +163,7 @@ The private key must never be committed. The public key is embedded in the deskt
 
 ### Agents
 
-Agents are persistent specialists with one responsibility, a skill set, model, CLI runtime, and scope. Responsibility text is capped at 1,000 characters and is used as the agent's execution instruction. A task can tag one or more applicable agents from the selected repository. Wand preserves their order and sends the output of one stage to the next:
+Agents are persistent specialists with one responsibility, a skill set, model, CLI runtime, and scope. Responsibility text is capped at 1,000 characters and is used as the agent's execution instruction; there is no separate user-facing system-prompt field. A task can tag one or more applicable agents from the selected repository. Wand preserves their order and sends the output of one stage to the next:
 
 ```text
 Planner → Builder → Code reviewer → Sentinel
