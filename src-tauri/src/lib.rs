@@ -1,7 +1,9 @@
 use chrono::Utc;
+use chrono::TimeZone;
+use cron::Schedule;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, sync::{Arc, Mutex}, thread, time::Duration, io::Write};
+use std::{collections::HashMap, fs, path::PathBuf, sync::{Arc, Mutex}, thread, time::Duration, io::Write, str::FromStr};
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Serialize)] struct CliResult { ok: bool, message: String }
@@ -30,10 +32,36 @@ fn run_agent_chain(req:ChainRequest, db:State<Db>, app:AppHandle)->Result<(),Str
 #[derive(Clone, Serialize)]
 struct SyncEvent { source: String, message: String, timestamp: String }
 
-fn start_background_sync(app: AppHandle, db:Arc<Mutex<Connection>>) {
-  thread::spawn(move || loop {
-    if let Ok(conn)=db.lock(){let count:i64=conn.query_row("SELECT COUNT(*) FROM tasks WHERE cron != 'one-off' AND status != 'completed'",[],|r|r.get(0)).unwrap_or(0); let event = SyncEvent { source: "scheduler".into(), message: format!("Background scheduler active — {count} recurring task(s) monitored"), timestamp: Utc::now().to_rfc3339() }; let _=app.emit("wand://sync", event);} 
-    thread::sleep(Duration::from_secs(30));
+fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
+  thread::spawn(move || {
+    let mut last_due: HashMap<String, String> = HashMap::new();
+    loop {
+      let now = Utc::now();
+      if let Ok(conn) = db.lock() {
+        if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status != 'completed'") {
+          if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,String>(2)?))) {
+            for row in rows.flatten() {
+              let (id, name, expr) = row;
+              if let Ok(schedule) = Schedule::from_str(&expr) {
+                if let Some(next) = schedule.upcoming(Utc).next() {
+                  let slot = next.to_rfc3339();
+                  if next <= now && last_due.get(&id) != Some(&slot) {
+                    last_due.insert(id.clone(), slot);
+                    let message = format!("Scheduled task due: {name}");
+                    let _ = conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)", params!["scheduler.due", message, now.to_rfc3339()]);
+                    let _ = app.emit("wand://scheduler", serde_json::json!({"task_id":id,"name":name,"status":"due","at":now.to_rfc3339()}));
+                  }
+                }
+              }
+            }
+          }
+        }
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM tasks WHERE cron != 'one-off' AND status != 'completed'", [], |r| r.get(0)).unwrap_or(0);
+        let event = SyncEvent { source: "scheduler".into(), message: format!("Background scheduler active — {count} recurring task(s) monitored"), timestamp: now.to_rfc3339() };
+        let _ = app.emit("wand://sync", event);
+      }
+      thread::sleep(Duration::from_secs(30));
+    }
   });
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
