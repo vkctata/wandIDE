@@ -706,25 +706,7 @@ function App() {
     <div className="app">
       <aside>
         <div className="brand">
-          <span className="wand-wordmark">
-            wan
-            <span className="wand-d">
-              d
-              <svg className="d-sparkle spark-1" viewBox="0 0 10 10">
-                <path
-                  d="M5 0L6.2 3.8L10 5L6.2 6.2L5 10L3.8 6.2L0 5L3.8 3.8Z"
-                  fill="currentColor"
-                />
-              </svg>
-              <svg className="d-sparkle-sm spark-2" viewBox="0 0 10 10">
-                <path
-                  d="M5 0L6.2 3.8L10 5L6.2 6.2L5 10L3.8 6.2L0 5L3.8 3.8Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </span>
-            <span className="wand-dot">.</span>
-          </span>
+          <span className="wand-wordmark">wan<span className="wand-d">d<svg className="d-sparkle" viewBox="0 0 22 15" aria-hidden="true"><path d="M7 0 8.5 5.5 14 7 8.5 8.5 7 14 5.5 8.5 0 7 5.5 5.5Z" /><path d="M18 0 18.7 2.3 21 3 18.7 3.7 18 6 17.3 3.7 15 3 17.3 2.3Z" /><path d="M17 9 17.6 10.9 19.5 11.5 17.6 12.1 17 14 16.4 12.1 14.5 11.5 16.4 10.9Z" /></svg></span><span className="wand-dot">.</span></span>
         </div>
         <div className="navgroup">
           {nav("home")}
@@ -1769,7 +1751,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
   return (
     <div className="onboarding">
       <div className="onboard-card">
-        <div className="onboard-mark" aria-hidden="true"><span className="onboard-w">W</span><span className="onboard-sparkles">✦</span></div>
+        <div className="onboard-mark" aria-hidden="true"><span className="wand-wordmark wand-wordmark-lg">wan<span className="wand-d">d<svg className="d-sparkle" viewBox="0 0 22 15"><path d="M7 0 8.5 5.5 14 7 8.5 8.5 7 14 5.5 8.5 0 7 5.5 5.5Z" /><path d="M18 0 18.7 2.3 21 3 18.7 3.7 18 6 17.3 3.7 15 3 17.3 2.3Z" /><path d="M17 9 17.6 10.9 19.5 11.5 17.6 12.1 17 14 16.4 12.1 14.5 11.5 16.4 10.9Z" /></svg></span><span className="wand-dot">.</span></span></div>
         <p className="eyebrow">WAND / GETTING STARTED</p>
         <h1>{current[0]}</h1>
         <p>{current[1]}</p>
