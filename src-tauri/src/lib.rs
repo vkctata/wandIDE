@@ -19,6 +19,14 @@ struct CliResult {
     message: String,
 }
 struct Db(Arc<Mutex<Connection>>);
+
+fn provider_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .expect("provider HTTP client configuration is valid")
+}
 #[derive(Serialize)]
 struct TaskRow {
     id: String,
@@ -816,13 +824,10 @@ fn provider_status(provider: String) -> Result<bool, String> {
 }
 #[tauri::command]
 fn save_provider_url(provider: String, url: String, db: State<Db>) -> Result<(), String> {
-    let value = url.trim().trim_end_matches('/').to_string();
-    if value.is_empty() {
-        return Err("Provider URL cannot be empty".into());
-    }
     if provider != "azure-devops" {
         return Err("Only Azure DevOps organization URLs are configurable".into());
     }
+    let value = validate_azure_org_url(&url)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO provider_settings(provider,url) VALUES (?1,?2)",
@@ -1234,7 +1239,7 @@ fn validate_azure_org_url(raw: &str) -> Result<String, String> {
 #[tauri::command]
 async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRepo>, String> {
     let token = provider_token("github").await?;
-    let response = reqwest::Client::new()
+    let response = provider_http_client()
         .get("https://api.github.com/user/repos?per_page=100&sort=updated")
         .header("User-Agent", "Wand")
         .bearer_auth(token)
@@ -1286,7 +1291,7 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
         rows.collect::<Result<Vec<String>, _>>()
             .map_err(|e| e.to_string())?
     };
-    let client = reqwest::Client::new();
+    let client = provider_http_client();
     let mut added = 0;
     for name in names {
         let endpoint=format!("https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc");
@@ -1337,7 +1342,7 @@ async fn sync_azure_devops(
     let token = provider_token("azure-devops").await?;
     let base = validate_azure_org_url(&provider_url)?;
     let endpoint = base + "/_apis/git/repositories?api-version=7.1";
-    let response = reqwest::Client::new()
+    let response = provider_http_client()
         .get(endpoint)
         .basic_auth("", Some(token))
         .send()
@@ -1382,7 +1387,7 @@ async fn sync_azure_activity(
 ) -> Result<u32, String> {
     let token = provider_token("azure-devops").await?;
     let base = validate_azure_org_url(&provider_url)?;
-    let response = reqwest::Client::new()
+    let response = provider_http_client()
         .get(format!(
             "{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1"
         ))
@@ -1394,7 +1399,7 @@ async fn sync_azure_activity(
         return Err(format!("Azure DevOps returned {}", response.status()));
     }
     let pulls: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    let client = reqwest::Client::new();
+    let client = provider_http_client();
     let mut added = 0;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
         let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
@@ -1448,7 +1453,7 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
             Err(_) => return,
         }
     };
-    let client = reqwest::Client::new();
+    let client = provider_http_client();
     let mut added = 0;
     for name in names {
         let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(_)=>continue};
@@ -1504,8 +1509,12 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         .ok()
         .flatten()
     };
-    let Some(base) = base else { return };
-    let client = reqwest::Client::new();
+    let Some(raw_base) = base else { return };
+    let base = match validate_azure_org_url(&raw_base) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let client = provider_http_client();
     let response = match client
         .get(format!(
             "{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1"
