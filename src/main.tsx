@@ -2798,19 +2798,24 @@ function WindowChrome() {
         onMouseDown={() => appWindow.startDragging()}
       />
       <div className="window-controls">
-        <button aria-label="Minimize Wand" onClick={() => appWindow.minimize()}>
+        <button aria-label="Minimize Wand" onMouseDown={(event) => event.stopPropagation()} onClick={() => void appWindow.minimize()}>
           <Minus size={13} />
         </button>
         <button
           aria-label="Maximize Wand"
-          onClick={() => appWindow.toggleMaximize()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => void appWindow.toggleMaximize()}
         >
           <Square size={12} />
         </button>
         <button
           className="window-close"
           aria-label="Close Wand"
-          onClick={() => appWindow.close()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            void appWindow.close();
+          }}
         >
           <X size={13} />
         </button>
