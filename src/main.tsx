@@ -1774,25 +1774,34 @@ function Onboarding({ done }: { done: (name: string) => void }) {
 function CliManager() {
   const [clis, setClis] = useState<any[]>([]);
   const [enabled, setEnabled] = useState<string[]>([]);
-  useEffect(() => {
-    Promise.all([invoke<any[]>("detect_clis"), invoke<string[]>("cli_access")])
-      .then(([detected, access]) => {
-        setClis(detected);
-        setEnabled(access);
-      })
-      .catch(() =>
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [detected, access] = await Promise.all([
+        invoke<any[]>("detect_clis"),
+        invoke<string[]>("cli_access"),
+      ]);
+      setClis(detected);
+      setEnabled(access);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      if (!isTauriRuntime()) {
         setClis([
           { id: "claude", name: "Claude", command: "claude", installed: false },
           { id: "codex", name: "Codex", command: "codex", installed: false },
           { id: "kimi", name: "Kimi", command: "kimi", installed: false },
-          {
-            id: "gemini",
-            name: "Gemini CLI",
-            command: "gemini",
-            installed: false,
-          },
-        ]),
-      );
+          { id: "gemini", name: "Gemini CLI", command: "gemini", installed: false },
+        ]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void refresh();
   }, []);
   const toggle = (id: string) => {
     const next = enabled.includes(id)
@@ -1808,7 +1817,21 @@ function CliManager() {
           <h2>Local CLI access</h2>
           <p>Choose which coding runtimes Wand may use.</p>
         </div>
+        <button className="outline" onClick={() => void refresh()} disabled={loading}>
+          <RotateCcw size={13} className={loading ? "spin" : ""} />
+          {loading ? "Checking…" : "Refresh"}
+        </button>
       </div>
+      {error && (
+        <div className="settings-inline-error" role="alert">
+          Could not read local CLI access. {error} Try Refresh after Wand finishes starting.
+        </div>
+      )}
+      {!loading && !error && clis.length === 0 && (
+        <div className="settings-inline-empty">
+          No supported CLI runtimes were detected on this machine.
+        </div>
+      )}
       {clis.map((c) => (
         <div className="cli-row" key={c.id}>
           <div className={"cli-state " + (c.installed ? "ready" : "missing")} />
