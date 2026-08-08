@@ -6,6 +6,7 @@ import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { Bell, Bot, CheckCircle2, ChevronDown, Clock3, Code2, FolderGit2, GitPullRequest, Github, Hash, LayoutDashboard, MessageSquare, Play, Plus, Search, Settings, Sparkles, TerminalSquare, TimerReset, Zap } from 'lucide-react';
 import './styles.css';
+import './layout.css';
 
 type View = 'home'|'threads'|'tasks'|'notifications'|'settings';
 type Repo = { name:string; path:string; color:string; count:number };

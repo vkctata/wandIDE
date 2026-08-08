@@ -1,0 +1,23 @@
+/* Wand uses the entire desktop canvas while keeping a readable content measure. */
+main { min-width: 0; }
+.content { max-width: none; margin: 0; width: 100%; padding: clamp(32px, 5vw, 72px) clamp(28px, 6vw, 96px) 80px; }
+.hero, .sectionhead, .timeline, .agentgrid, .taskcard, .agentcatalog, .threadlist, .settingscard { width: 100%; }
+.timeline { max-width: 1180px; }
+.agentgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stats { grid-template-columns: repeat(3, minmax(180px, 1fr)); max-width: 1180px; }
+.hero { max-width: 1180px; }
+.sectionhead { max-width: 1180px; }
+@media (min-width: 1500px) {
+  .content { padding-left: 8vw; padding-right: 8vw; }
+  .timeline, .agentgrid, .stats, .hero, .sectionhead { max-width: 1400px; }
+}
+@media (max-width: 760px) {
+  aside { width: 76px; padding-left: 8px; padding-right: 8px; }
+  aside .brand span, aside .brand small, aside .workspace > div:not(.avatar), aside .workspace > svg, aside .nav span, aside .navgroup label, aside .repo span, aside .repo em, aside .status { display: none; }
+  .brand, .workspace, .nav, .repo { justify-content: center; }
+  .content { padding: 28px 20px 56px; }
+  .hero { align-items: flex-start; gap: 22px; flex-direction: column; }
+  .stats, .agentgrid { grid-template-columns: 1fr; }
+  header { padding: 0 18px; }
+  .search { display: none; }
+}
