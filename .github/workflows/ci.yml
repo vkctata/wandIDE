@@ -11,6 +11,9 @@ concurrency:
   group: wand-build-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   web-build:
     runs-on: ubuntu-latest
