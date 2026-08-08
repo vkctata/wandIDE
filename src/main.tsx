@@ -1803,12 +1803,19 @@ function CliManager() {
   useEffect(() => {
     void refresh();
   }, []);
-  const toggle = (id: string) => {
+  const toggle = async (id: string) => {
     const next = enabled.includes(id)
       ? enabled.filter((x) => x !== id)
       : [...enabled, id];
     setEnabled(next);
-    void invoke("save_cli_access", { clis: next });
+    try {
+      await invoke("save_cli_access", { clis: next });
+    } catch (cause) {
+      setEnabled(enabled);
+      setError(
+        `Could not save CLI access: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
   };
   return (
     <div className="cli-manager">
@@ -1846,7 +1853,7 @@ function CliManager() {
           <button
             className={"outline " + (enabled.includes(c.id) ? "enabled" : "")}
             disabled={!c.installed}
-            onClick={() => toggle(c.id)}
+            onClick={() => void toggle(c.id)}
           >
             {enabled.includes(c.id) ? "Enabled" : "Enable"}
           </button>
@@ -1889,8 +1896,15 @@ function ProviderAccess() {
       "The token is stored only in the native OS credential manager.",
     );
     if (!values?.token) return;
-    await invoke("save_provider_token", { provider, token: values.token });
-    refresh();
+    try {
+      await invoke("save_provider_token", { provider, token: values.token });
+      await refresh();
+      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"} connected securely.`);
+    } catch (cause) {
+      setMessage(
+        `Could not save ${provider === "github" ? "GitHub" : "Azure DevOps"} credentials: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
   };
   const disconnect = async (provider: string) => {
     const confirmed = await askModal(
