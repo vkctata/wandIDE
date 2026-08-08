@@ -372,6 +372,13 @@ function App() {
           );
         }
       }),
+      listen<any>("wand://scheduler", (event) => {
+        if (event.payload?.status !== "due") return;
+        const name = event.payload?.name || "Scheduled task";
+        const message = `${name} is starting in the background.`;
+        setNotice(message);
+        notifyDesktop("task", "Scheduled task started", message);
+      }),
       listen<any>("wand://agent", (event) => {
         const status = event.payload?.status;
         if (
