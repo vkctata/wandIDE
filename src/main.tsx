@@ -10,6 +10,8 @@ import './layout.css';
 import './theme.css';
 import './premium.css';
 import './account.css';
+import './chrome-redesign.css';
+import './chrome-fixes.css';
 
 type View = 'home'|'threads'|'tasks'|'notifications'|'settings';
 type Repo = { name:string; path:string; color:string; count:number };
