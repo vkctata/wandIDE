@@ -102,16 +102,15 @@ struct FileVersions {
     modified: String,
 }
 #[tauri::command]
-fn git_file_versions(repo_path: String, relative_path: String) -> Result<FileVersions, String> {
+fn git_file_versions(repo_path: String, relative_path: String, db: State<Db>) -> Result<FileVersions, String> {
     if relative_path.trim().is_empty()
         || std::path::Path::new(&relative_path).is_absolute()
         || relative_path.contains('\0')
     {
         return Err("A valid relative file path is required".into());
     }
-    let root = std::path::Path::new(&repo_path)
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let root = registered_repo_root(&repo_path, &conn)?;
     let target = root
         .join(&relative_path)
         .canonicalize()
@@ -2478,10 +2477,33 @@ fn write_repo_file(
     }
     fs::write(target, content).map_err(|e| e.to_string())
 }
+fn registered_repo_root(repo_path: &str, conn: &Connection) -> Result<PathBuf, String> {
+    let root = Path::new(repo_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !root.is_dir() {
+        return Err("The selected repository folder does not exist".into());
+    }
+    let path = root.to_string_lossy().to_string();
+    let registered: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM repos WHERE path=?1 AND provider='local')",
+            params![path],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !registered {
+        return Err("The selected folder is not a registered local repository".into());
+    }
+    Ok(root)
+}
+
 #[tauri::command]
-fn git_diff(repo_path: String) -> Result<String, String> {
+fn git_diff(repo_path: String, db: State<Db>) -> Result<String, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let root = registered_repo_root(&repo_path, &conn)?;
     let output = Command::new("git")
-        .current_dir(repo_path)
+        .current_dir(root)
         .args(["diff", "--no-ext-diff", "--unified=60"])
         .output()
         .map_err(|e| e.to_string())?;
