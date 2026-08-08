@@ -496,9 +496,9 @@ function App() {
     const instructions = selected
       .map((a) => `${a.name}: ${a.system_prompt || a.role}`)
       .join("\n");
-    const enabled = JSON.parse(
-      localStorage.getItem("wand.clis") || "[]",
-    ) as string[];
+    const enabled = await invoke<string[]>("cli_access").catch(() =>
+      JSON.parse(localStorage.getItem("wand.clis") || "[]") as string[],
+    );
     const configured = selected.find((a) => a.cli && enabled.includes(a.cli));
     const cli = configured?.cli || enabled[0] || "codex";
     const model = configured?.model || "default";
