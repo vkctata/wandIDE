@@ -2448,8 +2448,8 @@ function WhatsNewSection() {
 }
 
 function ThemeSection() {
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("wand.theme") || "mint",
+  const [theme, setTheme] = useState(() =>
+    isTauriRuntime() ? "mint" : localStorage.getItem("wand.theme") || "mint",
   );
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "theme" })
@@ -2457,7 +2457,7 @@ function ThemeSection() {
         if (!value) return;
         setTheme(value);
         document.body.dataset.theme = value;
-        localStorage.setItem("wand.theme", value);
+        if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
       })
       .catch(() => {});
   }, []);
@@ -2465,7 +2465,7 @@ function ThemeSection() {
   const choose = (name: string) => {
     setTheme(name);
     document.body.dataset.theme = name;
-    localStorage.setItem("wand.theme", name);
+    if (!isTauriRuntime()) localStorage.setItem("wand.theme", name);
     void invoke("save_workspace_setting", {
       key: "theme",
       value: name,
@@ -3120,15 +3120,17 @@ function OnboardingGate() {
 createRoot(document.getElementById("root")!).render(<OnboardingGate />);
 function ThemeBootstrap() {
   useEffect(() => {
-    const stored = localStorage.getItem("wand.theme") || "mint";
-    document.body.dataset.theme = stored;
+    const apply = (value: string) => {
+      document.body.dataset.theme = value;
+      if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
+    };
+    if (!isTauriRuntime()) {
+      apply(localStorage.getItem("wand.theme") || "mint");
+      return;
+    }
     invoke<string | null>("workspace_setting", { key: "theme" })
-      .then((value) => {
-        if (!value) return;
-        document.body.dataset.theme = value;
-        localStorage.setItem("wand.theme", value);
-      })
-      .catch(() => {});
+      .then((value) => apply(value || "mint"))
+      .catch(() => apply("mint"));
   }, []);
   return null;
 }
