@@ -160,6 +160,34 @@ Planner → Builder → Code reviewer → Sentinel
 
 Sentinel is always appended as the final verification stage. Each successful stage emits a handoff event, and Wand writes that finding into the repository thread so the work remains auditable.
 
+#### Importing an agent workflow
+
+Open Settings → Agent Team → Import workflow and choose a JSON file. Imported
+agents are validated for supported CLI runtimes, model values, responsibility
+length, and repository scope before they are saved. The portable format is:
+
+```json
+{
+  "version": 1,
+  "name": "Release train",
+  "agents": [
+    {
+      "id": "release-planner",
+      "name": "Release planner",
+      "role": "Plan the release and identify verification work.",
+      "skills": ["planning", "release"],
+      "cli": "codex",
+      "model": "default",
+      "scope": "workspace"
+    }
+  ],
+  "steps": ["release-planner"]
+}
+```
+
+The imported workflow and its agents are stored locally in SQLite. Built-in
+agents cannot be overwritten by an import.
+
 ### Repositories
 
 Repositories are selected from a local workspace folder and scanned for Git repositories. Each repository becomes a navigable workspace tag, a repository-scoped engineering agent, and a context boundary for threads, tasks, agent runs, and provider events.
