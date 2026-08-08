@@ -97,6 +97,7 @@ type Task = {
   active: boolean;
   agents: string[];
 };
+type AgentWorkflow = { name: string; agents: string[]; steps: string[] };
 const defaultRepos: Repo[] = [];
 const agents: Agent[] = [
   {
@@ -211,6 +212,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
+  const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
   useEffect(
     () => localStorage.setItem("wand.repos", JSON.stringify(repos)),
     [repos],
@@ -239,6 +241,9 @@ function App() {
         ),
       )
       .catch(() => {});
+    invoke<AgentWorkflow[]>("list_agent_workflows")
+      .then(setWorkflows)
+      .catch(() => setWorkflows([]));
     invoke<string | null>("user_name")
       .then((value) => {
         if (value) setUserName(value);
@@ -443,6 +448,13 @@ function App() {
           label: "Cron expression",
           placeholder: "Leave blank for one-off",
         },
+        ...(workflows.length
+          ? [{
+              id: "workflow",
+              label: "Imported workflow (optional)",
+              options: ["Manual agent tags", ...workflows.map((workflow) => workflow.name)],
+            }]
+          : []),
         ...available.map((a) => ({
           id: `agent:${a.id}`,
           label: `Tag ${a.name} · ${a.skills.join(", ")}`,
@@ -456,6 +468,8 @@ function App() {
     const selected = available
       .filter((a) => values[`agent:${a.id}`] === "true")
       .map((a) => a.id);
+    const workflow = workflows.find((item) => item.name === values.workflow);
+    const workflowAgents = workflow?.steps?.length ? workflow.steps : workflow?.agents;
     const task = {
       id: crypto.randomUUID(),
       name: values.name.trim(),
@@ -463,8 +477,10 @@ function App() {
       repo: repo.name,
       cron: values.cron?.trim() || "one-off",
       active: true,
-      agents: selected.length
-        ? selected
+      agents: workflowAgents?.length
+        ? workflowAgents
+        : selected.length
+          ? selected
         : ["planner", "builder", "reviewer", "sentinel"],
     };
     try {
@@ -1263,9 +1279,22 @@ function Notifications() {
   const sync = async () => {
     setLoading(true);
     try {
-      await invoke("sync_github_activity");
+      const results = await Promise.allSettled([
+        invoke("sync_github_activity"),
+        invoke<string | null>("provider_url", { provider: "azure-devops" }).then(
+          (providerUrl) =>
+            providerUrl
+              ? invoke("sync_azure_activity", { providerUrl })
+              : undefined,
+        ),
+      ]);
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length === results.length) {
+        throw new Error("No connected provider could be synced");
+      }
       await load();
-    } catch {
+    } catch (error) {
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -1288,7 +1317,7 @@ function Notifications() {
         </div>
         <div className="notice-actions">
           <button className="outline" onClick={sync}>
-            {loading ? "Syncing…" : "Sync GitHub"}
+            {loading ? "Syncing…" : "Sync providers"}
           </button>
           <button className="textbtn" onClick={mark}>
             Mark all read
