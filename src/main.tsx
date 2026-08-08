@@ -70,9 +70,11 @@ const listen = <T = unknown,>(
   event: string,
   handler: (event: { payload: T }) => void,
 ): Promise<() => void> =>
-  isTauriRuntime()
-    ? tauriListen<T>(event, handler).catch(() => () => {})
-    : Promise.resolve(() => {});
+  !isTauriRuntime()
+    ? Promise.resolve(() => {})
+    : Promise.resolve()
+        .then(() => tauriListen<T>(event, handler))
+        .catch(() => () => {});
 
 type View =
   "home" | "code" | "threads" | "tasks" | "notifications" | "settings";
