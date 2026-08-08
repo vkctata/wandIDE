@@ -1187,6 +1187,9 @@ fn task_completion_status(cron: &str) -> &'static str {
         "queued"
     }
 }
+fn recurring_task_is_runnable(status: &str) -> bool {
+    status != "completed" && status != "running"
+}
 fn launch_chain_worker(
     req: ChainRequest,
     command: String,
@@ -2079,7 +2082,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 });
             }
             if let Ok(conn) = db.lock() {
-                if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status != 'completed'") {
+                if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status != 'completed' AND status != 'running'") {
           if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,String>(2)?))) {
             for row in rows.flatten() {
               let (id, name, expr) = row;
@@ -2469,6 +2472,14 @@ mod tests {
     fn recurring_tasks_remain_active_after_a_successful_run() {
         assert_eq!(task_completion_status("one-off"), "completed");
         assert_eq!(task_completion_status("0 9 * * 1"), "queued");
+    }
+
+    #[test]
+    fn scheduler_does_not_start_a_second_chain_while_one_is_running() {
+        assert!(recurring_task_is_runnable("queued"));
+        assert!(recurring_task_is_runnable("failed"));
+        assert!(!recurring_task_is_runnable("running"));
+        assert!(!recurring_task_is_runnable("completed"));
     }
 
     #[test]
