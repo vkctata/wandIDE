@@ -201,7 +201,7 @@ agents cannot be overwritten by an import.
 
 ### Repositories
 
-Repositories are selected from a local workspace folder and scanned for Git repositories. Each repository becomes a navigable workspace tag, a repository-scoped engineering agent, and a context boundary for threads, tasks, agent runs, and provider events.
+Repositories are selected from a local workspace folder and scanned for Git repositories. Each local repository becomes a navigable workspace tag, a repository-scoped engineering agent, and a context boundary for threads, tasks, agent runs, and provider events. GitHub and Azure DevOps sync may also surface remote repository metadata for activity and pull-request notifications; those entries must be selected locally before Wand can run CLI-backed tasks against them.
 
 ### Integrations
 
