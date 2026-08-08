@@ -318,6 +318,23 @@ fn save_agent(agent: NewAgent, db: State<Db>) -> Result<(), String> {
         return Err("Agent model is required".into());
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    if agent.scope != "workspace" {
+        let repo_name = agent
+            .scope
+            .strip_prefix("repo:")
+            .filter(|name| !name.trim().is_empty())
+            .ok_or_else(|| "Agent scope must be workspace or repo:<name>".to_string())?;
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM repos WHERE name=?1)",
+                params![repo_name],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !exists {
+            return Err(format!("Unknown repository scope: {repo_name}"));
+        }
+    }
     ensure_agent_prompt(&conn).map_err(|e| e.to_string())?;
     conn.execute("INSERT OR REPLACE INTO agents(id,name,role,skills,color,cli,model,system_prompt,scope,built_in) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,COALESCE((SELECT built_in FROM agents WHERE id=?1),0))",params![agent.id,agent.name,agent.role,serde_json::to_string(&agent.skills).map_err(|e|e.to_string())?,agent.color,agent.cli,agent.model,agent.role,agent.scope]).map_err(|e|e.to_string())?;
     Ok(())

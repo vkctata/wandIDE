@@ -1705,8 +1705,8 @@ function AgentManager({ repos }: { repos: Repo[] }) {
         {
           id: "scope",
           label: "Scope",
-          placeholder: "workspace or repo:name",
           value: agent?.scope || "workspace",
+          options: ["workspace", ...repos.map((repo) => `repo:${repo.name}`)],
         },
       ],
       "Give each agent one clear responsibility. This text is used as its execution instruction.",
