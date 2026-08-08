@@ -1044,6 +1044,15 @@ fn stored_agent_execution(conn: &Connection, agent_id: &str) -> Result<AgentExec
     )
     .map_err(|_| format!("Agent configuration is missing for '{agent_id}'"))
 }
+fn canonical_existing_directory(path: &str) -> Result<PathBuf, String> {
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|_| "Agent execution path must be an existing directory".to_string())?;
+    if !canonical.is_dir() {
+        return Err("Agent execution path must be an existing directory".into());
+    }
+    Ok(canonical)
+}
 #[tauri::command]
 fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
     let command = allowed_cli(&req.cli)
@@ -1064,9 +1073,9 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|_| "Task or repository does not exist".to_string())?;
-        if std::path::Path::new(&stored_path).canonicalize().ok()
-            != std::path::Path::new(&req.repo_path).canonicalize().ok()
-        {
+        let stored_canonical = canonical_existing_directory(&stored_path)?;
+        let requested_canonical = canonical_existing_directory(&req.repo_path)?;
+        if stored_canonical != requested_canonical {
             return Err("Agent execution path does not match the task repository".into());
         }
         for agent_id in &req.agents {
@@ -2376,6 +2385,17 @@ mod tests {
         assert_eq!(config.responsibility, "Review only");
         assert_eq!(config.skills, vec!["security"]);
         assert!(stored_agent_execution(&conn, "missing").is_err());
+    }
+
+    #[test]
+    fn agent_execution_path_requires_an_existing_directory() {
+        let directory = canonical_existing_directory(".").unwrap();
+        assert_eq!(directory, std::path::Path::new(".").canonicalize().unwrap());
+        assert!(canonical_existing_directory(
+            "this-path-does-not-exist-for-wand-tests"
+        )
+        .is_err());
+        assert!(canonical_existing_directory("src/lib.rs").is_err());
     }
 
     #[test]
