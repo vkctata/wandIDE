@@ -854,6 +854,7 @@ fn save_cli_access(clis: Vec<String>, db: State<Db>) -> Result<(), String> {
     let mut normalized = clis
         .into_iter()
         .filter_map(|cli| allowed_cli(cli.trim()).map(str::to_string))
+        .filter(|cli| installed_cli_path(cli).is_some())
         .collect::<Vec<_>>();
     normalized.sort();
     normalized.dedup();
