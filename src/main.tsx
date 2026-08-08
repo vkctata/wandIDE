@@ -619,6 +619,10 @@ function App() {
     setView("tasks");
   };
   const runTask = async (t: Task) => {
+    if (t.status === "cancelled") {
+      setNotice(`Cannot run cancelled task ${t.name}. Create a new task or retry a failed run.`);
+      return;
+    }
     const selected = t.agents
       .map((id) => agentCatalog.find((a) => a.id === id))
       .filter(Boolean) as Agent[];
@@ -1399,8 +1403,8 @@ function Tasks({
                     ? "Active"
                     : "Paused"}
           </span>
-          <button className="run" onClick={() => runTask(t)}>
-            <Play size={14} /> Run now
+          <button className="run" onClick={() => runTask(t)} disabled={t.status === "cancelled"}>
+            <Play size={14} /> {t.status === "failed" ? "Retry" : "Run now"}
           </button>
           {t.active && (
             <button className="run" onClick={() => cancelTask(t)}>
