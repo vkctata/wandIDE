@@ -135,6 +135,44 @@ header, .app > main > header {
 .search-palette { top: 64px; right: 22px; border-radius: var(--native-radius-md); }
 .wand-modal { border-radius: var(--native-radius-lg); box-shadow: 0 20px 60px #0008; }
 
+/* Settings used to inherit two generations of layout rules. In particular,
+   the CLI panel kept an old left margin, causing it to drift away from the
+   other panels and clip in narrow or tiled desktop windows. Keep every
+   preference group on one calm, predictable reading column. */
+.settings-page {
+  display: grid;
+  grid-template-columns: minmax(0, 980px);
+  align-content: start;
+  gap: 18px;
+}
+.settings-page > .hero {
+  width: 100%;
+  margin: 0 0 8px;
+}
+.settings-page > .settingscard,
+.settings-page > .settings-section,
+body[data-view="settings"] .settings-page > .provider-access,
+body[data-view="settings"] .settings-page > .cli-manager,
+body[data-view="settings"] .settings-page > .agent-management {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--wand-border, #292d3e);
+  border-radius: var(--native-radius-md);
+  background: var(--wand-surface, #171a24);
+  box-shadow: none;
+}
+.settings-page > .settingscard { display: block; }
+.settings-page > .provider-access,
+.settings-page > .cli-manager,
+.settings-page > .agent-management { display: block; }
+.settings-page .sectionhead { width: 100%; }
+.settings-page .provider-row,
+.settings-page .cli-row { min-width: 0; }
+.settings-page .provider-row > div,
+.settings-page .cli-row > div { min-width: 0; }
+
 body[data-platform="macos"] .primary {
   font-weight: 600;
   letter-spacing: -.01em;
@@ -190,6 +228,18 @@ body[data-theme="lavender"] header { background: color-mix(in srgb, var(--wand-s
   .account-menu { top: 0; right: 0; }
   .actions .search { display: none; }
   .hero { gap: 18px; }
+}
+@media (max-width: 640px) {
+  .settings-page { gap: 14px; }
+  .settings-page > .settingscard,
+  .settings-page > .settings-section,
+  body[data-view="settings"] .settings-page > .provider-access,
+  body[data-view="settings"] .settings-page > .cli-manager,
+  body[data-view="settings"] .settings-page > .agent-management { padding: 16px; }
+  .settings-page .provider-row { align-items: flex-start; flex-wrap: wrap; }
+  .settings-page .provider-row > div:first-child { flex-basis: 100%; }
+  .settings-page .cli-row { gap: 9px; }
+  .settings-page .settings-section-head { gap: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
