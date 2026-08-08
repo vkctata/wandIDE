@@ -592,9 +592,10 @@ function App() {
       setNotice(
         `Started ${chain || "agent chain"} using enabled runtimes; verifier queued`,
       );
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
       setNotice(
-        `Queued: ${chain || "agent chain"}. Enable a local CLI in Settings to execute it.`,
+        `Could not start ${chain || "agent chain"}: ${reason || "check the task, repository, and enabled CLI settings"}`,
       );
     }
   };
