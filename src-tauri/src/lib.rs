@@ -2098,6 +2098,7 @@ async fn sync_azure_activity(
     let pulls: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
     let client = provider_http_client()?;
     let mut added = 0;
+    let mut had_error = false;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
         let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
         let project = pull["repository"]["project"]["id"]
@@ -2107,8 +2108,27 @@ async fn sync_azure_activity(
         if repo_id.is_empty() || project.is_empty() || pull_id == 0 {
             continue;
         }
-        let threads=client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await.map_err(|e|e.to_string())?;
-        let payload: serde_json::Value = threads.json().await.unwrap_or_default();
+        let threads = match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await {
+            Ok(value) => value,
+            Err(error) => {
+                had_error = true;
+                emit_provider_health(&app, "azure-devops", "error", Some(format!("Azure DevOps thread request failed: {error}")));
+                continue;
+            }
+        };
+        if !threads.status().is_success() {
+            had_error = true;
+            emit_provider_health(&app, "azure-devops", "error", Some(format!("Azure DevOps thread request returned {}", threads.status())));
+            continue;
+        }
+        let payload: serde_json::Value = match threads.json().await {
+            Ok(value) => value,
+            Err(error) => {
+                had_error = true;
+                emit_provider_health(&app, "azure-devops", "error", Some(format!("Azure DevOps thread response could not be read: {error}")));
+                continue;
+            }
+        };
         for thread in payload["value"].as_array().cloned().unwrap_or_default() {
             for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
                 let id = format!("azure:{}", comment["id"].as_i64().unwrap_or(0));
@@ -2124,6 +2144,9 @@ async fn sync_azure_activity(
         "wand://notifications",
         serde_json::json!({"provider":"azure-devops","added":added}),
     );
+    if !had_error {
+        emit_provider_health(&app, "azure-devops", "ok", None);
+    }
     Ok(added)
 }
 
