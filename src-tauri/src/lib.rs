@@ -261,6 +261,41 @@ fn list_tasks(db: State<Db>) -> Result<Vec<TaskRow>, String> {
         .map_err(|e| e.to_string())?;
     rows.map(|r| r.map_err(|e| e.to_string())).collect()
 }
+
+#[tauri::command]
+fn cancel_task(task_id: String, db: State<Db>, app: AppHandle) -> Result<(), String> {
+    let task_id = task_id.trim().to_string();
+    if task_id.is_empty() {
+        return Err("Task id cannot be empty".into());
+    }
+    let now = Utc::now().to_rfc3339();
+    let reason = "Cancelled by user";
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let changed = conn
+        .execute(
+            "UPDATE tasks SET status='cancelled' WHERE id=?1 AND status NOT IN ('completed','cancelled')",
+            params![task_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("Task is already completed, cancelled, or does not exist".into());
+    }
+    conn.execute(
+        "UPDATE task_runs SET status='cancelled',finished_at=?2,error=?3 WHERE task_id=?1 AND status IN ('queued','running')",
+        params![task_id, now, reason],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO events(kind,message,created_at) VALUES ('task.cancelled',?1,?2)",
+        params![format!("Task {task_id} cancelled"), now],
+    )
+    .map_err(|e| e.to_string())?;
+    let _ = app.emit(
+        "wand://agent",
+        serde_json::json!({"task_id":task_id,"status":"cancelled"}),
+    );
+    Ok(())
+}
 #[derive(Serialize)]
 struct AgentRow {
     id: String,
@@ -1094,6 +1129,26 @@ fn launch_chain_worker(
         let mut stages = req.agents.clone();
         stages.push("sentinel-verifier".into());
         for (index, agent) in stages.iter().enumerate() {
+            let cancelled = db_arc
+                .lock()
+                .ok()
+                .and_then(|conn| {
+                    conn.query_row(
+                        "SELECT status='cancelled' FROM tasks WHERE id=?1",
+                        params![req.task_id],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .ok()
+                })
+                .unwrap_or(false);
+            if cancelled {
+                finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
+                let _ = app.emit(
+                    "wand://agent",
+                    serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"cancelled"}),
+                );
+                return;
+            }
             let config = req.agent_configs.get(agent);
             let stage_command = config
                 .and_then(|item| allowed_cli(&item.cli))
@@ -1806,7 +1861,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 });
             }
             if let Ok(conn) = db.lock() {
-                if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status != 'completed'") {
+                if let Ok(mut stmt) = conn.prepare("SELECT id,name,cron FROM tasks WHERE cron != 'one-off' AND status NOT IN ('completed','cancelled')") {
           if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,String>(2)?))) {
             for row in rows.flatten() {
               let (id, name, expr) = row;
@@ -1850,7 +1905,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn read_repo_file(repo_path: String, relative_path: String) -> Result<String, String> {
