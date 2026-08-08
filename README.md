@@ -209,15 +209,18 @@ GitHub and Azure DevOps can be connected from Settings with PATs stored through 
 
 Task runs keep a durable per-stage transcript in SQLite. Open Tasks → Run history and expand any run to inspect each agent's handoff, verification result, or failure after restarting Wand.
 
+The Code view can create an isolated `.wand/worktrees` checkout and apply a
+unified patch after `git apply --check` validates it. Settings → Notifications
+also reports native OS permission state and can request permission explicitly.
+
 ### Local-first data
 
 The browser shell keeps a small local-storage fallback for development. The desktop runtime persists repositories, tasks, events, threads, notifications, agents, provider settings, and task runs in SQLite through Tauri, while secrets remain in the OS credential manager.
 
 ## Remaining roadmap
 
-1. Add worktree creation and patch application controls around the Monaco diff surface.
-2. Add configurable per-notification-category OS permission onboarding.
-3. Expand provider actions with Azure DevOps approval support and richer review workflows.
+1. Expand provider actions with Azure DevOps approval support and richer review workflows.
+2. Audit further runtime footprint and optional editor loading for smaller packaged installs.
 
 ## License
 
