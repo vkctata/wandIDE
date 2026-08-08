@@ -213,10 +213,27 @@ const notifyDesktop = async (category: string, title: string, body: string) => {
     }
   } catch {}
 };
+const publishNotice = (category: string, title: string, body = title) => {
+  try {
+    const prefs = JSON.parse(
+      localStorage.getItem("wand.notification-prefs") || "{}",
+    );
+    if (prefs[category] === false) return;
+  } catch {}
+  window.dispatchEvent(new CustomEvent("wand:notice", { detail: title }));
+  void notifyDesktop(category, title, body);
+};
 function App() {
   const [notificationCount, setNotificationCount] = useState(0);
   useEffect(() => {
     void ensureDesktopNotificationPermission();
+  }, []);
+  useEffect(() => {
+    const onNotice = (event: Event) => {
+      setNotice((event as CustomEvent<string>).detail);
+    };
+    window.addEventListener("wand:notice", onNotice);
+    return () => window.removeEventListener("wand:notice", onNotice);
   }, []);
   useEffect(() => {
     const refresh = () =>
@@ -323,8 +340,7 @@ function App() {
   useEffect(() => {
     let stop: undefined | (() => void);
     listen<{ message: string }>("wand://sync", (e) => {
-      setNotice(e.payload.message);
-      notifyDesktop("task", "Wand background sync", e.payload.message);
+      publishNotice("task", e.payload.message, e.payload.message);
     }).then((unlisten) => (stop = unlisten));
     return () => stop?.();
   }, []);
@@ -352,8 +368,7 @@ function App() {
         refreshRepos();
         const provider = event.payload?.provider || "Provider";
         const count = event.payload?.count ?? 0;
-        setNotice(`${provider} sync completed · ${count} repositories`);
-        notifyDesktop(
+        publishNotice(
           "provider",
           `${provider} sync completed`,
           `${count} repositories are available in Wand.`,
@@ -362,10 +377,7 @@ function App() {
       listen<any>("wand://notifications", (event) => {
         const added = event.payload?.added ?? 0;
         if (added > 0) {
-          setNotice(
-            `${added} new review notification${added === 1 ? "" : "s"}`,
-          );
-          notifyDesktop(
+          publishNotice(
             "provider",
             "New review activity",
             `${added} new pull-request notification${added === 1 ? "" : "s"} arrived.`,
@@ -376,8 +388,7 @@ function App() {
         if (event.payload?.status !== "due") return;
         const name = event.payload?.name || "Scheduled task";
         const message = `${name} is starting in the background.`;
-        setNotice(message);
-        notifyDesktop("task", "Scheduled task started", message);
+        publishNotice("task", "Scheduled task started", message);
       }),
       listen<any>("wand://agent", (event) => {
         const status = event.payload?.status;
@@ -393,8 +404,7 @@ function App() {
               : status === "verified"
                 ? `${agent} verified the work`
                 : `${agent} completed`;
-          setNotice(title);
-          notifyDesktop(
+          publishNotice(
             "agent",
             title,
             event.payload?.error || "A background agent stage has finished.",
