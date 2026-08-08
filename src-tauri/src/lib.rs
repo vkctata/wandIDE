@@ -1120,6 +1120,11 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
                 "CLI runtime '{command}' is disabled in Wand settings"
             ));
         }
+        if installed_cli_path(&command).is_none() {
+            return Err(format!(
+                "CLI runtime '{command}' is no longer installed on this machine"
+            ));
+        }
         let (repo_name, stored_path): (String, String) = conn
             .query_row(
                 "SELECT tasks.repo,repos.path FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
@@ -1224,6 +1229,17 @@ fn launch_chain_worker(
                         format!("CLI runtime '{stage_command}' is disabled in Wand settings");
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
                     let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
+                    return;
+                }
+                if installed_cli_path(&stage_command).is_none() {
+                    let message = format!(
+                        "CLI runtime '{stage_command}' is no longer installed on this machine"
+                    );
+                    finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                    let _ = app.emit(
+                        "wand://agent",
+                        serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
+                    );
                     return;
                 }
             }
