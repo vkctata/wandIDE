@@ -3080,9 +3080,14 @@ function RuntimeIdentity() {
   return null;
 }
 function OnboardingGate() {
-  const [show, setShow] = useState(
-    () => localStorage.getItem("wand.onboarding.complete") !== "true",
-  );
+  const [show, setShow] = useState<boolean | null>(null);
+  useEffect(() => {
+    invoke<string | null>("user_name")
+      .then((name) => setShow(!name?.trim()))
+      .catch(() =>
+        setShow(localStorage.getItem("wand.onboarding.complete") !== "true"),
+      );
+  }, []);
   const finish = async (name: string) => {
     await invoke("save_user_name", { name }).catch(() => {});
     window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
@@ -3099,7 +3104,7 @@ function OnboardingGate() {
       <RuntimeIdentity />
       <ThemeBootstrap />
       <ModalHost />
-      {show && <Onboarding done={finish} />}
+      {show === true && <Onboarding done={finish} />}
     </>
   );
 }
