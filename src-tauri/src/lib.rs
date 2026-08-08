@@ -579,6 +579,10 @@ fn provider_url(provider: String, db: State<Db>) -> Result<Option<String>, Strin
 struct AgentExecution {
     cli: String,
     model: String,
+    #[serde(default)]
+    responsibility: String,
+    #[serde(default)]
+    skills: Vec<String>,
 }
 #[derive(Deserialize, Clone)]
 struct ChainRequest {
@@ -640,13 +644,25 @@ fn execute_stage(
     task_prompt: &str,
     agent: &str,
     handoff: &str,
+    responsibility: &str,
+    skills: &[String],
 ) -> Result<String, String> {
     let model_hint = if model.trim().is_empty() || model == "default" {
         "Use the CLI's configured default model.".to_string()
     } else {
         format!("Prefer the configured model: {model}.")
     };
-    let prompt=format!("{task_prompt}\n\nYou are the {agent} stage. {model_hint} Use the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}");
+    let responsibility = if responsibility.trim().is_empty() {
+        "Use your configured engineering specialty and stay within the requested scope."
+    } else {
+        responsibility
+    };
+    let skills_text = if skills.is_empty() {
+        "No additional skills specified.".to_string()
+    } else {
+        skills.join(", ")
+    };
+    let prompt = format!("{task_prompt}\n\nYou are the {agent} stage. {model_hint}\nRESPONSIBILITY: {responsibility}\nSKILLS: {skills_text}\nUse the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}");
     let args = cli_args(command, model, prompt)?;
     let output = Command::new(command)
         .current_dir(repo_path)
@@ -730,6 +746,10 @@ fn launch_chain_worker(
                 .unwrap_or(&command)
                 .to_string();
             let stage_model = config.map(|item| item.model.as_str()).unwrap_or(&req.model);
+            let responsibility = config
+                .map(|item| item.responsibility.as_str())
+                .unwrap_or("");
+            let skills = config.map(|item| item.skills.as_slice()).unwrap_or(&[]);
             let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"}));
             match execute_stage(
                 &stage_command,
@@ -738,6 +758,8 @@ fn launch_chain_worker(
                 &req.prompt,
                 agent,
                 &handoff,
+                responsibility,
+                skills,
             ) {
                 Ok(output) => {
                     handoff = output.chars().take(12000).collect();
@@ -1214,7 +1236,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                         .iter()
                         .find(|candidate| installed_cli_path(candidate).is_some())
                         .copied();
-                    if let Some(cli) = cli { if let Ok((agents_json, repo_name)) = conn.query_row("SELECT agents,repo FROM tasks WHERE id=?1",params![id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))) { if let Ok(agents) = serde_json::from_str::<Vec<String>>(&agents_json) { if let Ok(repo_path) = conn.query_row("SELECT path FROM repos WHERE name=?1",params![repo_name],|r|r.get::<_,String>(0)) { let run_id=format!("{}-{}",id,slot); let run_inserted=conn.execute("INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",params![run_id,id,slot]).unwrap_or(0); if run_inserted>0 { launch_chain_worker(ChainRequest{task_id:id.clone(),prompt:format!("Scheduled task: {name}"),repo_path,agents,cli:cli.to_string(),model:"default".into(),agent_configs:HashMap::new(),run_id:Some(run_id)},cli.to_string(),db.clone(),app.clone()); } } } } }
+                    if let Some(cli) = cli { if let Ok((agents_json, repo_name)) = conn.query_row("SELECT agents,repo FROM tasks WHERE id=?1",params![id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))) { if let Ok(agents) = serde_json::from_str::<Vec<String>>(&agents_json) { if let Ok(repo_path) = conn.query_row("SELECT path FROM repos WHERE name=?1",params![repo_name],|r|r.get::<_,String>(0)) { let agent_configs = agents.iter().filter_map(|agent_id| conn.query_row("SELECT cli,model,role,skills FROM agents WHERE id=?1",params![agent_id],|r| { let skills_json: String = r.get(3)?; Ok(AgentExecution { cli: r.get(0)?, model: r.get(1)?, responsibility: r.get(2)?, skills: serde_json::from_str(&skills_json).unwrap_or_default() }) }).ok().map(|config| (agent_id.clone(), config))).collect(); let run_id=format!("{}-{}",id,slot); let run_inserted=conn.execute("INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",params![run_id,id,slot]).unwrap_or(0); if run_inserted>0 { launch_chain_worker(ChainRequest{task_id:id.clone(),prompt:format!("Scheduled task: {name}"),repo_path,agents,cli:cli.to_string(),model:"default".into(),agent_configs,run_id:Some(run_id)},cli.to_string(),db.clone(),app.clone()); } } } } }
                   }
                 }
               }

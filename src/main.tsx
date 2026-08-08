@@ -504,6 +504,8 @@ function App() {
         {
           cli: a.cli && enabled.includes(a.cli) ? a.cli : cli,
           model: a.model || "default",
+          responsibility: a.role || a.system_prompt || "",
+          skills: a.skills,
         },
       ]),
     );
