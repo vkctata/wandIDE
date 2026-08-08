@@ -801,7 +801,7 @@ function App() {
           </button>
         )}
         {view === "home" ? (
-          <Home setView={setView} userName={userName} />
+          <Home setView={setView} userName={userName} agents={agentCatalog} />
         ) : view === "code" ? (
           <CodeWorkspace repo={repo} />
         ) : view === "threads" ? (
@@ -820,9 +820,11 @@ function App() {
 function Home({
   setView,
   userName,
+  agents,
 }: {
   setView: (v: View) => void;
   userName: string;
+  agents: Agent[];
 }) {
   type Event = {
     id: number;
@@ -946,24 +948,30 @@ function Home({
         </button>
       </div>
       <div className="agentgrid">
-        <Agent
-          icon={Bot}
-          name="Code reviewer"
-          desc="Reviews new pull requests"
-          status="Watching your repos"
-        />
-        <Agent
-          icon={TerminalSquare}
-          name="Sentinel"
-          desc="Dependency & security audits"
-          status="Schedule available"
-        />
-        <Agent
-          icon={Code2}
-          name="Pair programmer"
-          desc="Your on-demand coding partner"
-          status="Ready when you are"
-        />
+        {agents.length === 0 ? (
+          <div className="emptyhint">
+            <Bot size={20} />
+            <h3>No agents configured</h3>
+            <p>Open Settings to add a coding specialist.</p>
+          </div>
+        ) : (
+          agents.map((agent) => {
+            const AgentIcon = agent.name.toLowerCase().includes("sentinel")
+              ? TerminalSquare
+              : agent.name.toLowerCase().includes("review")
+                ? Bot
+                : Code2;
+            return (
+              <Agent
+                key={agent.id}
+                icon={AgentIcon}
+                name={agent.name}
+                desc={agent.role}
+                status={`${agent.cli || "CLI"} · ${agent.model || "default"}`}
+              />
+            );
+          })
+        )}
       </div>
     </section>
   );
