@@ -7,8 +7,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import Editor from "@monaco-editor/react";
-import { DiffEditor } from "@monaco-editor/react";
+import Editor, { DiffEditor, loader } from "@monaco-editor/react";
+import * as monaco from "monaco-editor";
 import {
   Activity,
   Bell,
@@ -49,6 +49,10 @@ import "./ui-corrections.css";
 import "./provider-ui.css";
 import "./responsive-fix.css";
 import "./premium-plus.css";
+
+// Keep the editor self-contained in packaged builds. The default Monaco
+// loader points at jsDelivr, which is inappropriate for a local-first IDE.
+loader.config({ monaco });
 
 const isTauriRuntime = () =>
   typeof window !== "undefined" &&
