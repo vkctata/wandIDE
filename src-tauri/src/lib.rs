@@ -1692,6 +1692,14 @@ async fn sync_azure_activity(
     Ok(added)
 }
 
+fn emit_provider_health(app: &AppHandle, provider: &str, status: &str, error: Option<String>) {
+    let mut payload = serde_json::json!({"provider":provider,"status":status});
+    if let Some(error) = error {
+        payload["error"] = serde_json::Value::String(error);
+    }
+    let _ = app.emit("wand://provider", payload);
+}
+
 async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     let token = match provider_token("github").await {
         Ok(value) => value,
@@ -1718,19 +1726,20 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     let client = reqwest::Client::new();
     let mut added = 0;
     for name in names {
-        let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(_)=>continue};
+        let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(error)=>{emit_provider_health(&app,"github","error",Some(format!("GitHub request failed for {name}: {error}"))); return;}};
         if !response.status().is_success() {
+            emit_provider_health(&app,"github","error",Some(format!("GitHub returned {} for {name}",response.status())));
             continue;
         }
         let comments: Vec<serde_json::Value> = match response.json().await {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(error) => { emit_provider_health(&app,"github","error",Some(format!("GitHub response could not be read for {name}: {error}"))); return; },
         };
         for comment in comments {
             let id = format!("github-review:{}", comment["id"].as_i64().unwrap_or(0));
             let conn = match db.lock() {
                 Ok(value) => value,
-                Err(_) => return,
+                Err(error) => { emit_provider_health(&app,"github","error",Some(format!("Database lock failed: {error}"))); return; },
             };
             let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]);
             if changed.unwrap_or(0) > 0 {
@@ -1744,6 +1753,7 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
             serde_json::json!({"provider":"github","added":added,"background":true}),
         );
     }
+    emit_provider_health(&app, "github", "ok", None);
 }
 async fn report_provider_credentials(app: AppHandle) {
     for provider in ["github", "azure-devops"] {
@@ -1755,12 +1765,12 @@ async fn report_provider_credentials(app: AppHandle) {
 async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     let token = match provider_token("azure-devops").await {
         Ok(value) => value,
-        Err(_) => return,
+        Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Credential check failed: {error}"))); return; },
     };
     let base: Option<String> = {
         let conn = match db.lock() {
             Ok(value) => value,
-            Err(_) => return,
+            Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Database lock failed: {error}"))); return; },
         };
         conn.query_row(
             "SELECT url FROM provider_settings WHERE provider='azure-devops'",
@@ -1771,7 +1781,7 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         .ok()
         .flatten()
     };
-    let Some(base) = base else { return };
+    let Some(base) = base else { emit_provider_health(&app,"azure-devops","error",Some("Azure DevOps organization URL is not configured".into())); return };
     let client = reqwest::Client::new();
     let response = match client
         .get(format!(
@@ -1782,14 +1792,15 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         .await
     {
         Ok(value) => value,
-        Err(_) => return,
+        Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Azure DevOps request failed: {error}"))); return; },
     };
     if !response.status().is_success() {
+        emit_provider_health(&app,"azure-devops","error",Some(format!("Azure DevOps returned {}",response.status())));
         return;
     }
     let pulls: serde_json::Value = match response.json().await {
         Ok(value) => value,
-        Err(_) => return,
+            Err(error) => { emit_provider_health(&app,"azure-devops","error",Some(format!("Azure DevOps response could not be read: {error}"))); return; },
     };
     let mut added = 0;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
@@ -1826,6 +1837,7 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
             serde_json::json!({"provider":"azure-devops","added":added,"background":true}),
         );
     }
+    emit_provider_health(&app, "azure-devops", "ok", None);
 }
 
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {

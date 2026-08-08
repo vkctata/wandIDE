@@ -2805,6 +2805,7 @@ function ProviderHealth() {
     const stop = listen<any>("wand://provider", (event) => {
       if (event.payload?.status === "error")
         setError(`${event.payload.provider}: ${event.payload.error}`);
+      else if (event.payload?.status === "ok") setError("");
     });
     return () => {
       stop.then((unsubscribe) => unsubscribe());
