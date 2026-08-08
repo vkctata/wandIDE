@@ -2274,18 +2274,29 @@ fn write_repo_file(
     relative_path: String,
     content: String,
 ) -> Result<(), String> {
+    if relative_path.trim().is_empty()
+        || std::path::Path::new(&relative_path).is_absolute()
+        || relative_path.contains('\0')
+    {
+        return Err("A valid relative file path is required".into());
+    }
     let root = std::path::Path::new(&repo_path)
         .canonicalize()
         .map_err(|e| e.to_string())?;
     let candidate = root.join(&relative_path);
-    if relative_path.trim().is_empty() || relative_path.contains('\0') {
-        return Err("A valid relative file path is required".into());
-    }
-    let target = if candidate.exists() {
-        candidate.canonicalize().map_err(|e| e.to_string())?
-    } else {
+    let parent = candidate
+        .parent()
+        .ok_or_else(|| "A valid relative file path is required".to_string())?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let target = parent.join(
         candidate
-    };
+            .file_name()
+            .ok_or_else(|| "A valid relative file path is required".to_string())?,
+    );
+    if !parent.starts_with(&root) {
+        return Err("File is outside the selected repository".into());
+    }
     if !target.starts_with(&root) {
         return Err("File is outside the selected repository".into());
     }
@@ -2296,8 +2307,14 @@ fn write_repo_file(
 }
 #[tauri::command]
 fn git_diff(repo_path: String) -> Result<String, String> {
+    let root = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !root.is_dir() {
+        return Err("The selected repository folder is not a directory".into());
+    }
     let output = Command::new("git")
-        .current_dir(repo_path)
+        .current_dir(root)
         .args(["diff", "--no-ext-diff", "--unified=60"])
         .output()
         .map_err(|e| e.to_string())?;
@@ -2527,6 +2544,17 @@ mod tests {
         assert!(read_repo_file("/does/not/exist".into(), "".into()).is_err());
         assert!(read_repo_file("/does/not/exist".into(), "/etc/hosts".into()).is_err());
         assert!(read_repo_file("/does/not/exist".into(), "bad\0path".into()).is_err());
+    }
+
+    #[test]
+    fn repository_writes_and_diffs_reject_invalid_or_missing_boundaries() {
+        assert!(
+            write_repo_file("/does/not/exist".into(), "/etc/hosts".into(), String::new()).is_err()
+        );
+        assert!(
+            write_repo_file("/does/not/exist".into(), "bad\0path".into(), String::new()).is_err()
+        );
+        assert!(git_diff("/does/not/exist".into()).is_err());
     }
 
     #[test]
