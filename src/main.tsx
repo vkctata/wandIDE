@@ -2728,23 +2728,34 @@ function WindowChrome() {
 function BackgroundStatus() {
   const [status, setStatus] = useState("Starting background workers…");
   const [when, setWhen] = useState("");
+  const [heartbeat, setHeartbeat] = useState(0);
+  const [, setClock] = useState(0);
   useEffect(() => {
-    invoke<{ message: string; timestamp: string } | null>("background_status")
-      .then((event) => {
-        if (!event) return;
-        setStatus(event.message);
-        setWhen(
-          new Date(event.timestamp).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        );
-      })
-      .catch(() => {});
+    const refresh = () => {
+      invoke<{ message: string; timestamp: string } | null>("background_status")
+        .then((event) => {
+          if (!event) return;
+          setStatus(event.message);
+          setHeartbeat(new Date(event.timestamp).getTime());
+          setWhen(
+            new Date(event.timestamp).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          );
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(() => {
+      setClock(Date.now());
+      refresh();
+    }, 15_000);
     const stop = listen<{ message: string; timestamp: string }>(
       "wand://sync",
       (event) => {
         setStatus(event.payload.message);
+        setHeartbeat(new Date(event.payload.timestamp).getTime());
         setWhen(
           new Date(event.payload.timestamp).toLocaleTimeString([], {
             hour: "2-digit",
@@ -2754,13 +2765,15 @@ function BackgroundStatus() {
       },
     );
     return () => {
+      window.clearInterval(timer);
       stop.then((unsubscribe) => unsubscribe());
     };
   }, []);
+  const stale = heartbeat > 0 && Date.now() - heartbeat > 90_000;
   return (
-    <div className="background-status" title={status}>
-      <span className="background-dot" />
-      <span>Background workers</span>
+    <div className="background-status" title={stale ? "No background worker heartbeat in the last 90 seconds" : status}>
+      <span className={"background-dot" + (stale ? " error" : "")} />
+      <span>{stale ? "Background workers unavailable" : "Background workers"}</span>
       <small>{when ? `Checked ${when}` : "Starting…"}</small>
     </div>
   );
