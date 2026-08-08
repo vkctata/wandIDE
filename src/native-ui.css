@@ -241,6 +241,121 @@ body[data-theme="lavender"] header { background: color-mix(in srgb, var(--wand-s
   .settings-page .cli-row { gap: 9px; }
   .settings-page .settings-section-head { gap: 10px; }
 }
+
+/* Premium two-mode system. Keep the identity in the material and typography,
+   not in a rainbow of theme colors. */
+body[data-theme="obsidian"] {
+  color: var(--wand-ink);
+  background: #0d0d12 !important;
+}
+body[data-theme="obsidian"] .app {
+  background:
+    radial-gradient(850px 480px at 82% -12%, rgba(169, 154, 255, .09), transparent 64%),
+    linear-gradient(150deg, #15151c 0%, #101016 46%, #0d0d12 100%);
+}
+body[data-theme="obsidian"] aside {
+  background: rgba(19, 19, 26, .78);
+  border-color: rgba(255, 255, 255, .08);
+}
+body[data-theme="obsidian"] header,
+body[data-theme="obsidian"] .app > main > header {
+  background: rgba(16, 16, 22, .68);
+  border-color: rgba(255, 255, 255, .08);
+}
+
+body[data-theme="daylight"] {
+  color: var(--wand-ink) !important;
+  background: #f5f4f8 !important;
+}
+body[data-theme="daylight"] .app {
+  background:
+    radial-gradient(900px 500px at 82% -12%, rgba(110, 91, 210, .08), transparent 64%),
+    linear-gradient(150deg, #faf9fc 0%, #f5f4f8 52%, #f0eff5 100%);
+}
+body[data-theme="daylight"] aside {
+  background: rgba(255, 255, 255, .62) !important;
+  border-color: rgba(50, 47, 61, .10) !important;
+}
+body[data-theme="daylight"] header,
+body[data-theme="daylight"] .app > main > header {
+  background: rgba(250, 249, 252, .72) !important;
+  border-color: rgba(50, 47, 61, .10) !important;
+}
+
+body[data-theme="obsidian"] aside,
+body[data-theme="daylight"] aside,
+body[data-theme="obsidian"] header,
+body[data-theme="daylight"] header {
+  backdrop-filter: saturate(145%) blur(22px);
+}
+body[data-theme="obsidian"] .stat,
+body[data-theme="obsidian"] .agent,
+body[data-theme="obsidian"] .taskcard,
+body[data-theme="obsidian"] .settingscard,
+body[data-theme="obsidian"] .settings-section,
+body[data-theme="obsidian"] .settings-page > .provider-access,
+body[data-theme="obsidian"] .settings-page > .cli-manager,
+body[data-theme="obsidian"] .settings-page > .agent-management {
+  background: rgba(27, 27, 35, .72) !important;
+  border-color: rgba(255, 255, 255, .09) !important;
+}
+body[data-theme="daylight"] .stat,
+body[data-theme="daylight"] .agent,
+body[data-theme="daylight"] .taskcard,
+body[data-theme="daylight"] .settingscard,
+body[data-theme="daylight"] .settings-section,
+body[data-theme="daylight"] .settings-page > .provider-access,
+body[data-theme="daylight"] .settings-page > .cli-manager,
+body[data-theme="daylight"] .settings-page > .agent-management {
+  background: rgba(255, 255, 255, .72) !important;
+  border-color: rgba(50, 47, 61, .10) !important;
+}
+body[data-theme="obsidian"] .stat,
+body[data-theme="obsidian"] .agent,
+body[data-theme="obsidian"] .taskcard,
+body[data-theme="obsidian"] .settingscard,
+body[data-theme="obsidian"] .settings-section,
+body[data-theme="daylight"] .stat,
+body[data-theme="daylight"] .agent,
+body[data-theme="daylight"] .taskcard,
+body[data-theme="daylight"] .settingscard,
+body[data-theme="daylight"] .settings-section {
+  box-shadow: inset 0 1px rgba(255, 255, 255, .22), 0 14px 34px rgba(24, 21, 39, .06);
+  backdrop-filter: blur(18px);
+}
+body[data-theme="obsidian"] .hero h1,
+body[data-theme="obsidian"] h2,
+body[data-theme="obsidian"] h3,
+body[data-theme="obsidian"] h4 { color: var(--wand-ink); }
+body[data-theme="daylight"] .hero h1,
+body[data-theme="daylight"] h2,
+body[data-theme="daylight"] h3,
+body[data-theme="daylight"] h4 { color: var(--wand-ink) !important; }
+body[data-theme="daylight"] .sub,
+body[data-theme="daylight"] .sectionhead p,
+body[data-theme="daylight"] small { color: var(--wand-muted) !important; }
+body[data-theme="daylight"] .nav,
+body[data-theme="daylight"] .repo { color: var(--wand-muted) !important; }
+body[data-theme="daylight"] .nav.active {
+  color: var(--wand-ink) !important;
+  background: rgba(110, 91, 210, .10) !important;
+  box-shadow: inset 2px 0 var(--wand-accent) !important;
+}
+body[data-theme="obsidian"] .nav.active {
+  background: rgba(169, 154, 255, .12);
+}
+body[data-theme="daylight"] .actions .search,
+body[data-theme="daylight"] .iconbtn,
+body[data-theme="daylight"] .account-trigger,
+body[data-theme="daylight"] .outline,
+body[data-theme="daylight"] .filter,
+body[data-theme="daylight"] .run {
+  background: rgba(255, 255, 255, .58) !important;
+  border-color: rgba(50, 47, 61, .12) !important;
+  color: var(--wand-ink) !important;
+}
+.appearance-section .mode-toggle-group { margin-top: 20px; }
+.appearance-section .mode-btn { min-width: 138px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

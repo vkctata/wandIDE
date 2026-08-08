@@ -68,6 +68,11 @@ const isTauriRuntime = () =>
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
   );
 type RuntimePlatform = "macos" | "windows" | "linux";
+type ThemeName = "obsidian" | "daylight";
+const normalizeTheme = (value: string | null | undefined): ThemeName =>
+  ["daylight", "paper", "mint", "lavender"].includes(value || "")
+    ? "daylight"
+    : "obsidian";
 const runtimePlatform = (): RuntimePlatform => {
   if (typeof navigator === "undefined") return "linux";
   const identity = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
@@ -1025,11 +1030,7 @@ function Agent({
 }
 function CodeWorkspace({ repo }: { repo: Repo }) {
   const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">(() =>
-    ["daylight", "paper", "mint", "lavender"].includes(
-      document.body.dataset.theme || "mint",
-    )
-      ? "vs"
-      : "vs-dark",
+    normalizeTheme(document.body.dataset.theme) === "daylight" ? "vs" : "vs-dark",
   );
   const [path, setPath] = useState("README.md");
   const [draftPath, setDraftPath] = useState("README.md");
@@ -1039,12 +1040,9 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    const lightThemes = new Set(["daylight", "paper", "mint", "lavender"]);
     const sync = () =>
       setEditorTheme(
-        lightThemes.has(document.body.dataset.theme || "mint")
-          ? "vs"
-          : "vs-dark",
+        normalizeTheme(document.body.dataset.theme) === "daylight" ? "vs" : "vs-dark",
       );
     sync();
     const observer = new MutationObserver(sync);
@@ -2616,20 +2614,21 @@ function WhatsNewSection() {
 
 function ThemeSection() {
   const [theme, setTheme] = useState(() =>
-    isTauriRuntime() ? "mint" : localStorage.getItem("wand.theme") || "mint",
+    isTauriRuntime() ? "obsidian" : normalizeTheme(localStorage.getItem("wand.theme")),
   );
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "theme" })
       .then((value) => {
         if (!value) return;
-        setTheme(value);
-        document.body.dataset.theme = value;
-        if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
+        const nextTheme = normalizeTheme(value);
+        setTheme(nextTheme);
+        document.body.dataset.theme = nextTheme;
+        if (!isTauriRuntime()) localStorage.setItem("wand.theme", nextTheme);
       })
       .catch(() => {});
   }, []);
-  const isLight = ["daylight", "paper", "mint", "lavender"].includes(theme);
-  const choose = (name: string) => {
+  const isLight = theme === "daylight";
+  const choose = (name: ThemeName) => {
     setTheme(name);
     document.body.dataset.theme = name;
     if (!isTauriRuntime()) localStorage.setItem("wand.theme", name);
@@ -2639,18 +2638,16 @@ function ThemeSection() {
     }).catch(() => {});
   };
   const setMode = (mode: "dark" | "light") => {
-    const defaultTheme = mode === "light" ? "daylight" : "obsidian";
-    choose(defaultTheme);
+    choose(mode === "light" ? "daylight" : "obsidian");
   };
   return (
     <div className="settings-section appearance-section">
       <div className="settings-section-head">
         <div>
           <p className="eyebrow">APPEARANCE</p>
-          <h2>Theme & Color Mode</h2>
+          <h2>Appearance</h2>
           <p>
-            Switch between Dark Mode and Light Mode or choose a custom accent
-            palette.
+            Two carefully tuned modes with one restrained Wand violet accent.
           </p>
         </div>
         <span className="theme-current">{theme}</span>
@@ -2670,29 +2667,6 @@ function ThemeSection() {
           <Sun size={16} />
           <span>Light Mode</span>
         </button>
-      </div>
-      <div className="theme-grid-container">
-        <label className="theme-group-label">
-          {isLight ? "Light Accent Palettes" : "Dark Accent Palettes"}
-        </label>
-        <div className="theme-grid">
-          {(isLight
-            ? ["daylight", "paper", "mint", "lavender"]
-            : ["obsidian", "aurora", "amethyst", "ember"]
-          ).map((name) => (
-            <button
-              aria-label={name + " theme"}
-              className={
-                "theme-choice " + name + (theme === name ? " active" : "")
-              }
-              onClick={() => choose(name)}
-              key={name}
-            >
-              <span />
-              {name}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -3339,12 +3313,12 @@ function ThemeBootstrap() {
       if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
     };
     if (!isTauriRuntime()) {
-      apply(localStorage.getItem("wand.theme") || "mint");
+      apply(normalizeTheme(localStorage.getItem("wand.theme")));
       return;
     }
     invoke<string | null>("workspace_setting", { key: "theme" })
-      .then((value) => apply(value || "mint"))
-      .catch(() => apply("mint"));
+      .then((value) => apply(normalizeTheme(value)))
+      .catch(() => apply("obsidian"));
   }, []);
   return null;
 }
