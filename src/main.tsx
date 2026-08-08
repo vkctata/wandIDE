@@ -255,9 +255,6 @@ const publishNotice = (category: string, title: string, body = title) => {
 function App() {
   const [notificationCount, setNotificationCount] = useState(0);
   useEffect(() => {
-    void ensureDesktopNotificationPermission();
-  }, []);
-  useEffect(() => {
     const onNotice = (event: Event) => {
       setNotice((event as CustomEvent<string>).detail);
     };
@@ -1049,6 +1046,7 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
   const [mode, setMode] = useState<"file" | "diff">("file");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [worktreeStatus, setWorktreeStatus] = useState("");
   useEffect(() => {
     const sync = () =>
       setEditorTheme(
@@ -1087,6 +1085,34 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
       setError(String(e));
     } finally {
       setSaving(false);
+    }
+  };
+  const createWorktree = async () => {
+    const values = await askModal("Create worktree", [
+      { id: "branch", label: "New branch", placeholder: "feature/my-change" },
+    ], "Creates an isolated sibling checkout for this repository.");
+    if (!values?.branch) return;
+    try {
+      const created = await invoke<{ path: string; branch: string }>("create_worktree", {
+        repoPath: repo.path,
+        branch: values.branch,
+      });
+      setWorktreeStatus(`Created ${created.branch} at ${created.path}`);
+    } catch (cause) {
+      setWorktreeStatus(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const applyPatch = async () => {
+    const values = await askModal("Apply Git patch", [
+      { id: "patch", label: "Unified diff patch", multiline: true, placeholder: "diff --git a/... b/..." },
+    ], "Applies this patch to the selected repository. Review it before continuing.");
+    if (!values?.patch) return;
+    try {
+      await invoke("apply_git_patch", { repoPath: repo.path, patch: values.patch });
+      setWorktreeStatus("Patch applied. Refresh the file or Git diff to review it.");
+      await load();
+    } catch (cause) {
+      setWorktreeStatus(cause instanceof Error ? cause.message : String(cause));
     }
   };
   useEffect(() => {
@@ -1137,11 +1163,18 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
           >
             {saving ? "Saving…" : "Save"}
           </button>
+          <button className="outline" disabled={!repo.path} onClick={createWorktree}>
+            New worktree
+          </button>
+          <button className="outline" disabled={!repo.path} onClick={applyPatch}>
+            Apply patch
+          </button>
           <button className="primary" onClick={load}>
             Open
           </button>
         </div>
       </div>
+      {worktreeStatus && <p className="code-operation-status" role="status">{worktreeStatus}</p>}
       {error ? (
         <div className="emptyhint">
           <h3>Unable to open file</h3>
@@ -2516,6 +2549,7 @@ function NotificationPreferencesSection() {
   };
   const [prefs, setPrefs] = useState<Prefs>(defaults);
   const [saved, setSaved] = useState(false);
+  const [desktopAllowed, setDesktopAllowed] = useState<boolean | null>(null);
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "notification-prefs" })
       .then((value) => {
@@ -2527,9 +2561,13 @@ function NotificationPreferencesSection() {
         }
       })
       .catch(() => {});
+    isPermissionGranted().then(setDesktopAllowed).catch(() => setDesktopAllowed(false));
   }, []);
-  const toggle = (key: keyof Prefs) => {
+  const toggle = async (key: keyof Prefs) => {
     const next = { ...prefs, [key]: !prefs[key] };
+    if (next[key] && desktopAllowed !== true) {
+      setDesktopAllowed(await ensureDesktopNotificationPermission());
+    }
     setPrefs(next);
     void invoke("save_workspace_setting", {
       key: "notification-prefs",
@@ -2551,7 +2589,7 @@ function NotificationPreferencesSection() {
             notifications.
           </p>
         </div>
-        {saved && <span className="tag green">Saved</span>}
+        {saved ? <span className="tag green">Saved</span> : desktopAllowed === false ? <span className="tag yellow">Desktop alerts off</span> : null}
       </div>
       <div className="notification-preferences-list">
         {[
@@ -2584,7 +2622,7 @@ function NotificationPreferencesSection() {
             <input
               type="checkbox"
               checked={prefs[key as keyof Prefs]}
-              onChange={() => toggle(key as keyof Prefs)}
+              onChange={() => void toggle(key as keyof Prefs)}
             />
           </label>
         ))}
