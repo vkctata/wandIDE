@@ -90,6 +90,14 @@ type Agent = {
   model?: string;
   system_prompt?: string;
 };
+const timeGreeting = (date: Date) => {
+  const hour = date.getHours();
+  if (hour < 5) return "Good night";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  if (hour < 22) return "Good evening";
+  return "Good night";
+};
 type Task = {
   id: string;
   name: string;
@@ -727,6 +735,11 @@ function Home({
   setView: (v: View) => void;
   userName: string;
 }) {
+  const [clock, setClock] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   type Event = {
     id: number;
     kind: string;
@@ -757,7 +770,7 @@ function Home({
           <p className="eyebrow">
             <span className="pulse" /> LOCAL WORKSPACE
           </p>
-          <h1>Good morning, {userName}.</h1>
+          <h1>{timeGreeting(clock)}, {userName}.</h1>
           <p className="sub">
             Your agents are ready to work across your repositories.
           </p>
