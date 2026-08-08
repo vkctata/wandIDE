@@ -2582,27 +2582,37 @@ function WindowChrome() {
     return null;
   const isMac = navigator.platform.toLowerCase().includes("mac");
   const appWindow = getCurrentWindow();
+  const runWindowCommand = (name: string, command: () => Promise<void>) => {
+    command().catch((error) =>
+      console.error(`Unable to ${name} the Wand window`, error),
+    );
+  };
   return (
-    <div className={"window-chrome" + (isMac ? " mac" : "")} data-tauri-drag-region>
-      <div
-        className="window-drag"
-        data-tauri-drag-region
-        onMouseDown={() => appWindow.startDragging()}
-      />
+    <div className={"window-chrome" + (isMac ? " mac" : "")}>
+      <div className="window-drag" data-tauri-drag-region />
       <div className="window-controls">
-        <button aria-label="Minimize Wand" onClick={() => appWindow.minimize()}>
+        <button
+          className="window-minimize"
+          aria-label="Minimize Wand"
+          onClick={() =>
+            runWindowCommand("minimize", () => appWindow.minimize())
+          }
+        >
           <Minus size={13} />
         </button>
         <button
+          className="window-maximize"
           aria-label="Maximize Wand"
-          onClick={() => appWindow.toggleMaximize()}
+          onClick={() =>
+            runWindowCommand("maximize", () => appWindow.toggleMaximize())
+          }
         >
           <Square size={12} />
         </button>
         <button
           className="window-close"
           aria-label="Close Wand"
-          onClick={() => appWindow.close()}
+          onClick={() => runWindowCommand("close", () => appWindow.close())}
         >
           <X size={13} />
         </button>
