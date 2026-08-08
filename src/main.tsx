@@ -2893,9 +2893,22 @@ function OnboardingGate() {
   const [show, setShow] = useState(
     () => localStorage.getItem("wand.onboarding.complete") !== "true",
   );
+  useEffect(() => {
+    invoke<string | null>("user_name")
+      .then((name) => {
+        const hasSavedName = Boolean(name?.trim());
+        setShow(!hasSavedName);
+        if (hasSavedName) localStorage.setItem("wand.onboarding.complete", "true");
+      })
+      .catch(() => {
+        // Browser preview has no SQLite boundary; retain its local onboarding state.
+      });
+  }, []);
   const finish = async (name: string) => {
-    await invoke("save_user_name", { name }).catch(() => {});
-    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    await invoke("save_user_name", { name: cleanName }).catch(() => {});
+    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: cleanName }));
     localStorage.setItem("wand.onboarding.complete", "true");
     setShow(false);
   };
