@@ -1,0 +1,43 @@
+.threads-page .hero {
+  margin-bottom: 28px;
+}
+
+.threads-page .thread-composer {
+  width: 100%;
+  min-width: 0;
+}
+
+.threads-page .thread-composer > .primary {
+  flex: 0 0 auto;
+}
+
+.threads-page .thread {
+  flex-wrap: wrap;
+}
+
+.threads-empty {
+  display: grid;
+  place-content: center;
+  min-height: clamp(220px, 42vh, 360px);
+  margin-top: 0;
+}
+
+@media (max-width: 520px) {
+  .threads-page .hero {
+    margin-bottom: 22px;
+  }
+
+  .threads-page .thread-composer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .threads-page .thread-composer > .primary {
+    align-self: flex-end;
+  }
+
+  .threads-empty {
+    min-height: 220px;
+    padding: 32px 20px;
+  }
+}

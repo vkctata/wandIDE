@@ -47,6 +47,7 @@ import "./ui-corrections.css";
 import "./provider-ui.css";
 import "./responsive-fix.css";
 import "./premium-plus.css";
+import "./threads.css";
 
 // Load Monaco only when the user opens Code. The editor remains self-contained
 // in packaged builds, while the rest of Wand starts without its worker payload.
@@ -741,7 +742,6 @@ function App() {
           <SettingsView repos={repos} setRepos={setRepos} />
         )}
       </main>
-      <RepoChat repo={repo.name} agents={agentCatalog} />
     </div>
   );
 }
@@ -1055,6 +1055,7 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
 function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   type Message = {
     id: number;
+    repo?: string;
     author: string;
     body: string;
     created_at: string;
@@ -1063,15 +1064,32 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
+  const hasRepo = repo.name !== emptyRepo.name;
   const load = () =>
-    invoke<Message[]>("list_thread_messages", { repo: repo.name })
-      .then(setMessages)
-      .catch(() => setMessages([]));
+    hasRepo
+      ? invoke<Message[]>("list_thread_messages", { repo: repo.name })
+          .then(setMessages)
+          .catch(() => setMessages([]))
+      : Promise.resolve(setMessages([]));
   useEffect(() => {
     load();
-  }, [repo.name]);
+  }, [repo.name, hasRepo]);
+  useEffect(() => {
+    if (!hasRepo) return;
+    const stop = listen<Message>("wand://thread", (event) => {
+      if (event.payload.repo !== repo.name) return;
+      setMessages((current) =>
+        current.some((message) => message.id === event.payload.id)
+          ? current
+          : [...current, event.payload],
+      );
+    });
+    return () => {
+      stop.then((unsubscribe) => unsubscribe());
+    };
+  }, [repo.name, hasRepo]);
   const create = async () => {
-    if (!draft.trim()) return;
+    if (!hasRepo || !draft.trim()) return;
     await invoke("create_thread_message", {
       repo: repo.name,
       author: "You",
@@ -1083,47 +1101,76 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
     load();
   };
   return (
-    <section className="content">
+    <section className="content threads-page">
       <div className="hero compact">
         <div>
           <p className="eyebrow">
             <FolderGit2 size={14} /> REPOSITORY
           </p>
-          <h1>{repo.name}</h1>
-          <p className="sub">Threads and agent context for {repo.path}</p>
+          <h1>{hasRepo ? repo.name : "Repository threads"}</h1>
+          <p className="sub">
+            {hasRepo
+              ? `Threads and agent context for ${repo.path}`
+              : "Select a repository to start a local conversation with your agents."}
+          </p>
         </div>
-        <button className="primary" disabled={repo === emptyRepo || !draft.trim()} onClick={create}><Plus size={16} /> New thread</button>
       </div>
-      <div className="thread-composer"><AgentMentionInput repo={repo.name} value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Write a repository thread… Type @ to tag an agent" /><button className="primary" disabled={!draft.trim()} onClick={create}>Post</button></div>
-      <div className="threadlist">
-        {messages.length === 0 ? (
-          <div className="emptyhint">
-            <MessageSquare size={20} />
-            <h3>No repository messages yet</h3>
-            <p>
-              Start the conversation for this repository and keep the context
-              local.
-            </p>
+      {!hasRepo ? (
+        <div className="emptyhint threads-empty">
+          <FolderGit2 size={24} />
+          <h3>Select a repository to start a thread</h3>
+          <p>
+            Choose a repository from the sidebar to keep messages and agent
+            context scoped to that project.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="thread-composer">
+            <AgentMentionInput
+              repo={repo.name}
+              value={draft}
+              onChange={setDraft}
+              agents={agents}
+              tagged={tagged}
+              onTagged={setTagged}
+              placeholder="Write a repository thread… Type @ to tag an agent"
+            />
+            <button className="primary" disabled={!draft.trim()} onClick={create}>
+              Post
+            </button>
           </div>
-        ) : (
-          messages.map((message) => (
-            <div className="thread" key={message.id}>
-              <div className="threadicon">
-                <Hash size={16} />
-              </div>
-              <div>
-                <h3>{message.body}</h3>
+          <div className="threadlist">
+            {messages.length === 0 ? (
+              <div className="emptyhint">
+                <MessageSquare size={20} />
+                <h3>No repository messages yet</h3>
                 <p>
-                  {message.author} · {message.created_at}
+                  Start the conversation for this repository and keep the context
+                  local.
                 </p>
               </div>
-              {message.agent_ids?.map((id) => <span className="tag purple" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
-              <span className="tag blue">message</span>
-              <ChevronDown size={14} />
-            </div>
-          ))
-        )}
-      </div>
+            ) : (
+              messages.map((message) => (
+                <div className="thread" key={message.id}>
+                  <div className="threadicon">
+                    <Hash size={16} />
+                  </div>
+                  <div>
+                    <h3>{message.body}</h3>
+                    <p>
+                      {message.author} · {message.created_at}
+                    </p>
+                  </div>
+                  {message.agent_ids?.map((id) => <span className="tag purple" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
+                  <span className="tag blue">message</span>
+                  <ChevronDown size={14} />
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -1923,84 +1970,6 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-function RepoChat({ repo, agents }: { repo: string; agents: Agent[] }) {
-  type Message = { id?: number; repo?: string; author: string; body: string; agent_ids?: string[] };
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [draft, setDraft] = useState("");
-  const [tagged, setTagged] = useState<string[]>([]);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    invoke<Message[]>("list_thread_messages", { repo })
-      .then(setMessages)
-      .catch(() => setMessages([]));
-  }, [repo]);
-  useEffect(() => {
-    const stop = listen<Message>("wand://thread", (e) => {
-      if (e.payload.repo === repo)
-        setMessages((current) =>
-          current.some((m) => m.id === e.payload.id)
-            ? current
-            : [...current, e.payload],
-        );
-    });
-    return () => {
-      stop.then((fn) => fn());
-    };
-  }, [repo]);
-  const send = async () => {
-    const body = draft.trim();
-    if (!body) return;
-    try {
-      const message = await invoke<Message>("create_thread_message", {
-        repo,
-        author: "You",
-        body,
-        agentIds: tagged,
-      });
-      setMessages((current) =>
-        current.some((m) => m.id === message.id)
-          ? current
-          : [...current, message],
-      );
-      setDraft("");
-      setTagged([]);
-      setError("");
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-  return (
-    <div className="repo-chat">
-      <div className="chat-head">
-        <div>
-          <b>{repo} thread</b>
-          <small>Humans and agents · persisted locally</small>
-        </div>
-        <span className="live-dot" />
-      </div>
-      <div className="chat-messages">
-        {messages.length === 0 && (
-          <p className="chat-empty">Start the repository conversation.</p>
-        )}
-        {messages.map((m, i) => (
-          <div
-            className={"chat-message " + (m.author === "You" ? "mine" : "")}
-            key={m.id ?? i}
-          >
-            <small>{m.author}</small>
-            <p>{m.body}</p>
-            {m.agent_ids?.map((id) => <span className="tag purple" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
-          </div>
-        ))}
-      </div>
-      <div className="chat-compose">
-        <AgentMentionInput repo={repo} value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Message this repository… Type @ to tag an agent" />
-        <button onClick={send}>Send</button>
-      </div>
-      {error && <small className="chat-error">{error}</small>}
     </div>
   );
 }
