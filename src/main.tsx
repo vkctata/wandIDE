@@ -1668,6 +1668,8 @@ function SettingsView({
   setRepos: React.Dispatch<React.SetStateAction<Repo[]>>;
 }) {
   const [root, setRoot] = useState("");
+  const [scanError, setScanError] = useState("");
+  const [scanning, setScanning] = useState(false);
   useEffect(() => {
     invoke<string | null>("workspace_root")
       .then((value) => {
@@ -1682,12 +1684,14 @@ function SettingsView({
       title: "Choose your repositories folder",
     });
     if (typeof selected !== "string") return;
-    const rows = await invoke<any[]>("scan_repositories", {
-      rootPath: selected,
-    }).catch(() => []);
-    await invoke("save_workspace_root", { root: selected }).catch(() => {});
-    setRoot(selected);
-    if (rows.length)
+    setScanning(true);
+    setScanError("");
+    try {
+      const rows = await invoke<any[]>("scan_repositories", {
+        rootPath: selected,
+      });
+      await invoke("save_workspace_root", { root: selected });
+      setRoot(selected);
       setRepos(
         rows.map((r) => ({
           name: r.name,
@@ -1696,6 +1700,11 @@ function SettingsView({
           count: 0,
         })),
       );
+    } catch (error) {
+      setScanError(String(error));
+    } finally {
+      setScanning(false);
+    }
   };
   return (
     <section className="content settings-page">
@@ -1720,10 +1729,11 @@ function SettingsView({
         <div className="folder">
           <FolderGit2 size={18} />
           <span>{repos.length} repositories in this local workspace</span>
-          <button className="outline" onClick={scan}>
-            Choose folder & scan
+          <button className="outline" onClick={scan} disabled={scanning}>
+            {scanning ? "Scanning…" : "Choose folder & scan"}
           </button>
         </div>
+        {scanError && <p className="provider-message" role="alert">{scanError}</p>}
       </div>
       <ThemeSection />
       <ProviderAccess />
