@@ -781,6 +781,13 @@ fn launch_chain_worker(
                 Ok(output) => {
                     handoff = output.chars().take(12000).collect();
                     if let Ok(conn) = db_arc.lock() {
+                        let repo: Option<String> = conn
+                            .query_row(
+                                "SELECT repo FROM tasks WHERE id=?1",
+                                params![req.task_id],
+                                |row| row.get(0),
+                            )
+                            .ok();
                         let _ = conn.execute(
                             "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
                             params![
@@ -793,6 +800,32 @@ fn launch_chain_worker(
                                 Utc::now().to_rfc3339()
                             ],
                         );
+                        if let Some(repo) = repo {
+                            let created_at = Utc::now().to_rfc3339();
+                            let body = format!("Stage {} handoff\n\n{}", index + 1, handoff);
+                            let agent_ids =
+                                serde_json::to_string(&vec![agent]).unwrap_or_else(|_| "[]".into());
+                            if conn
+                                .execute(
+                                    "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
+                                    params![repo, agent, body, created_at, agent_ids],
+                                )
+                                .is_ok()
+                            {
+                                let id = conn.last_insert_rowid();
+                                let _ = app.emit(
+                                    "wand://thread",
+                                    serde_json::json!({
+                                        "id": id,
+                                        "repo": repo,
+                                        "author": agent,
+                                        "body": body,
+                                        "created_at": created_at,
+                                        "agent_ids": [agent]
+                                    }),
+                                );
+                            }
+                        }
                     }
                     let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));
                 }
