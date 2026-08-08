@@ -1,0 +1,106 @@
+/* Native desktop pass: one calm surface system, predictable density, and
+   controls that feel at home in a Tauri window. Loaded last intentionally. */
+:root {
+  --native-radius-sm: 7px;
+  --native-radius-md: 10px;
+  --native-radius-lg: 14px;
+  --native-control: 34px;
+  --native-sidebar: 232px;
+}
+
+html, body { background: var(--wand-surface-2, #11131b); }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+button, input, textarea, select { font-family: inherit; }
+button { -webkit-app-region: no-drag; }
+
+.app {
+  min-height: 100vh;
+  border-radius: 0;
+  background: var(--wand-surface-2, #11131b);
+  box-shadow: none;
+}
+
+aside {
+  width: var(--native-sidebar);
+  padding: 18px 12px 16px;
+  background: color-mix(in srgb, var(--wand-surface, #171a24) 88%, #000 12%);
+  border-right: 1px solid var(--wand-border, #292d3e);
+}
+.brand { padding: 5px 10px 22px; }
+.wand-wordmark { font-size: 21px; filter: none; }
+.navgroup { margin-bottom: 20px; }
+.navgroup label { padding: 0 10px 7px; color: var(--wand-muted, #81889d); }
+.nav, .repo { min-height: 34px; border-radius: var(--native-radius-sm); color: var(--wand-muted, #9299ad); }
+.nav:hover, .repo:hover { background: color-mix(in srgb, var(--wand-ink, #fff) 6%, transparent); }
+.nav.active { background: color-mix(in srgb, var(--wand-accent, #9678ff) 14%, transparent); box-shadow: inset 2px 0 var(--wand-accent, #9678ff); color: var(--wand-ink, #fff); }
+
+main { background: transparent; }
+header, .app > main > header {
+  height: 58px;
+  flex-basis: 58px;
+  padding: 0 22px;
+  background: color-mix(in srgb, var(--wand-surface-2, #11131b) 90%, transparent);
+  border-bottom: 1px solid var(--wand-border, #292d3e);
+  backdrop-filter: blur(16px);
+}
+.actions { gap: 8px; }
+.actions .search, .iconbtn, .account-trigger {
+  height: var(--native-control);
+  background: var(--wand-surface, #171a24);
+  border: 1px solid var(--wand-border, #292d3e);
+  border-radius: var(--native-radius-sm);
+}
+.actions .search { width: min(320px, 34vw); padding: 0 10px; }
+.actions .search input { height: 100%; }
+.iconbtn, .account-trigger { width: var(--native-control); }
+.iconbtn:hover, .account-trigger:hover { background: color-mix(in srgb, var(--wand-ink, #fff) 7%, var(--wand-surface, #171a24)); }
+
+.content { max-width: 1120px; padding: 42px 48px 72px; }
+.hero { margin-bottom: 30px; }
+.hero h1 { font-size: clamp(26px, 3vw, 32px); font-weight: 700; }
+.sub, .sectionhead p { color: var(--wand-muted, #81889d); }
+.stats { gap: 12px; margin-bottom: 38px; }
+.stat, .agent, .taskcard, .settingscard, .settings-section {
+  border-radius: var(--native-radius-md);
+  box-shadow: none;
+}
+.stat { padding: 16px; background: var(--wand-surface, #171a24); }
+.stat strong { font-size: 25px; }
+.sectionhead { margin-bottom: 12px; }
+.event, .thread, .notice { padding: 14px 10px; }
+.event:hover, .thread:hover { background: color-mix(in srgb, var(--wand-ink, #fff) 3%, transparent); }
+.agentgrid { gap: 12px; }
+.agent { padding: 14px; background: var(--wand-surface, #171a24); }
+.emptyhint { margin-top: 18px; padding: 34px 20px; border-radius: var(--native-radius-md); }
+
+.primary, .outline, .filter, .run { min-height: 34px; border-radius: var(--native-radius-sm); }
+.primary { box-shadow: none; }
+.primary:hover { transform: none; filter: brightness(1.07); box-shadow: none; }
+.outline, .filter, .run { background: var(--wand-surface, #171a24); }
+.toast { top: 70px; right: 22px; border-radius: var(--native-radius-md); }
+.search-palette { top: 64px; right: 22px; border-radius: var(--native-radius-md); }
+.wand-modal { border-radius: var(--native-radius-lg); box-shadow: 0 20px 60px #0008; }
+
+body[data-theme="daylight"] .app,
+body[data-theme="paper"] .app,
+body[data-theme="mint"] .app,
+body[data-theme="lavender"] .app { background: var(--wand-surface-2); }
+body[data-theme="daylight"] aside,
+body[data-theme="paper"] aside,
+body[data-theme="mint"] aside,
+body[data-theme="lavender"] aside { background: var(--wand-surface); }
+body[data-theme="daylight"] header,
+body[data-theme="paper"] header,
+body[data-theme="mint"] header,
+body[data-theme="lavender"] header { background: color-mix(in srgb, var(--wand-surface-2) 92%, transparent); }
+
+@media (max-width: 760px) {
+  aside { width: 68px; }
+  .content { padding: 30px 20px 56px; }
+  header, .app > main > header { height: 54px; flex-basis: 54px; padding: 0 16px; }
+  .actions .search { display: none; }
+  .hero { gap: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

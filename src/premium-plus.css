@@ -52,7 +52,7 @@ body[data-theme="obsidian"] .app {
 }
 
 .wand-wordmark {
-  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 24px;
   font-weight: 850;
   letter-spacing: -0.065em;
@@ -161,6 +161,35 @@ body[data-theme="obsidian"] .app {
 @keyframes sparkle-float { 50% { transform: translateY(-3px) rotate(8deg); opacity: .72; } }
 
 /* ------------------------------------------------------------------ */
+/* Compact top bar — slimmer header + search + right-hand controls      */
+/* ------------------------------------------------------------------ */
+.app>main>header {
+  height: 60px;
+  flex: 0 0 60px;
+  padding: 0 24px 0 28px;
+}
+header { height: 60px; }
+.content { padding-top: 42px; }
+.actions .search { height: 30px; border-radius: 8px; }
+.actions .search input { padding: 0; }
+.iconbtn { width: 30px; height: 30px; }
+.account-trigger { width: 30px; height: 30px; }
+@media (max-width: 760px) {
+  .app>main>header, header { height: 54px; flex-basis: 54px; }
+  .content { padding-top: 34px; }
+}
+@media (max-height: 560px) {
+  .app>main>header, header { height: 52px; flex-basis: 52px; }
+}
+
+.account-dropdown { top: 42px; }
+.search-palette { top: 56px; }
+@media (max-width: 760px) {
+  .account-dropdown { top: 40px; }
+  .search-palette { top: 50px; }
+}
+
+/* ------------------------------------------------------------------ */
 /* Navigation — calm active state, no color-leak                        */
 /* ------------------------------------------------------------------ */
 .nav, .repo { border-radius: 9px; }
@@ -264,7 +293,7 @@ body[data-theme="lavender"] .wand-modal {
   border-radius: 9px;
   background: var(--wand-surface-2, #1b1e2d);
   color: var(--ink-strong, #f0f2fc);
-  font: 13px/1.45 'Manrope';
+  font: 13px/1.45 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   outline: none;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
@@ -418,14 +447,14 @@ body[data-theme="lavender"] {
 }
 
 .account-heading strong {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 13px;
   font-weight: 700;
   color: var(--wand-ink, #f1f5f9);
 }
 
 .account-heading small {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 11px;
   color: color-mix(in srgb, var(--wand-accent, #9678ff) 75%, var(--wand-ink, #94a3b8));
   margin-top: 2px;
@@ -441,7 +470,7 @@ body[data-theme="lavender"] {
   color: var(--wand-ink, #cbd5e1);
   padding: 9px 10px;
   border-radius: 8px;
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -537,12 +566,13 @@ body[data-theme="lavender"] .account-dropdown button:hover {
 }
 
 .settings-modal-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
+  padding: 18px 56px 18px 24px;
   border-bottom: 1px solid var(--wand-border, rgba(255, 255, 255, 0.08));
-  background: color-mix(in srgb, var(--wand-surface, #121520) 90%, #fff 10%);
+  background: var(--wand-surface, #121520);
 }
 
 .settings-modal-header .eyebrow {
@@ -558,7 +588,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
 }
 
 .settings-modal-header h2 {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 20px;
   font-weight: 700;
   margin: 0;
@@ -566,6 +596,10 @@ body[data-theme="lavender"] .account-dropdown button:hover {
 }
 
 .settings-modal-header .modal-close {
+  position: absolute;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
   width: 32px;
   height: 32px;
   display: grid;
@@ -614,7 +648,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
   border-radius: 9px;
   background: transparent;
   color: var(--wand-muted, #94a3b8);
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -671,7 +705,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
 }
 
 .settings-section-head h2 {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 18px;
   font-weight: 700;
   margin: 2px 0 4px 0;
@@ -701,7 +735,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
   border: 1px solid var(--wand-border, rgba(255, 255, 255, 0.1));
   background: var(--wand-surface-2, rgba(255, 255, 255, 0.03));
   color: var(--wand-muted, #94a3b8);
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -756,7 +790,7 @@ body[data-theme="daylight"] .settings-modal-header,
 body[data-theme="paper"] .settings-modal-header,
 body[data-theme="mint"] .settings-modal-header,
 body[data-theme="lavender"] .settings-modal-header {
-  background: #f8fafc !important;
+  background: #ffffff !important;
   border-color: #e2e8f0 !important;
 }
 
@@ -796,6 +830,165 @@ body[data-theme="mint"] .settings-nav-item.active,
 body[data-theme="lavender"] .settings-nav-item.active {
   background: color-mix(in srgb, var(--wand-accent) 12%, transparent) !important;
   color: var(--wand-accent) !important;
+}
+
+/* ------------------------------------------------------------------ *
+ * Settings modal — Workspace / Agents / Notifications polish         *
+ * ------------------------------------------------------------------ */
+
+.settings-modal-content .settingscard {
+  max-width: 100%;
+  box-shadow: none;
+}
+
+.settings-modal-content .settingscard .sectionhead {
+  margin-bottom: 14px;
+}
+
+.settings-modal-content .settingscard .sectionhead h2 {
+  font-size: 17px;
+  margin: 0 0 4px 0;
+}
+
+.settings-modal-content .settingscard p {
+  margin: 0 0 14px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--wand-muted, #81889d);
+}
+
+.settings-modal-content .folder {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--wand-border, rgba(255, 255, 255, 0.1));
+  border-radius: 11px;
+  background: var(--wand-surface-2, rgba(255, 255, 255, 0.03));
+}
+
+.settings-modal-content .folder svg {
+  color: var(--wand-accent, #9678ff);
+  flex-shrink: 0;
+}
+
+.settings-modal-content .folder span {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--wand-ink, #e9edf6);
+  min-width: 0;
+}
+
+/* Agents tab */
+.settings-modal-content .agent-management {
+  width: 100%;
+  padding-bottom: 0;
+}
+
+.settings-modal-content .agent-config {
+  border-radius: 12px;
+  padding: 17px;
+}
+
+.settings-modal-content .agent-config p {
+  margin: 9px 0;
+  color: var(--wand-muted, #8c93a7);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.settings-modal-content .agent-config small {
+  display: block;
+  min-height: auto;
+  color: var(--wand-accent, #9678ff);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.settings-modal-content .agent-config footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.settings-modal-content .agent-config footer .textbtn {
+  margin-left: auto;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+/* Notifications tab */
+.settings-modal-content .notification-preferences-section {
+  max-width: 100%;
+}
+
+.settings-modal-content .notification-preferences-list {
+  margin-top: 4px;
+}
+
+.settings-modal-content .notification-setting {
+  border-top: 1px solid var(--wand-border, rgba(255, 255, 255, 0.07));
+}
+
+.settings-modal-content .notification-setting b {
+  font-size: 13px;
+  color: var(--wand-ink, #f1f5f9);
+}
+
+.settings-modal-content .notification-setting small {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--wand-muted, #8c93a7);
+}
+
+.settings-modal-content .notification-setting input {
+  width: 36px;
+  height: 20px;
+  flex: 0 0 auto;
+  accent-color: var(--wand-accent, #9678ff);
+}
+
+/* The plain square checkbox becomes a quiet switch in the modal */
+.settings-modal-content .notification-setting input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  border: 1px solid var(--wand-border, rgba(255, 255, 255, 0.18));
+  border-radius: 999px;
+  background: var(--wand-surface-2, rgba(255, 255, 255, 0.06));
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.settings-modal-content .notification-setting input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--wand-muted, #8b91a6);
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.settings-modal-content .notification-setting input[type="checkbox"]:checked {
+  background: var(--wand-accent, #9678ff);
+  border-color: var(--wand-accent, #9678ff);
+}
+
+.settings-modal-content .notification-setting input[type="checkbox"]:checked::after {
+  transform: translateX(14px);
+  background: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-modal-content .notification-setting input[type="checkbox"],
+  .settings-modal-content .notification-setting input[type="checkbox"]::after {
+    transition: none;
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -865,7 +1058,7 @@ body[data-theme="lavender"] .settings-nav-item.active {
 }
 
 .release-header h3 {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
   font-size: 13.5px;
   font-weight: 700;
   color: var(--wand-ink, #f1f5f9);
@@ -935,13 +1128,13 @@ body[data-theme="lavender"] .settings-nav-item.active {
   border: 1px solid var(--wand-border, rgba(255,255,255,.1));
   border-radius: 999px;
   background: var(--wand-surface-2, rgba(255,255,255,.03));
-  font: 10px/1 'Manrope';
+  font: 10px/1 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-weight: 600;
   letter-spacing: .03em;
   color: var(--ink-muted, #8b91a6);
 }
 .summary-chip i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.summary-chip b { font: 11px 'DM Mono'; color: var(--ink-strong, #f0f2fc); margin-right: 1px; }
+.summary-chip b { font: 11px 'DM Mono', 'SF Mono', 'Cascadia Mono', ui-monospace, monospace, 'SF Mono', 'Cascadia Mono', ui-monospace, monospace; color: var(--ink-strong, #f0f2fc); margin-right: 1px; }
 .summary-running i { background: #6fdaa0; box-shadow: 0 0 0 3px color-mix(in srgb, #6fdaa0 18%, transparent); }
 .summary-completed { color: #8fd6a8; }
 .summary-completed i { background: #6fdaa0; }
@@ -956,7 +1149,7 @@ body[data-theme="lavender"] .settings-nav-item.active {
   border-radius: 8px;
   background: transparent;
   color: var(--ink-muted, #8b91a6);
-  font: 11px/1 'Manrope';
+  font: 11px/1 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-weight: 600;
   cursor: pointer;
   transition: color .16s ease, border-color .16s ease, background .16s ease;
