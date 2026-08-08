@@ -1231,6 +1231,8 @@ fn execute_stage(
     handoff: &str,
     responsibility: &str,
     skills: &[String],
+    db: &Arc<Mutex<Connection>>,
+    task_id: &str,
 ) -> Result<String, String> {
     let model_hint = if model.trim().is_empty() || model == "default" {
         "Use the CLI's configured default model.".to_string()
@@ -1263,20 +1265,43 @@ fn execute_stage(
     let stdout_reader = thread::spawn(move || read_bounded(stdout));
     let stderr_reader = thread::spawn(move || read_bounded(stderr));
     const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-    let status = if let Some(status) = child
-        .wait_timeout(STAGE_TIMEOUT)
-        .map_err(|e| e.to_string())?
-    {
-        status
-    } else {
-        let _ = child.kill();
-        let _ = child.wait();
-        let _ = stdout_reader.join();
-        let _ = stderr_reader.join();
-        return Err(format!(
-            "CLI stage timed out after {} minutes",
-            STAGE_TIMEOUT.as_secs() / 60
-        ));
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child
+            .wait_timeout(Duration::from_secs(1))
+            .map_err(|e| e.to_string())?
+        {
+            break status;
+        }
+        let cancelled = db
+            .lock()
+            .ok()
+            .and_then(|conn| {
+                conn.query_row(
+                    "SELECT status='cancelled' FROM tasks WHERE id=?1",
+                    params![task_id],
+                    |row| row.get::<_, bool>(0),
+                )
+                .ok()
+            })
+            .unwrap_or(false);
+        if cancelled {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err("WAND_TASK_CANCELLED".into());
+        }
+        if started.elapsed() >= STAGE_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(format!(
+                "CLI stage timed out after {} minutes",
+                STAGE_TIMEOUT.as_secs() / 60
+            ));
+        }
     };
     let (stdout, stdout_truncated) = stdout_reader
         .join()
@@ -1526,6 +1551,8 @@ fn launch_chain_worker(
                 &handoff,
                 responsibility,
                 skills,
+                &db_arc,
+                &req.task_id,
             ) {
                 Ok(output) => {
                     handoff = output.chars().take(12000).collect();
@@ -1586,6 +1613,12 @@ fn launch_chain_worker(
                     let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));
                 }
                 Err(error) => {
+                    if error == "WAND_TASK_CANCELLED" {
+                        finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
+                        emit_task_status(&app, &req.task_id, "cancelled", Some("Cancelled by user"));
+                        let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"cancelled","error":"Cancelled by user"}));
+                        return;
+                    }
                     if let Ok(conn) = db_arc.lock() {
                         let repo: Option<String> = conn
                             .query_row(
