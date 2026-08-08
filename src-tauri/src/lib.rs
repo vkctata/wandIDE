@@ -237,11 +237,7 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|e| e.to_string())?;
-    if provider != "local" {
-        return Err("Tasks can run only against a local repository selected from your workspace folder".into());
-    }
-    canonical_existing_directory(&repository_path)
-        .map_err(|_| "The selected repository folder is no longer available".to_string())?;
+    validate_local_task_repository(&provider, &repository_path)?;
     for agent_id in &task.agents {
         let scope: String = conn
             .query_row(
@@ -1061,6 +1057,16 @@ fn canonical_existing_directory(path: &str) -> Result<PathBuf, String> {
         return Err("Agent execution path must be an existing directory".into());
     }
     Ok(canonical)
+}
+fn validate_local_task_repository(provider: &str, path: &str) -> Result<PathBuf, String> {
+    if provider != "local" {
+        return Err(
+            "Tasks can run only against a local repository selected from your workspace folder"
+                .into(),
+        );
+    }
+    canonical_existing_directory(path)
+        .map_err(|_| "The selected repository folder is no longer available".to_string())
 }
 #[tauri::command]
 fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
@@ -2462,6 +2468,13 @@ mod tests {
         )
         .is_err());
         assert!(canonical_existing_directory("src/lib.rs").is_err());
+    }
+
+    #[test]
+    fn runnable_tasks_require_local_existing_repositories() {
+        assert!(validate_local_task_repository("local", ".").is_ok());
+        assert!(validate_local_task_repository("github", ".").is_err());
+        assert!(validate_local_task_repository("local", "missing-repository").is_err());
     }
 
     #[test]
