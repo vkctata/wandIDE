@@ -67,6 +67,14 @@ const isTauriRuntime = () =>
   Boolean(
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
   );
+type RuntimePlatform = "macos" | "windows" | "linux";
+const runtimePlatform = (): RuntimePlatform => {
+  if (typeof navigator === "undefined") return "linux";
+  const identity = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
+  if (identity.includes("mac")) return "macos";
+  if (identity.includes("win")) return "windows";
+  return "linux";
+};
 const invoke = <T = unknown,>(
   command: string,
   args?: Record<string, unknown>,
@@ -3058,7 +3066,7 @@ function ModalHost() {
 function WindowChrome() {
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
     return null;
-  const isMac = navigator.platform.toLowerCase().includes("mac");
+  const platform = runtimePlatform();
   const appWindow = getCurrentWindow();
   const runWindowCommand = (name: string, command: () => Promise<void>) => {
     command().catch((error) =>
@@ -3066,7 +3074,7 @@ function WindowChrome() {
     );
   };
   return (
-    <div className={"window-chrome" + (isMac ? " mac" : "")}>
+    <div className={`window-chrome ${platform}${platform === "macos" ? " mac" : ""}`}>
       <div className="window-drag" data-tauri-drag-region />
       <div className="window-controls">
         <button
@@ -3297,11 +3305,18 @@ function OnboardingGate() {
       <ProviderHealth />
       <UpdateBanner />
       <RuntimeIdentity />
+      <PlatformBootstrap />
       <ThemeBootstrap />
       <ModalHost />
       {show === true && <Onboarding done={finish} />}
     </>
   );
+}
+function PlatformBootstrap() {
+  useEffect(() => {
+    document.body.dataset.platform = runtimePlatform();
+  }, []);
+  return null;
 }
 createRoot(document.getElementById("root")!).render(<OnboardingGate />);
 function ThemeBootstrap() {
