@@ -5,7 +5,11 @@ import { listen as tauriListen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
-import { sendNotification } from "@tauri-apps/plugin-notification";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Editor, { DiffEditor, loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
@@ -186,17 +190,34 @@ const askModal = (title: string, fields: ModalField[], description?: string) =>
     ),
   );
 
-const notifyDesktop = (category: string, title: string, body: string) => {
+let desktopNotificationPermission: Promise<boolean> | undefined;
+const ensureDesktopNotificationPermission = () => {
+  desktopNotificationPermission ??= (async () => {
+    try {
+      if (await isPermissionGranted()) return true;
+      return (await requestPermission()) === "granted";
+    } catch {
+      return false;
+    }
+  })();
+  return desktopNotificationPermission;
+};
+const notifyDesktop = async (category: string, title: string, body: string) => {
   try {
     const prefs = JSON.parse(
       localStorage.getItem("wand.notification-prefs") || "{}",
     );
     if (prefs[category] === false) return;
-    sendNotification({ title, body });
+    if (await ensureDesktopNotificationPermission()) {
+      sendNotification({ title, body });
+    }
   } catch {}
 };
 function App() {
   const [notificationCount, setNotificationCount] = useState(0);
+  useEffect(() => {
+    void ensureDesktopNotificationPermission();
+  }, []);
   useEffect(() => {
     const refresh = () =>
       invoke<any[]>("list_notifications")
