@@ -2380,7 +2380,17 @@ function NotificationPreferencesSection() {
   };
   const [prefs, setPrefs] = useState<Prefs>(defaults);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   useEffect(() => {
+    if (!isTauriRuntime()) {
+      try {
+        const value = localStorage.getItem("wand.notification-prefs");
+        if (value) setPrefs({ ...defaults, ...JSON.parse(value) });
+      } catch {
+        // Keep safe defaults when browser preview state is malformed.
+      }
+      return;
+    }
     invoke<string | null>("workspace_setting", { key: "notification-prefs" })
       .then((value) => {
         if (!value) return;
@@ -2392,15 +2402,27 @@ function NotificationPreferencesSection() {
       })
       .catch(() => {});
   }, []);
-  const toggle = (key: keyof Prefs) => {
+  const toggle = async (key: keyof Prefs) => {
+    const previous = prefs;
     const next = { ...prefs, [key]: !prefs[key] };
     setPrefs(next);
-    void invoke("save_workspace_setting", {
-      key: "notification-prefs",
-      value: JSON.stringify(next),
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
+    setSaved(false);
+    setSaveError("");
+    try {
+      if (!isTauriRuntime()) {
+        localStorage.setItem("wand.notification-prefs", JSON.stringify(next));
+      } else {
+        await invoke("save_workspace_setting", {
+          key: "notification-prefs",
+          value: JSON.stringify(next),
+        });
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (error) {
+      setPrefs(previous);
+      setSaveError(`Unable to save notification preferences: ${String(error)}`);
+    }
   };
   return (
     <div className="settings-section notification-preferences-section">
@@ -2417,6 +2439,7 @@ function NotificationPreferencesSection() {
         </div>
         {saved && <span className="tag green">Saved</span>}
       </div>
+      {saveError && <p className="provider-message" role="alert">{saveError}</p>}
       <div className="notification-preferences-list">
         {[
           [
@@ -2551,6 +2574,7 @@ function ThemeSection() {
   const [theme, setTheme] = useState(() =>
     isTauriRuntime() ? "mint" : localStorage.getItem("wand.theme") || "mint",
   );
+  const [saveError, setSaveError] = useState("");
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "theme" })
       .then((value) => {
@@ -2562,14 +2586,22 @@ function ThemeSection() {
       .catch(() => {});
   }, []);
   const isLight = ["daylight", "paper", "mint", "lavender"].includes(theme);
-  const choose = (name: string) => {
+  const choose = async (name: string) => {
+    const previous = theme;
     setTheme(name);
+    setSaveError("");
     document.body.dataset.theme = name;
-    if (!isTauriRuntime()) localStorage.setItem("wand.theme", name);
-    void invoke("save_workspace_setting", {
-      key: "theme",
-      value: name,
-    });
+    try {
+      if (!isTauriRuntime()) {
+        localStorage.setItem("wand.theme", name);
+      } else {
+        await invoke("save_workspace_setting", { key: "theme", value: name });
+      }
+    } catch (error) {
+      setTheme(previous);
+      document.body.dataset.theme = previous;
+      setSaveError(`Unable to save theme: ${String(error)}`);
+    }
   };
   const setMode = (mode: "dark" | "light") => {
     const defaultTheme = mode === "light" ? "daylight" : "obsidian";
@@ -2588,6 +2620,7 @@ function ThemeSection() {
         </div>
         <span className="theme-current">{theme}</span>
       </div>
+      {saveError && <p className="provider-message" role="alert">{saveError}</p>}
       <div className="mode-toggle-group">
         <button
           className={"mode-btn " + (!isLight ? "active" : "")}
