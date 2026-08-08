@@ -17,7 +17,7 @@ The current build provides the desktop-ready product foundation:
   - Code reviewer
   - Sentinel verifier
   - Docs writer
-- Task creation with agent tagging and ordered handoff chains
+- Task creation with agent tagging and ordered handoff chains; each stage uses its configured CLI and model
 - Configurable agent system prompts, supported CLI runtimes, model choices, skills, and repository scopes; every agent can be edited after creation
 - Repository-scoped agents created automatically when local repositories are scanned
 - Scheduled task execution with five- and seven-field cron expressions, durable run history, and background Rust scheduling
