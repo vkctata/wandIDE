@@ -1323,8 +1323,20 @@ function Tasks({
     id: number; run_id: string; task_id: string; repo: string; agent: string;
     stage: number; status: string; content: string; created_at: string;
   };
+  type AgentEvent = {
+    run_id?: string; task_id?: string; agent?: string; stage?: number; status?: string;
+  };
+  type AgentOutput = {
+    run_id: string; task_id: string; agent: string; stage: number;
+    stream: "stdout" | "stderr"; chunk: string;
+  };
+  type LiveOutput = {
+    agent: string; stage: number; content: string; truncated: boolean;
+  };
+  const liveOutputLimit = 128_000;
   const [runs, setRuns] = useState<Run[]>([]);
   const [transcripts, setTranscripts] = useState<Record<string, Transcript[]>>({});
+  const [liveOutputs, setLiveOutputs] = useState<Record<string, LiveOutput>>({});
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const load = () =>
     invoke<Run[]>("list_task_runs", { limit: 30 })
@@ -1332,8 +1344,60 @@ function Tasks({
       .catch(() => setRuns([]));
   useEffect(() => {
     load();
-    const names = ["wand://agent", "wand://scheduler"];
-    const stops = names.map((name) => listen(name, load));
+    const stops = [
+      listen("wand://scheduler", load),
+      listen<AgentEvent>("wand://agent", (event) => {
+        load();
+        const payload = event.payload;
+        if (!payload.run_id || !payload.stage || !payload.agent) return;
+        if (payload.status === "running") {
+          setLiveOutputs((current) => {
+            const previous = current[payload.run_id!];
+            return {
+              ...current,
+              [payload.run_id!]: previous?.stage === payload.stage
+                ? previous
+                : { agent: payload.agent!, stage: payload.stage!, content: "", truncated: false },
+            };
+          });
+          return;
+        }
+        if (["completed", "verified", "failed", "cancelled"].includes(payload.status || "")) {
+          if (payload.task_id) {
+            invoke<Transcript[]>("list_agent_transcripts", { taskId: payload.task_id })
+              .then((rows) => setTranscripts((current) => ({
+                ...current,
+                [payload.run_id!]: rows.filter((row) => row.run_id === payload.run_id),
+              })))
+              .catch(() => {});
+          }
+          setLiveOutputs((current) => {
+            if (current[payload.run_id!]?.stage !== payload.stage) return current;
+            const next = { ...current };
+            delete next[payload.run_id!];
+            return next;
+          });
+        }
+      }),
+      listen<AgentOutput>("wand://agent-output", (event) => {
+        const payload = event.payload;
+        if (!payload.run_id || !payload.chunk) return;
+        setLiveOutputs((current) => {
+          const previous = current[payload.run_id];
+          const combined = `${previous?.stage === payload.stage ? previous.content : ""}${payload.chunk}`;
+          const truncated = combined.length > liveOutputLimit || previous?.truncated === true;
+          return {
+            ...current,
+            [payload.run_id]: {
+              agent: payload.agent,
+              stage: payload.stage,
+              content: combined.slice(-liveOutputLimit),
+              truncated,
+            },
+          };
+        });
+      }),
+    ];
     return () => {
       stops.forEach((stop) => stop.then((fn) => fn()));
     };
@@ -1442,8 +1506,9 @@ function Tasks({
             </p>
           </div>
         ) : (
-          runs.map((run) => (
-            <React.Fragment key={run.id}>
+          runs.map((run) => {
+            const live = liveOutputs[run.id];
+            return <React.Fragment key={run.id}>
             <div className="run-row">
               <div>
                 <b>
@@ -1466,8 +1531,9 @@ function Tasks({
               >
                 {run.status}
               </span>
+              {live && <span className="tag purple live-output-tag"><i /> Streaming</span>}
               <button className="retry-run" onClick={() => toggleTranscript(run)}>
-                <ChevronDown size={13} /> {expandedRun === run.id ? "Hide transcript" : "View transcript"}
+                <ChevronDown size={13} /> {expandedRun === run.id ? "Hide output" : live ? "View live output" : "View transcript"}
               </button>
               {run.status === "failed" ? (
                 <button
@@ -1487,7 +1553,13 @@ function Tasks({
             </div>
             {expandedRun === run.id && (
               <div className="transcript-panel">
-                {(transcripts[run.id] || []).length === 0 ? <p className="sub">No persisted stage output for this run yet.</p> : transcripts[run.id].map((stage) => (
+                {live && (
+                  <article className="transcript-stage transcript-stage-live">
+                    <div><b>Stage {live.stage} · {live.agent}</b><span className="tag purple"><i /> streaming</span></div>
+                    <pre role="log" aria-live="polite">{live.truncated ? "[Earlier live output hidden]\n" : ""}{live.content || "Waiting for agent output…"}</pre>
+                  </article>
+                )}
+                {!live && (transcripts[run.id] || []).length === 0 ? <p className="sub">No persisted stage output for this run yet.</p> : (transcripts[run.id] || []).map((stage) => (
                   <article className="transcript-stage" key={stage.id}>
                     <div><b>Stage {stage.stage} · {stage.agent}</b><span className={"tag " + (stage.status === "failed" ? "red" : stage.status === "verified" ? "green" : "blue")}>{stage.status}</span></div>
                     <pre>{stage.content}</pre>
@@ -1496,7 +1568,7 @@ function Tasks({
               </div>
             )}
             </React.Fragment>
-          ))
+          })
         )}
       </div>
     </section>

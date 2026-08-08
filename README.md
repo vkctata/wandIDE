@@ -18,7 +18,7 @@ The current build provides the desktop-ready product foundation:
   - Code reviewer
   - Sentinel verifier
   - Docs writer
-- Task creation with agent tagging and ordered handoff chains; each stage uses its configured CLI and model
+- Task creation with agent tagging and ordered handoff chains; each stage uses its configured CLI and model, streams bounded live output into Run history, and persists its final transcript
 - Configurable agent responsibilities (textarea, capped at 1,000 characters), supported CLI runtimes, model choices, skills, and repository scopes; every agent can be edited after creation
 - Repository-scoped agents created automatically when local repositories are scanned
 - Scheduled task execution with five- and seven-field cron expressions, durable run history, and background Rust scheduling
@@ -213,10 +213,9 @@ The browser shell keeps a small local-storage fallback for development. The desk
 
 ## Remaining roadmap
 
-1. Add streaming agent output and a durable per-stage transcript view.
-2. Add worktree creation and patch application controls around the Monaco diff surface.
-3. Add richer provider actions such as opening, approving, and commenting on pull requests from Wand.
-4. Add configurable per-notification-category OS permission onboarding.
+1. Add worktree creation and patch application controls around the Monaco diff surface.
+2. Add richer provider actions such as opening, approving, and commenting on pull requests from Wand.
+3. Add configurable per-notification-category OS permission onboarding.
 
 ## License
 

@@ -11,13 +11,12 @@ use std::{
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
-use wait_timeout::ChildExt;
 struct Db(Arc<Mutex<Connection>>);
 #[derive(Serialize)]
 struct TaskRow {
@@ -1194,7 +1193,10 @@ fn cli_args(cli: &str, model: &str, prompt: String) -> Result<Vec<String>, Strin
 
 const MAX_STAGE_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 
-fn read_bounded<R: Read>(mut reader: R) -> Result<(Vec<u8>, bool), String> {
+fn read_bounded_stream<R: Read, F: FnMut(&[u8])>(
+    mut reader: R,
+    mut on_chunk: F,
+) -> Result<(Vec<u8>, bool), String> {
     let mut stored = Vec::new();
     let mut buffer = [0_u8; 16 * 1024];
     let mut truncated = false;
@@ -1203,6 +1205,7 @@ fn read_bounded<R: Read>(mut reader: R) -> Result<(Vec<u8>, bool), String> {
         if read == 0 {
             break;
         }
+        on_chunk(&buffer[..read]);
         let remaining = MAX_STAGE_OUTPUT_BYTES.saturating_sub(stored.len());
         if remaining > 0 {
             stored.extend_from_slice(&buffer[..read.min(remaining)]);
@@ -1220,9 +1223,8 @@ fn bounded_output_text(output: Vec<u8>, truncated: bool) -> String {
     text
 }
 
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-fn execute_stage(
+fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     command: &str,
     model: &str,
     repo_path: &str,
@@ -1231,6 +1233,7 @@ fn execute_stage(
     handoff: &str,
     responsibility: &str,
     skills: &[String],
+    mut on_output: F,
 ) -> Result<String, String> {
     let model_hint = if model.trim().is_empty() || model == "default" {
         "Use the CLI's configured default model.".to_string()
@@ -1260,30 +1263,60 @@ fn execute_stage(
         .map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or_else(|| "Unable to capture CLI output".to_string())?;
     let stderr = child.stderr.take().ok_or_else(|| "Unable to capture CLI errors".to_string())?;
-    let stdout_reader = thread::spawn(move || read_bounded(stdout));
-    let stderr_reader = thread::spawn(move || read_bounded(stderr));
+    let (output_tx, output_rx) = mpsc::sync_channel::<(&'static str, Vec<u8>)>(32);
+    let stdout_tx = output_tx.clone();
+    let stdout_reader = thread::spawn(move || {
+        read_bounded_stream(stdout, |chunk| {
+            let _ = stdout_tx.send(("stdout", chunk.to_vec()));
+        })
+    });
+    let stderr_reader = thread::spawn(move || {
+        read_bounded_stream(stderr, |chunk| {
+            let _ = output_tx.send(("stderr", chunk.to_vec()));
+        })
+    });
     const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-    let status = if let Some(status) = child
-        .wait_timeout(STAGE_TIMEOUT)
-        .map_err(|e| e.to_string())?
-    {
-        status
-    } else {
-        let _ = child.kill();
-        let _ = child.wait();
-        let _ = stdout_reader.join();
-        let _ = stderr_reader.join();
-        return Err(format!(
-            "CLI stage timed out after {} minutes",
-            STAGE_TIMEOUT.as_secs() / 60
-        ));
-    };
+    let deadline = Instant::now() + STAGE_TIMEOUT;
+    let mut status = None;
+    let mut timed_out = false;
+    let mut output_open = true;
+    loop {
+        if output_open {
+            match output_rx.recv_timeout(Duration::from_millis(100)) {
+                Ok((stream, chunk)) => on_output(stream, &String::from_utf8_lossy(&chunk)),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    output_open = false;
+                }
+            }
+        } else {
+            thread::sleep(Duration::from_millis(100));
+        }
+        if status.is_none() {
+            status = child.try_wait().map_err(|e| e.to_string())?;
+            if status.is_none() && Instant::now() >= deadline {
+                timed_out = true;
+                let _ = child.kill();
+                status = Some(child.wait().map_err(|e| e.to_string())?);
+            }
+        }
+        if status.is_some() && !output_open {
+            break;
+        }
+    }
     let (stdout, stdout_truncated) = stdout_reader
         .join()
         .map_err(|_| "CLI output reader failed".to_string())??;
     let (stderr, stderr_truncated) = stderr_reader
         .join()
         .map_err(|_| "CLI error reader failed".to_string())??;
+    if timed_out {
+        return Err(format!(
+            "CLI stage timed out after {} minutes",
+            STAGE_TIMEOUT.as_secs() / 60
+        ));
+    }
+    let status = status.ok_or_else(|| "CLI stage exited without a status".to_string())?;
     if status.success() {
         Ok(bounded_output_text(stdout, stdout_truncated))
     } else {
@@ -1503,8 +1536,13 @@ fn launch_chain_worker(
                 .map(|item| item.responsibility.as_str())
                 .unwrap_or("");
             let skills = config.map(|item| item.skills.as_slice()).unwrap_or(&[]);
-            let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"}));
-            match execute_stage(
+            let _=app.emit("wand://agent",serde_json::json!({"run_id":req.run_id.as_deref(),"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"}));
+            let output_app = app.clone();
+            let output_run_id = req.run_id.clone();
+            let output_task_id = req.task_id.clone();
+            let output_agent = agent.clone();
+            let output_stage = index + 1;
+            match execute_stage_with_progress(
                 &stage_command,
                 stage_model,
                 &req.repo_path,
@@ -1513,6 +1551,22 @@ fn launch_chain_worker(
                 &handoff,
                 responsibility,
                 skills,
+                move |stream, chunk| {
+                    if chunk.is_empty() {
+                        return;
+                    }
+                    let _ = output_app.emit(
+                        "wand://agent-output",
+                        serde_json::json!({
+                            "run_id": output_run_id.as_deref(),
+                            "task_id": &output_task_id,
+                            "agent": &output_agent,
+                            "stage": output_stage,
+                            "stream": stream,
+                            "chunk": chunk,
+                        }),
+                    );
+                },
             ) {
                 Ok(output) => {
                     handoff = output.chars().take(12000).collect();
@@ -1570,7 +1624,7 @@ fn launch_chain_worker(
                             }
                         }
                     }
-                    let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));
+                    let _=app.emit("wand://agent",serde_json::json!({"run_id":req.run_id.as_deref(),"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));
                 }
                 Err(error) => {
                     if let Ok(conn) = db_arc.lock() {
@@ -1593,7 +1647,7 @@ fn launch_chain_worker(
                         );
                     }
                     finish_run(&db_arc, &req.run_id, "failed", Some(&error));
-                    let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));
+                    let _=app.emit("wand://agent",serde_json::json!({"run_id":req.run_id.as_deref(),"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));
                     return;
                 }
             }
@@ -2822,8 +2876,13 @@ mod tests {
     #[test]
     fn bounds_cli_output_while_draining_the_stream() {
         let source = vec![b'x'; MAX_STAGE_OUTPUT_BYTES + 1024];
-        let (output, truncated) = read_bounded(source.as_slice()).unwrap();
+        let mut streamed = Vec::new();
+        let (output, truncated) = read_bounded_stream(source.as_slice(), |chunk| {
+            streamed.extend_from_slice(chunk)
+        })
+        .unwrap();
 
+        assert_eq!(streamed, source);
         assert_eq!(output.len(), MAX_STAGE_OUTPUT_BYTES);
         assert!(truncated);
         assert!(bounded_output_text(output, truncated).ends_with(
