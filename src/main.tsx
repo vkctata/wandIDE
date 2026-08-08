@@ -1292,6 +1292,7 @@ function Notifications() {
     unread: boolean;
     created_at: string;
   };
+  const [actionMessage, setActionMessage] = useState("");
   const [items, setItems] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(false);
   const load = () =>
@@ -1332,6 +1333,27 @@ function Notifications() {
     await invoke("mark_notifications_read").catch(() => {});
     setItems(items.map((x) => ({ ...x, unread: false })));
   };
+  const actOnPullRequest = async (item: Notice, action: "comment" | "approve") => {
+    if (item.provider !== "github") return;
+    const match = item.url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/i);
+    if (!match) {
+      setActionMessage("This notification does not contain a GitHub pull-request URL.");
+      return;
+    }
+    const values = await askModal(
+      action === "approve" ? "Approve pull request" : "Comment on pull request",
+      [{ id: "body", label: action === "approve" ? "Optional review note" : "Comment", placeholder: "Share context with the team…", multiline: true, maxLength: 4000 }],
+      `${match[1]} · pull request #${match[2]}`,
+    );
+    if (!values) return;
+    try {
+      const message = await invoke<string>("github_pull_request_action", { repo: match[1], pullNumber: Number(match[2]), action, body: values.body || "" });
+      setActionMessage(message);
+      await sync();
+    } catch (error) {
+      setActionMessage(String(error));
+    }
+  };
   return (
     <section className="content">
       <div className="hero compact">
@@ -1353,6 +1375,7 @@ function Notifications() {
           </button>
         </div>
       </div>
+      {actionMessage && <p className="provider-message">{actionMessage}</p>}
       {items.length === 0 ? (
         <div className="emptyhint">
           <MessageSquare size={20} />
@@ -1363,13 +1386,7 @@ function Notifications() {
         </div>
       ) : (
         items.map((item) => (
-          <a
-            className={"notice " + (item.unread ? "unread" : "")}
-            href={item.url || "#"}
-            target="_blank"
-            rel="noreferrer"
-            key={item.id}
-          >
+          <div className={"notice " + (item.unread ? "unread" : "")} key={item.id}>
             <div className="eventicon purple">
               <MessageSquare size={17} />
             </div>
@@ -1380,7 +1397,12 @@ function Notifications() {
               </p>
             </div>
             <span>{item.provider}</span>
-          </a>
+            <div className="notice-actions">
+              <a className="textbtn" href={item.url || "#"} target="_blank" rel="noreferrer">Open</a>
+              {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
+              {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
+            </div>
+          </div>
         ))
       )}
     </section>
