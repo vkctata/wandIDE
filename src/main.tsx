@@ -2598,6 +2598,18 @@ function BackgroundStatus() {
   const [status, setStatus] = useState("Starting background workers…");
   const [when, setWhen] = useState("");
   useEffect(() => {
+    invoke<{ message: string; timestamp: string } | null>("background_status")
+      .then((event) => {
+        if (!event) return;
+        setStatus(event.message);
+        setWhen(
+          new Date(event.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        );
+      })
+      .catch(() => {});
     const stop = listen<{ message: string; timestamp: string }>(
       "wand://sync",
       (event) => {
