@@ -174,6 +174,7 @@ type ModalField = {
   secret?: boolean;
   check?: boolean;
   options?: string[];
+  optionsFor?: (values: Record<string, string>) => string[];
   multiline?: boolean;
   maxLength?: number;
 };
@@ -1999,7 +2000,8 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           id: "model",
           label: "Model",
           value: agent?.model || "default",
-          options: modelOptions[selectedCli || "codex"] || ["default"],
+          optionsFor: (current) =>
+            modelOptions[current.cli || selectedCli || "codex"] || ["default"],
         },
         {
           id: "scope",
@@ -2749,18 +2751,19 @@ function ModalHost() {
             ) : (
               <label className="modal-field" key={field.id}>
                 <span>{field.label}</span>
-                {field.options ? (
+                {(field.options || field.optionsFor) ? (
                   <select
                     autoFocus={request.fields[0].id === field.id}
-                    value={values[field.id] || field.options[0]}
+                    value={values[field.id] || (field.optionsFor?.(values) || field.options || [""])[0]}
                     onChange={(event) =>
-                      setValues((current) => ({
-                        ...current,
-                        [field.id]: event.target.value,
-                      }))
+                      setValues((current) => {
+                        const next = { ...current, [field.id]: event.target.value };
+                        if (field.id === "cli" && next.model) next.model = "default";
+                        return next;
+                      })
                     }
                   >
-                    {field.options.map((option) => (
+                    {(field.optionsFor?.(values) || field.options || []).map((option) => (
                       <option key={option} value={option}>
                         {option}
                       </option>
