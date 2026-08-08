@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/macOS-schema.json",
+  "identifier": "macos-window-chrome",
+  "description": "Allow Wand's main macOS window chrome to drag and operate its window controls.",
+  "windows": ["main"],
+  "platforms": ["macOS"],
+  "permissions": [
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-start-dragging"
+  ]
+}
