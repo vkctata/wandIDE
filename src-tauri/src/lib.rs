@@ -2325,6 +2325,33 @@ fn read_repo_file(repo_path: String, relative_path: String) -> Result<String, St
     }
     fs::read_to_string(target).map_err(|e| e.to_string())
 }
+fn safe_repo_target(root: &std::path::Path, relative_path: &str) -> Result<std::path::PathBuf, String> {
+    if relative_path.trim().is_empty() || relative_path.contains('\0') {
+        return Err("A valid relative file path is required".into());
+    }
+    let candidate = root.join(relative_path);
+    let parent = candidate
+        .parent()
+        .ok_or_else(|| "A valid relative file path is required".to_string())?
+        .canonicalize()
+        .map_err(|_| "The file's parent directory does not exist".to_string())?;
+    if !parent.starts_with(root) {
+        return Err("File is outside the selected repository".into());
+    }
+    let name = candidate
+        .file_name()
+        .ok_or_else(|| "A valid relative file path is required".to_string())?;
+    let target = parent.join(name);
+    if target.exists() {
+        let canonical = target.canonicalize().map_err(|e| e.to_string())?;
+        if !canonical.starts_with(root) {
+            return Err("File is outside the selected repository".into());
+        }
+        Ok(canonical)
+    } else {
+        Ok(target)
+    }
+}
 #[tauri::command]
 fn write_repo_file(
     repo_path: String,
@@ -2334,18 +2361,7 @@ fn write_repo_file(
     let root = std::path::Path::new(&repo_path)
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    let candidate = root.join(&relative_path);
-    if relative_path.trim().is_empty() || relative_path.contains('\0') {
-        return Err("A valid relative file path is required".into());
-    }
-    let target = if candidate.exists() {
-        candidate.canonicalize().map_err(|e| e.to_string())?
-    } else {
-        candidate
-    };
-    if !target.starts_with(&root) {
-        return Err("File is outside the selected repository".into());
-    }
+    let target = safe_repo_target(&root, &relative_path)?;
     if target.exists() && !target.is_file() {
         return Err("Refusing to write a directory".into());
     }
@@ -2672,6 +2688,24 @@ mod tests {
             })
             .unwrap();
         assert_eq!(status, "cancelled");
+    }
+
+    #[test]
+    fn rejects_new_files_through_symlinked_directories() {
+        let root = std::env::temp_dir().join(format!("wand-boundary-{}", uuid::Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("wand-outside-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&outside, root.join("linked")).unwrap();
+
+        let result = safe_repo_target(&root.canonicalize().unwrap(), "linked/new.txt");
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[test]
