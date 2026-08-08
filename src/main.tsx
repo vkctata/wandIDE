@@ -776,7 +776,7 @@ function App() {
               <Bell size={17} />
               <i />
             </button>
-            <AccountMenu repos={repos} setRepos={setRepos} />
+            <AccountMenu onSettings={() => setView("settings")} />
           </div>
         </header>
         {query.trim() && (
@@ -1696,6 +1696,8 @@ function SettingsView({
       <ProviderAccess />
       <CliManager />
       <AgentManager repos={repos} />
+      <NotificationPreferencesSection />
+      <WhatsNewSection />
     </section>
   );
 }
@@ -2691,14 +2693,11 @@ function SettingsModal({
 }
 
 function AccountMenu({
-  repos,
-  setRepos,
+  onSettings,
 }: {
-  repos?: Repo[];
-  setRepos?: React.Dispatch<React.SetStateAction<Repo[]>>;
+  onSettings: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<string | null>(null);
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (!(event.target as HTMLElement).closest(".account-menu"))
@@ -2714,9 +2713,9 @@ function AccountMenu({
       document.removeEventListener("keydown", escape);
     };
   }, []);
-  const openModal = (tab: string) => {
-    setActiveTab(tab);
+  const goToSettings = () => {
     setOpen(false);
+    onSettings();
   };
   return (
     <div className="account-menu">
@@ -2734,21 +2733,13 @@ function AccountMenu({
             <strong>Settings</strong>
             <small>Wand workspace</small>
           </div>
-          <button role="menuitem" onClick={() => openModal("appearance")}>
-            <Settings size={14} /> Preferences & Agents
+          <button role="menuitem" onClick={goToSettings}>
+            <Settings size={14} /> Open settings
           </button>
-          <button role="menuitem" onClick={() => openModal("whats-new")}>
-            <Sparkles size={14} /> What’s new
+          <button role="menuitem" onClick={goToSettings}>
+            <Sparkles size={14} /> Updates & release notes
           </button>
         </div>
-      )}
-      {activeTab && repos && setRepos && (
-        <SettingsModal
-          initialTab={activeTab}
-          onClose={() => setActiveTab(null)}
-          repos={repos}
-          setRepos={setRepos}
-        />
       )}
     </div>
   );
