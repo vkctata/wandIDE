@@ -280,6 +280,25 @@ function App() {
     [tasks],
   );
   useEffect(() => {
+    const refreshTasks = () =>
+      invoke<any[]>("list_tasks")
+        .then((rows) =>
+          setTasks(
+            rows.map((r) => ({
+              ...r,
+              provider: "Agent chain",
+              active: !["failed", "cancelled", "completed"].includes(r.status),
+              agents: parseJson<string[]>(r.agents, []),
+            })),
+          ),
+        )
+        .catch(() => {});
+    const stop = listen("wand://task", refreshTasks);
+    return () => {
+      stop.then((unsubscribe) => unsubscribe());
+    };
+  }, []);
+  useEffect(() => {
     invoke<any[]>("list_tasks")
       .then((rows) =>
         setTasks(
