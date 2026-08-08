@@ -36,6 +36,13 @@ fn run_agent_chain(req:ChainRequest, db:State<Db>, app:AppHandle)->Result<(),Str
 #[derive(Clone, Serialize)]
 struct SyncEvent { source: String, message: String, timestamp: String }
 
+#[derive(Serialize)] struct ProviderRepo { name:String, path:String, provider:String, url:String }
+async fn provider_token(provider:&str)->Result<String,String>{let service=provider_service(provider)?; let entry=keyring::Entry::new(service,"default").map_err(|e|e.to_string())?; entry.get_password().map_err(|e|e.to_string())}
+#[tauri::command]
+async fn sync_github(db:State<'_,Db>, app:AppHandle)->Result<Vec<ProviderRepo>,String>{let token=provider_token("github").await?; let response=reqwest::Client::new().get("https://api.github.com/user/repos?per_page=100&sort=updated").header("User-Agent","Wand").bearer_auth(token).send().await.map_err(|e|e.to_string())?; if !response.status().is_success(){return Err(format!("GitHub returned {}",response.status()))} let repos:Vec<serde_json::Value>=response.json().await.map_err(|e|e.to_string())?; let mut out=Vec::new(); let conn=db.0.lock().map_err(|e|e.to_string())?; for repo in repos{let name=repo["full_name"].as_str().unwrap_or_default().to_string(); let url=repo["html_url"].as_str().unwrap_or_default().to_string(); let path=repo["clone_url"].as_str().unwrap_or_default().to_string(); if name.is_empty(){continue} conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'github')",params![name,path]).map_err(|e|e.to_string())?; out.push(ProviderRepo{name,path,provider:"github".into(),url});} let _=app.emit("wand://provider",serde_json::json!({"provider":"github","count":out.len()})); Ok(out)}
+#[tauri::command]
+async fn sync_azure_devops(provider_url:String, db:State<'_,Db>, app:AppHandle)->Result<Vec<ProviderRepo>,String>{let token=provider_token("azure-devops").await?; let endpoint=provider_url.trim_end_matches('/').to_string()+"/_apis/git/repositories?api-version=7.1"; let response=reqwest::Client::new().get(endpoint).basic_auth("",Some(token)).send().await.map_err(|e|e.to_string())?; if !response.status().is_success(){return Err(format!("Azure DevOps returned {}",response.status()))} let payload:serde_json::Value=response.json().await.map_err(|e|e.to_string())?; let mut out=Vec::new(); let conn=db.0.lock().map_err(|e|e.to_string())?; for repo in payload["value"].as_array().cloned().unwrap_or_default(){let name=repo["name"].as_str().unwrap_or_default().to_string(); let url=repo["webUrl"].as_str().unwrap_or_default().to_string(); let path=repo["remoteUrl"].as_str().unwrap_or_default().to_string(); if name.is_empty(){continue} conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'azure-devops')",params![name,path]).map_err(|e|e.to_string())?; out.push(ProviderRepo{name,path,provider:"azure-devops".into(),url});} let _=app.emit("wand://provider",serde_json::json!({"provider":"azure-devops","count":out.len()})); Ok(out)}
+
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
   thread::spawn(move || {
     let mut last_due: HashMap<String, String> = HashMap::new();
@@ -47,7 +54,9 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
             for row in rows.flatten() {
               let (id, name, expr) = row;
               if let Ok(schedule) = Schedule::from_str(&expr) {
-                if let Some(next) = schedule.upcoming(Utc).next() {
+                // Look back one polling window so a job is still detected when the
+                // 30-second worker wakes just after the cron boundary.
+                if let Some(next) = schedule.after(&(now - chrono::Duration::seconds(30))).next() {
                   let slot = next.to_rfc3339();
                   if next <= now && last_due.get(&id) != Some(&slot) {
                     last_due.insert(id.clone(), slot);
@@ -69,4 +78,4 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
   });
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,run_agent_chain,create_task,list_tasks,detect_clis,save_provider_token,provider_status]).run(tauri::generate_context!()).expect("error while running wand"); }
+pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,run_agent_chain,create_task,list_tasks,detect_clis,save_provider_token,provider_status,sync_github,sync_azure_devops]).run(tauri::generate_context!()).expect("error while running wand"); }
