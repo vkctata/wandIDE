@@ -58,7 +58,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE thread_messages ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'",
         [],
     );
-    conn.execute_batch(r#"PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo TEXT NOT NULL, cron TEXT NOT NULL, agents TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS repos (name TEXT PRIMARY KEY, path TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'local'); CREATE TABLE IF NOT EXISTS thread_messages (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, agent_ids TEXT NOT NULL DEFAULT '[]'); CREATE INDEX IF NOT EXISTS idx_thread_messages_repo ON thread_messages(repo, created_at); CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, provider TEXT NOT NULL, repo TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT NOT NULL, author TEXT NOT NULL, unread INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC); CREATE TABLE IF NOT EXISTS provider_settings (provider TEXT PRIMARY KEY, url TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS task_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, scheduled_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, status TEXT NOT NULL, error TEXT, UNIQUE(task_id,scheduled_at)); CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0, cli TEXT NOT NULL DEFAULT 'codex', model TEXT NOT NULL DEFAULT 'default', scope TEXT NOT NULL DEFAULT 'workspace'); INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES ('planner','Planner','Breaks work into executable slices','["planning","repo analysis"]','#a98cff',1,'codex','default','workspace'),('builder','Builder','Implements features and fixes','["typescript","rust","testing"]','#76c6f5',1,'codex','default','workspace'),('reviewer','Code reviewer','Reviews changes and suggests fixes','["code review","security"]','#f9c86a',1,'codex','default','workspace'),('sentinel','Sentinel','Runs verification in the background','["ci","dependency audit","regression"]','#6fdaa0',1,'codex','default','workspace'),('docs','Docs writer','Keeps technical docs current','["documentation","changelog"]','#f38ba8',1,'codex','default','workspace');"#)?;
+    conn.execute_batch(r#"PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo TEXT NOT NULL, cron TEXT NOT NULL, agents TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS repos (name TEXT PRIMARY KEY, path TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'local'); CREATE TABLE IF NOT EXISTS thread_messages (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, agent_ids TEXT NOT NULL DEFAULT '[]'); CREATE INDEX IF NOT EXISTS idx_thread_messages_repo ON thread_messages(repo, created_at); CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, provider TEXT NOT NULL, repo TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT NOT NULL, author TEXT NOT NULL, unread INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC); CREATE TABLE IF NOT EXISTS provider_settings (provider TEXT PRIMARY KEY, url TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS task_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, scheduled_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, status TEXT NOT NULL, error TEXT, UNIQUE(task_id,scheduled_at)); CREATE TABLE IF NOT EXISTS agent_transcripts (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, task_id TEXT NOT NULL, repo TEXT NOT NULL, agent TEXT NOT NULL, stage INTEGER NOT NULL, status TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_agent_transcripts_task ON agent_transcripts(task_id, created_at); CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0, cli TEXT NOT NULL DEFAULT 'codex', model TEXT NOT NULL DEFAULT 'default', scope TEXT NOT NULL DEFAULT 'workspace'); INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES ('planner','Planner','Breaks work into executable slices','["planning","repo analysis"]','#a98cff',1,'codex','default','workspace'),('builder','Builder','Implements features and fixes','["typescript","rust","testing"]','#76c6f5',1,'codex','default','workspace'),('reviewer','Code reviewer','Reviews changes and suggests fixes','["code review","security"]','#f9c86a',1,'codex','default','workspace'),('sentinel','Sentinel','Runs verification in the background','["ci","dependency audit","regression"]','#6fdaa0',1,'codex','default','workspace'),('docs','Docs writer','Keeps technical docs current','["documentation","changelog"]','#f38ba8',1,'codex','default','workspace');"#)?;
     let _ = conn.execute(
         "ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",
         [],
@@ -331,6 +331,42 @@ struct TaskRunRow {
     finished_at: Option<String>,
     status: String,
     error: Option<String>,
+}
+#[derive(Serialize)]
+struct AgentTranscriptRow {
+    id: i64,
+    run_id: String,
+    task_id: String,
+    repo: String,
+    agent: String,
+    stage: i64,
+    status: String,
+    content: String,
+    created_at: String,
+}
+#[tauri::command]
+fn list_agent_transcripts(
+    task_id: String,
+    db: State<Db>,
+) -> Result<Vec<AgentTranscriptRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id,run_id,task_id,repo,agent,stage,status,content,created_at FROM agent_transcripts WHERE task_id=?1 ORDER BY id ASC").map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![task_id], |r| {
+            Ok(AgentTranscriptRow {
+                id: r.get(0)?,
+                run_id: r.get(1)?,
+                task_id: r.get(2)?,
+                repo: r.get(3)?,
+                agent: r.get(4)?,
+                stage: r.get(5)?,
+                status: r.get(6)?,
+                content: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|r| r.map_err(|e| e.to_string())).collect()
 }
 #[tauri::command]
 fn list_task_runs(limit: Option<i64>, db: State<Db>) -> Result<Vec<TaskRunRow>, String> {
@@ -1084,6 +1120,13 @@ fn launch_chain_worker(
                                 |row| row.get(0),
                             )
                             .ok();
+                        if let (Some(repo), Some(run_id)) = (repo.as_deref(), req.run_id.as_deref())
+                        {
+                            let _ = conn.execute(
+                                "INSERT INTO agent_transcripts(run_id,task_id,repo,agent,stage,status,content,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                                params![run_id, req.task_id, repo, agent, index + 1, if agent == "sentinel-verifier" { "verified" } else { "completed" }, handoff, Utc::now().to_rfc3339()],
+                            );
+                        }
                         let _ = conn.execute(
                             "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
                             params![
@@ -1127,6 +1170,19 @@ fn launch_chain_worker(
                 }
                 Err(error) => {
                     if let Ok(conn) = db_arc.lock() {
+                        let repo: Option<String> = conn
+                            .query_row(
+                                "SELECT repo FROM tasks WHERE id=?1",
+                                params![req.task_id],
+                                |row| row.get(0),
+                            )
+                            .ok();
+                        if let (Some(repo), Some(run_id)) = (repo, req.run_id.as_deref()) {
+                            let _ = conn.execute(
+                                "INSERT INTO agent_transcripts(run_id,task_id,repo,agent,stage,status,content,created_at) VALUES (?1,?2,?3,?4,?5,'failed',?6,?7)",
+                                params![run_id, req.task_id, repo, agent, index + 1, error, Utc::now().to_rfc3339()],
+                            );
+                        }
                         let _ = conn.execute(
                             "UPDATE tasks SET status='failed' WHERE id=?1",
                             params![req.task_id],
@@ -1699,7 +1755,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn run_agent_cli(
@@ -1997,5 +2053,19 @@ mod tests {
         assert_eq!(columns, 3);
         assert_eq!(thread_columns, 1);
         assert_eq!(seeded, 1);
+    }
+
+    #[test]
+    fn creates_agent_transcript_storage_for_existing_databases() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let table: String = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_transcripts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table, "agent_transcripts");
     }
 }
