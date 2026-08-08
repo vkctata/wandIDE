@@ -70,7 +70,9 @@ const listen = <T = unknown,>(
   event: string,
   handler: (event: { payload: T }) => void,
 ): Promise<() => void> =>
-  isTauriRuntime() ? tauriListen<T>(event, handler) : Promise.resolve(() => {});
+  isTauriRuntime()
+    ? tauriListen<T>(event, handler).catch(() => () => {})
+    : Promise.resolve(() => {});
 
 type View =
   "home" | "code" | "threads" | "tasks" | "notifications" | "settings";
@@ -2706,7 +2708,12 @@ function WindowChrome() {
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
     return null;
   const isMac = navigator.platform.toLowerCase().includes("mac");
-  const appWindow = getCurrentWindow();
+  let appWindow: ReturnType<typeof getCurrentWindow>;
+  try {
+    appWindow = getCurrentWindow();
+  } catch {
+    return null;
+  }
   return (
     <div className={"window-chrome" + (isMac ? " mac" : "")} data-tauri-drag-region>
       <div
