@@ -2250,6 +2250,12 @@ fn run_agent_cli(
 }
 #[tauri::command]
 fn read_repo_file(repo_path: String, relative_path: String) -> Result<String, String> {
+    if relative_path.trim().is_empty()
+        || std::path::Path::new(&relative_path).is_absolute()
+        || relative_path.contains('\0')
+    {
+        return Err("A valid relative file path is required".into());
+    }
     let root = std::path::Path::new(&repo_path)
         .canonicalize()
         .map_err(|e| e.to_string())?;
@@ -2515,6 +2521,13 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repository_reads_reject_invalid_relative_paths_before_filesystem_access() {
+        assert!(read_repo_file("/does/not/exist".into(), "".into()).is_err());
+        assert!(read_repo_file("/does/not/exist".into(), "/etc/hosts".into()).is_err());
+        assert!(read_repo_file("/does/not/exist".into(), "bad\0path".into()).is_err());
+    }
 
     #[test]
     fn accepts_user_friendly_five_field_cron() {
