@@ -1334,20 +1334,22 @@ function Notifications() {
     setItems(items.map((x) => ({ ...x, unread: false })));
   };
   const actOnPullRequest = async (item: Notice, action: "comment" | "approve") => {
-    if (item.provider !== "github") return;
-    const match = item.url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/i);
-    if (!match) {
+    const match = item.provider === "github" ? item.url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/i) : null;
+    if (item.provider !== "github" && item.provider !== "azure-devops") return;
+    if (item.provider === "github" && !match) {
       setActionMessage("This notification does not contain a GitHub pull-request URL.");
       return;
     }
     const values = await askModal(
       action === "approve" ? "Approve pull request" : "Comment on pull request",
       [{ id: "body", label: action === "approve" ? "Optional review note" : "Comment", placeholder: "Share context with the team…", multiline: true, maxLength: 4000 }],
-      `${match[1]} · pull request #${match[2]}`,
+      item.provider === "github" ? `${match![1]} · pull request #${match![2]}` : "Azure DevOps pull request",
     );
     if (!values) return;
     try {
-      const message = await invoke<string>("github_pull_request_action", { repo: match[1], pullNumber: Number(match[2]), action, body: values.body || "" });
+      const message = item.provider === "github"
+        ? await invoke<string>("github_pull_request_action", { repo: match![1], pullNumber: Number(match![2]), action, body: values.body || "" })
+        : await invoke<string>("azure_pull_request_comment", { pullRequestUrl: item.url, body: values.body || "" });
       setActionMessage(message);
       await sync();
     } catch (error) {
@@ -1399,7 +1401,7 @@ function Notifications() {
             <span>{item.provider}</span>
             <div className="notice-actions">
               <a className="textbtn" href={item.url || "#"} target="_blank" rel="noreferrer">Open</a>
-              {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
+              {(item.provider === "github" || item.provider === "azure-devops") && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
               {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
             </div>
           </div>
