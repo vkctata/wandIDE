@@ -2339,6 +2339,7 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         }
     };
     let mut added = 0;
+    let mut had_error = false;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
         let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
         let project = pull["repository"]["project"]["id"]
@@ -2348,10 +2349,46 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         if repo_id.is_empty() || project.is_empty() || pull_id == 0 {
             continue;
         }
-        let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(_)=>continue};
+        let response = match client
+            .get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1"))
+            .basic_auth("", Some(&token))
+            .send()
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                had_error = true;
+                emit_provider_health(
+                    &app,
+                    "azure-devops",
+                    "error",
+                    Some(format!("Azure DevOps thread request failed: {error}")),
+                );
+                continue;
+            }
+        };
+        if !response.status().is_success() {
+            had_error = true;
+            emit_provider_health(
+                &app,
+                "azure-devops",
+                "error",
+                Some(format!("Azure DevOps thread request returned {}", response.status())),
+            );
+            continue;
+        }
         let threads: serde_json::Value = match response.json().await {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(error) => {
+                had_error = true;
+                emit_provider_health(
+                    &app,
+                    "azure-devops",
+                    "error",
+                    Some(format!("Azure DevOps thread response could not be read: {error}")),
+                );
+                continue;
+            }
         };
         for thread in threads["value"].as_array().cloned().unwrap_or_default() {
             for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
@@ -2373,7 +2410,9 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
             serde_json::json!({"provider":"azure-devops","added":added,"background":true}),
         );
     }
-    emit_provider_health(&app, "azure-devops", "ok", None);
+    if !had_error {
+        emit_provider_health(&app, "azure-devops", "ok", None);
+    }
 }
 
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
