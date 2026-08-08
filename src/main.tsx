@@ -2564,10 +2564,10 @@ function ModalHost() {
 function WindowChrome() {
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
     return null;
-  if (navigator.platform.toLowerCase().includes("mac")) return null;
+  const isMac = navigator.platform.toLowerCase().includes("mac");
   const appWindow = getCurrentWindow();
   return (
-    <div className="window-chrome" data-tauri-drag-region>
+    <div className={"window-chrome" + (isMac ? " mac" : "")} data-tauri-drag-region>
       <div
         className="window-drag"
         data-tauri-drag-region
