@@ -2597,6 +2597,23 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                 }
                             }
                         }
+                    } else {
+                        let skipped = format!(
+                            "Scheduled task skipped: {name} requires an enabled, installed CLI runtime"
+                        );
+                        let _ = conn.execute(
+                            "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
+                            params!["scheduler.skipped", skipped, now.to_rfc3339()],
+                        );
+                        let _ = app.emit(
+                            "wand://scheduler",
+                            serde_json::json!({
+                                "task_id": id,
+                                "name": name,
+                                "status": "skipped",
+                                "reason": "enabled installed CLI runtime required"
+                            }),
+                        );
                     }
                   }
                 }
