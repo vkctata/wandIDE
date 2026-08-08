@@ -736,9 +736,9 @@ fn create_thread_message(
     let message;
     {
         let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let tx = tx.transaction().map_err(|e| e.to_string())?;
         for agent_id in &agent_ids {
-            let scope: String = conn
+            let scope: String = tx
                 .query_row(
                     "SELECT scope FROM agents WHERE id=?1",
                     params![agent_id],
@@ -762,20 +762,20 @@ fn create_thread_message(
             ],
         )
         .map_err(|e| e.to_string())?;
-        let id = conn.last_insert_rowid();
+        let id = tx.last_insert_rowid();
         message = ThreadMessage {
             id,
             repo: repo.clone(),
             author,
             body: body.clone(),
-            created_at,
+            created_at: created_at.clone(),
             agent_ids: agent_ids.clone(),
         };
 
         if !agent_ids.is_empty() {
             let cli = first_enabled_installed_cli(&tx)
                 .ok_or_else(|| "No enabled and installed CLI is available for this agent task".to_string())?;
-            let repo_path: String = conn
+            let repo_path: String = tx
                 .query_row(
                     "SELECT path FROM repos WHERE name=?1 AND (provider='local' OR provider='')",
                     params![repo],
