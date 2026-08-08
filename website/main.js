@@ -1,3 +1,30 @@
+const releaseApi = 'https://api.github.com/repos/vkctata/wandIDE/releases/latest';
+const releasePage = 'https://github.com/vkctata/wandIDE/releases/latest';
+
+document.querySelectorAll('[data-release-asset]').forEach((link) => {
+  link.setAttribute('aria-busy', 'true');
+});
+
+fetch(releaseApi, { headers: { Accept: 'application/vnd.github+json' } })
+  .then((response) => {
+    if (!response.ok) throw new Error('release lookup failed');
+    return response.json();
+  })
+  .then((release) => {
+    const assets = Array.isArray(release.assets) ? release.assets : [];
+    document.querySelectorAll('[data-release-asset]').forEach((link) => {
+      const asset = assets.find((candidate) => candidate.name.endsWith(link.dataset.releaseAsset));
+      link.href = asset?.browser_download_url || release.html_url || releasePage;
+      link.removeAttribute('aria-busy');
+    });
+  })
+  .catch(() => {
+    document.querySelectorAll('[data-release-asset]').forEach((link) => {
+      link.href = releasePage;
+      link.removeAttribute('aria-busy');
+    });
+  });
+
 const form = document.querySelector('#newsletter-form');
 const note = document.querySelector('#form-note');
 const endpoint = window.WAND_NEWSLETTER_ENDPOINT || '';
