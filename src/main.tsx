@@ -97,6 +97,7 @@ type Task = {
   repo: string;
   cron: string;
   active: boolean;
+  status?: string;
   agents: string[];
 };
 type AgentWorkflow = { name: string; agents: string[]; steps: string[] };
@@ -559,6 +560,19 @@ function App() {
       );
     }
   };
+  const cancelTask = async (t: Task) => {
+    try {
+      await invoke("cancel_task", { taskId: t.id });
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === t.id ? { ...item, active: false, status: "cancelled" } : item,
+        ),
+      );
+      setNotice(`Cancelled ${t.name}`);
+    } catch (error) {
+      setNotice(String(error));
+    }
+  };
   const nav = (v: View) => (
     <button
       className={view === v ? "nav active" : "nav"}
@@ -702,7 +716,7 @@ function App() {
         ) : view === "threads" ? (
           <Threads repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
-          <Tasks tasks={tasks} addTask={addTask} runTask={runTask} />
+          <Tasks tasks={tasks} addTask={addTask} runTask={runTask} cancelTask={cancelTask} />
         ) : view === "notifications" ? (
           <Notifications />
         ) : (
@@ -1156,10 +1170,12 @@ function Tasks({
   tasks,
   addTask,
   runTask,
+  cancelTask,
 }: {
   tasks: Task[];
   addTask: () => void;
   runTask: (t: Task) => void;
+  cancelTask: (t: Task) => void;
 }) {
   type Run = {
     id: string;
@@ -1240,11 +1256,16 @@ function Tasks({
           </div>
           <code>{t.cron}</code>
           <span className={"tag " + (t.active ? "green" : "blue")}>
-            {t.active ? "Active" : "Paused"}
+            {t.status === "cancelled" ? "Cancelled" : t.active ? "Active" : "Paused"}
           </span>
           <button className="run" onClick={() => runTask(t)}>
             <Play size={14} /> Run now
           </button>
+          {t.active && (
+            <button className="run" onClick={() => cancelTask(t)}>
+              Cancel
+            </button>
+          )}
         </div>
       ))}
       <div className="sectionhead">
