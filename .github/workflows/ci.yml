@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: wand-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   web-build:
     runs-on: ubuntu-latest
