@@ -2779,8 +2779,11 @@ function ProviderHealth() {
   const [error, setError] = useState("");
   useEffect(() => {
     const stop = listen<any>("wand://provider", (event) => {
-      if (event.payload?.status === "error")
+      if (event.payload?.status === "error") {
         setError(`${event.payload.provider}: ${event.payload.error}`);
+      } else {
+        setError("");
+      }
     });
     return () => {
       stop.then((unsubscribe) => unsubscribe());
