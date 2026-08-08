@@ -635,7 +635,17 @@ function App() {
         </div>
       </aside>
       <main>
-        <header>
+        <header
+          data-tauri-drag-region
+          onMouseDown={(event) => {
+            if ((event.target as HTMLElement).closest("input,button,a,select,textarea")) return;
+            try {
+              getCurrentWindow().startDragging().catch(() => {});
+            } catch {
+              // The browser shell has no native window to drag.
+            }
+          }}
+        >
           <div className="actions">
             <div className="search">
               <Search size={15} />
