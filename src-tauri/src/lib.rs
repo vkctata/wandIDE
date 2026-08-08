@@ -179,7 +179,9 @@ mod tests {
   fn builds_distinct_cli_invocation_shapes() {
     assert_eq!(cli_args("claude", "default", "hello".into()).unwrap(), vec!["-p", "hello"]);
     assert_eq!(cli_args("codex", "gpt-5", "hello".into()).unwrap(), vec!["exec", "--model", "gpt-5", "hello"]);
+    assert_eq!(cli_args("kimi", "kimi-k2", "hello".into()).unwrap(), vec!["--print", "--model", "kimi-k2", "hello"]);
     assert_eq!(cli_args("gemini", "gemini-2.5-pro", "hello".into()).unwrap(), vec!["-p", "--model", "gemini-2.5-pro", "hello"]);
+    assert!(cli_args("unknown", "default", "hello".into()).is_err());
   }
 
   #[test]
