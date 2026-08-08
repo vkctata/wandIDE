@@ -205,7 +205,9 @@ Repositories are selected from a local workspace folder and scanned for Git repo
 
 ### Integrations
 
-GitHub and Azure DevOps can be connected from Settings with PATs stored through the operating system credential manager. Repository sync and pull-request comment polling run in Rust background adapters, with normalized events sent to React.
+GitHub and Azure DevOps can be connected from Settings with PATs stored through the operating system credential manager. Repository sync and pull-request comment polling run in Rust background adapters, with normalized events sent to React. Notifications can open GitHub pull requests, post comments to GitHub or Azure DevOps, and approve GitHub pull requests without exposing credentials to the browser layer.
+
+Task runs keep a durable per-stage transcript in SQLite. Open Tasks → Run history and expand any run to inspect each agent's handoff, verification result, or failure after restarting Wand.
 
 ### Local-first data
 
@@ -213,10 +215,9 @@ The browser shell keeps a small local-storage fallback for development. The desk
 
 ## Remaining roadmap
 
-1. Add streaming agent output and a durable per-stage transcript view.
-2. Add worktree creation and patch application controls around the Monaco diff surface.
-3. Add richer provider actions such as opening, approving, and commenting on pull requests from Wand.
-4. Add configurable per-notification-category OS permission onboarding.
+1. Add worktree creation and patch application controls around the Monaco diff surface.
+2. Add configurable per-notification-category OS permission onboarding.
+3. Expand provider actions with Azure DevOps approval support and richer review workflows.
 
 ## License
 
