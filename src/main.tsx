@@ -1411,6 +1411,16 @@ function Notifications() {
       setActionMessage(String(error));
     }
   };
+  const approveAzurePullRequest = async (item: Notice) => {
+    const confirmed = await askModal("Approve Azure pull request", [], item.repo);
+    if (!confirmed) return;
+    try {
+      setActionMessage(await invoke<string>("azure_pull_request_approve", { url: item.url }));
+      await sync();
+    } catch (error) {
+      setActionMessage(String(error));
+    }
+  };
   return (
     <section className="content">
       <div className="hero compact">
@@ -1462,6 +1472,7 @@ function Notifications() {
               {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
               {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
               {item.provider === "azure-devops" && <button className="textbtn" onClick={() => commentOnAzurePullRequest(item)}>Comment</button>}
+              {item.provider === "azure-devops" && <button className="textbtn" onClick={() => approveAzurePullRequest(item)}>Approve</button>}
             </div>
           </div>
         ))
