@@ -39,6 +39,10 @@ struct NewTask {
 
 fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     let _ = conn.execute(
+        "ALTER TABLE thread_messages ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
         "ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",
         [],
     );
@@ -48,6 +52,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     );
     let _ = conn.execute(
         "ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE thread_messages ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'",
         [],
     );
     conn.execute_batch(r#"PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo TEXT NOT NULL, cron TEXT NOT NULL, agents TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS repos (name TEXT PRIMARY KEY, path TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'local'); CREATE TABLE IF NOT EXISTS thread_messages (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_thread_messages_repo ON thread_messages(repo, created_at); CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, provider TEXT NOT NULL, repo TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT NOT NULL, author TEXT NOT NULL, unread INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC); CREATE TABLE IF NOT EXISTS provider_settings (provider TEXT PRIMARY KEY, url TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS task_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, scheduled_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, status TEXT NOT NULL, error TEXT, UNIQUE(task_id,scheduled_at)); CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, skills TEXT NOT NULL, color TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0, cli TEXT NOT NULL DEFAULT 'codex', model TEXT NOT NULL DEFAULT 'default', scope TEXT NOT NULL DEFAULT 'workspace'); INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES ('planner','Planner','Breaks work into executable slices','["planning","repo analysis"]','#a98cff',1,'codex','default','workspace'),('builder','Builder','Implements features and fixes','["typescript","rust","testing"]','#76c6f5',1,'codex','default','workspace'),('reviewer','Code reviewer','Reviews changes and suggests fixes','["code review","security"]','#f9c86a',1,'codex','default','workspace'),('sentinel','Sentinel','Runs verification in the background','["ci","dependency audit","regression"]','#6fdaa0',1,'codex','default','workspace'),('docs','Docs writer','Keeps technical docs current','["documentation","changelog"]','#f38ba8',1,'codex','default','workspace');"#)?;
@@ -322,11 +330,12 @@ struct ThreadMessage {
     author: String,
     body: String,
     created_at: String,
+    agent_ids: Vec<String>,
 }
 #[tauri::command]
 fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?;
+    let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at,agent_ids FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?;
     let rows = stmt
         .query_map(params![repo], |r| {
             Ok(ThreadMessage {
@@ -335,6 +344,7 @@ fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage
                 author: r.get(2)?,
                 body: r.get(3)?,
                 created_at: r.get(4)?,
+                agent_ids: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(5)?).unwrap_or_default(),
             })
         })
         .map_err(|e| e.to_string())?;
@@ -345,6 +355,7 @@ fn create_thread_message(
     repo: String,
     author: String,
     body: String,
+    agent_ids: Option<Vec<String>>,
     db: State<Db>,
     app: AppHandle,
 ) -> Result<ThreadMessage, String> {
@@ -354,9 +365,18 @@ fn create_thread_message(
     }
     let created_at = Utc::now().to_rfc3339();
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let agent_ids = agent_ids.unwrap_or_default();
+    for agent_id in &agent_ids {
+        let scope: String = conn.query_row("SELECT scope FROM agents WHERE id=?1", params![agent_id], |row| row.get(0))
+            .map_err(|_| format!("Unknown agent mention: {agent_id}"))?;
+        if scope != "workspace" && scope != format!("repo:{repo}") {
+            return Err(format!("Agent {agent_id} is not available in repository {repo}"));
+        }
+    }
+    let agent_ids_json = serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO thread_messages(repo,author,body,created_at) VALUES (?1,?2,?3,?4)",
-        params![repo, author, body, created_at],
+        "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
+        params![repo, author, body, created_at, agent_ids_json],
     )
     .map_err(|e| e.to_string())?;
     let id = conn.last_insert_rowid();
@@ -366,6 +386,7 @@ fn create_thread_message(
         author,
         body,
         created_at,
+        agent_ids,
     };
     let _ = app.emit("wand://thread", &message);
     Ok(message)
@@ -756,6 +777,26 @@ fn parse_cron(expr: &str) -> Result<Schedule, String> {
     };
     Schedule::from_str(&normalized).map_err(|e| e.to_string())
 }
+
+/// Return the latest occurrence between scheduler polls.
+///
+/// `Schedule::after` is exclusive. Starting the iterator exactly at the
+/// previous poll timestamp would therefore skip a cron slot that falls on
+/// that timestamp, which is common when the 30-second worker wakes just after
+/// a minute boundary. A one-nanosecond overlap makes the poll interval
+/// inclusive while still limiting catch-up to the current polling window.
+fn latest_due_slot(
+    schedule: &Schedule,
+    previous_poll: chrono::DateTime<Utc>,
+    now: chrono::DateTime<Utc>,
+) -> Option<chrono::DateTime<Utc>> {
+    let inclusive_start = previous_poll - chrono::Duration::nanoseconds(1);
+    schedule
+        .after(&inclusive_start)
+        .take_while(|slot| *slot <= now)
+        .last()
+}
+
 #[derive(Clone, Serialize)]
 struct SyncEvent {
     source: String,
@@ -1119,6 +1160,7 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
     thread::spawn(move || {
         let mut last_due: HashMap<String, String> = HashMap::new();
+        let mut previous_poll = Utc::now() - chrono::Duration::seconds(30);
         loop {
             let now = Utc::now();
             if now.timestamp().rem_euclid(300) < 30 {
@@ -1136,9 +1178,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
             for row in rows.flatten() {
               let (id, name, expr) = row;
               if let Ok(schedule) = parse_cron(&expr) {
-                // Look back one polling window so a job is still detected when the
-                // 30-second worker wakes just after the cron boundary.
-                if let Some(next) = schedule.after(&(now - chrono::Duration::seconds(30))).next() {
+                if let Some(next) = latest_due_slot(&schedule, previous_poll, now) {
                   let slot = next.to_rfc3339();
                   if next <= now && last_due.get(&id) != Some(&slot) {
                     last_due.insert(id.clone(), slot.clone());
@@ -1163,6 +1203,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 };
                 let _ = app.emit("wand://sync", event);
             }
+            previous_poll = now;
             thread::sleep(Duration::from_secs(30));
         }
     });
@@ -1355,6 +1396,21 @@ mod tests {
     fn recurring_tasks_remain_active_after_a_successful_run() {
         assert_eq!(task_completion_status("one-off"), "completed");
         assert_eq!(task_completion_status("0 9 * * 1"), "queued");
+    }
+
+    #[test]
+    fn scheduler_includes_a_slot_on_the_previous_poll_boundary() {
+        let schedule = parse_cron("* * * * *").unwrap();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-08T09:00:30.250Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let previous_poll = chrono::DateTime::parse_from_rfc3339("2026-08-08T09:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let slot = latest_due_slot(&schedule, previous_poll, now).unwrap();
+
+        assert_eq!(slot.to_rfc3339(), "2026-08-08T09:00:00+00:00");
     }
 
     #[test]
