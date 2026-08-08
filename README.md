@@ -2,6 +2,8 @@
 
 Wand is a local-first AI engineering IDE for Tauri 2, React, and TypeScript. Build with a team of focused agents, keep every handoff visible, and finish with background verification.
 
+Project guidance: [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md) · [License](LICENSE)
+
 ## What is in this repository
 
 The current build provides the desktop-ready product foundation:
