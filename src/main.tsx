@@ -1834,6 +1834,21 @@ function ProviderAccess() {
     await invoke("save_provider_token", { provider, token: values.token });
     refresh();
   };
+  const disconnect = async (provider: string) => {
+    const confirmed = await askModal(
+      `Disconnect ${provider === "github" ? "GitHub" : "Azure DevOps"}`,
+      [],
+      "This removes Wand's saved credential and Azure organization settings from this installation.",
+    );
+    if (!confirmed) return;
+    try {
+      await invoke("disconnect_provider", { provider });
+      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"} disconnected.`);
+      await refresh();
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
   const sync = async (provider: string) => {
     try {
       setSyncing(provider);
@@ -1926,6 +1941,11 @@ function ProviderAccess() {
           <button className="outline" onClick={() => connect(id)}>
             {status[id] ? "Replace PAT" : "Connect"}
           </button>
+          {status[id] && (
+            <button className="textbtn danger" onClick={() => disconnect(id)}>
+              Disconnect
+            </button>
+          )}
           <button
             className="outline"
             disabled={!status[id] || !!syncing || !!testing}
