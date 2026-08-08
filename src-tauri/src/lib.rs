@@ -1885,6 +1885,23 @@ mod tests {
     }
 
     #[test]
+    fn azure_urls_require_an_approved_https_host() {
+        assert_eq!(
+            validate_azure_org_url(" https://dev.azure.com/example/ ").unwrap(),
+            "https://dev.azure.com/example"
+        );
+        assert!(validate_azure_org_url("http://dev.azure.com/example").is_err());
+        assert!(validate_azure_org_url("https://example.invalid/org").is_err());
+    }
+
+    #[test]
+    fn azure_urls_reject_embedded_credentials_and_query_data() {
+        assert!(validate_azure_org_url("https://user:pass@dev.azure.com/org").is_err());
+        assert!(validate_azure_org_url("https://dev.azure.com/org?redirect=elsewhere").is_err());
+        assert!(validate_azure_org_url("https://dev.azure.com/org#fragment").is_err());
+    }
+
+    #[test]
     fn scopes_provider_service_per_installation() {
         assert_ne!(
             scoped_provider_service("wand-github-pat", "install-a"),
