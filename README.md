@@ -9,8 +9,8 @@ The current build provides the desktop-ready product foundation:
 - Tauri 2 desktop shell with a Rust command boundary
 - React + TypeScript frontend powered by Vite
 - Wand first-run onboarding walkthrough
-- Premium dark workspace UI with subtle gradients and reduced-motion support
-- Local repository workspace and task persistence
+- Premium responsive workspace UI with configurable dark/light accent themes, subtle gradients, and reduced-motion support
+- Local repository workspace and task persistence in SQLite through the Tauri boundary
 - Pre-built engineering agent catalog:
   - Planner
   - Builder
@@ -18,9 +18,15 @@ The current build provides the desktop-ready product foundation:
   - Sentinel verifier
   - Docs writer
 - Task creation with agent tagging and ordered handoff chains
-- Scheduled task model with cron expressions
-- Background Rust sync loop emitting `wand://sync` events to the UI
-- Repository threads, activity timeline, notifications, and settings surfaces
+- Configurable agent system prompts, CLI runtimes, models, skills, and repository scopes
+- Repository-scoped agents created automatically when local repositories are scanned
+- Scheduled task execution with five- and seven-field cron expressions, durable run history, and background Rust scheduling
+- Background provider polling and normalized `wand://` events to the UI
+- GitHub and Azure DevOps repository and pull-request comment synchronization
+- Repository threads with live human/agent messages and persisted agent handoff comments
+- Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
+- Monaco file editor and Git original-versus-modified diff viewer
+- Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
 - Tauri icon and desktop configuration for macOS and Windows
 - Linux x64 packaging through GitHub Actions (`.deb` and `.AppImage`)
 - GitHub Actions for web checks, Rust checks, and desktop packaging
@@ -41,7 +47,7 @@ Tauri 2 / Rust boundary
         └── provider + CLI integrations
 ```
 
-The current background thread emits a provider-agnostic heartbeat every 30 seconds. The next adapter layer can use the same event channel to surface pull requests, comments, agent progress, and verification results without coupling provider APIs to the UI.
+The background Rust worker wakes every 30 seconds. It monitors recurring cron tasks, creates durable task-run records, launches eligible local CLI chains, polls connected provider activity, and emits provider-agnostic events for sync, scheduling, agent progress, notifications, and repository threads. The React layer subscribes to those events without receiving PAT values or spawning processes.
 
 ## Requirements
 
@@ -109,7 +115,7 @@ Every push and pull request runs the web build and Rust check. The desktop job p
 - Apple Silicon macOS (`aarch64-apple-darwin`)
 - Windows x64 (`x86_64-pc-windows-msvc`)
 
-The resulting bundles are uploaded as workflow artifacts and signed for the updater.
+The resulting bundles are uploaded as workflow artifacts. Tagged releases produce the signed updater artifacts and downloadable installers.
 
 The release matrix covers Apple Silicon macOS, Intel macOS, Windows x64, and Linux x64.
 
@@ -136,35 +142,32 @@ The private key must never be committed. The public key is embedded in the deskt
 
 ### Agents
 
-Agents are specialists with a role and a skill set. A task can tag one or more agents. Wand preserves their order and sends the output of one stage to the next:
+Agents are persistent specialists with a role, skill set, system prompt, model, CLI runtime, and scope. A task can tag one or more applicable agents from the selected repository. Wand preserves their order and sends the output of one stage to the next:
 
 ```text
 Planner → Builder → Code reviewer → Sentinel
 ```
 
-Sentinel is the final verification stage and is intended to run independently in the background after the implementation handoff completes.
+Sentinel is always appended as the final verification stage. Each successful stage emits a handoff event, and Wand writes that finding into the repository thread so the work remains auditable.
 
 ### Repositories
 
-Repositories are selected from a local workspace folder and shown as navigable workspace tags. Each repository is a context boundary for threads, tasks, agent runs, and provider events.
+Repositories are selected from a local workspace folder and scanned for Git repositories. Each repository becomes a navigable workspace tag, a repository-scoped engineering agent, and a context boundary for threads, tasks, agent runs, and provider events.
 
 ### Integrations
 
-GitHub and Azure DevOps are represented in Settings and will use PAT credentials stored through the operating system keychain in the desktop build. Provider polling belongs in Rust background adapters, with normalized events sent to React.
+GitHub and Azure DevOps can be connected from Settings with PATs stored through the operating system credential manager. Repository sync and pull-request comment polling run in Rust background adapters, with normalized events sent to React.
 
 ### Local-first data
 
-The current browser shell persists repositories and tasks in local storage so the interaction is immediately usable. The production desktop persistence layer should move these records to SQLite through Tauri, while secrets remain in the OS keychain.
+The browser shell keeps a small local-storage fallback for development. The desktop runtime persists repositories, tasks, events, threads, notifications, agents, provider settings, and task runs in SQLite through Tauri, while secrets remain in the OS credential manager.
 
-## Roadmap
+## Remaining roadmap
 
-1. Add SQLite migrations and repository/task/thread/run tables.
-2. Add encrypted PAT storage through the OS keychain.
-3. Implement GitHub and Azure DevOps pull request/comment sync.
-4. Add Claude, Codex, Kimi, and Gemini CLI sidecar runners with streaming output.
-5. Replace the demo sync heartbeat with provider and scheduler workers.
-6. Add a worktree-aware editor, terminal panel, and agent run transcript.
-7. Add signed installers and auto-update metadata for macOS and Windows.
+1. Add streaming agent output and a durable per-stage transcript view.
+2. Add worktree creation and patch application controls around the Monaco diff surface.
+3. Add richer provider actions such as opening, approving, and commenting on pull requests from Wand.
+4. Add configurable per-notification-category OS permission onboarding.
 
 ## License
 
