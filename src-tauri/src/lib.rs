@@ -1113,6 +1113,25 @@ async fn provider_token(provider: &str) -> Result<String, String> {
         }
     }
 }
+fn validate_azure_org_url(raw: &str) -> Result<String, String> {
+    let value = raw.trim().trim_end_matches('/');
+    let parsed = url::Url::parse(value).map_err(|_| "Azure DevOps URL is invalid".to_string())?;
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    let approved_host = host == "dev.azure.com"
+        || host.ends_with(".dev.azure.com")
+        || host.ends_with(".visualstudio.com");
+    if parsed.scheme() != "https"
+        || !approved_host
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err("Azure DevOps URL must use HTTPS and an approved Azure DevOps host".into());
+    }
+    Ok(value.to_string())
+}
 #[tauri::command]
 async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRepo>, String> {
     let token = provider_token("github").await?;
@@ -1219,8 +1238,8 @@ async fn sync_azure_devops(
     app: AppHandle,
 ) -> Result<Vec<ProviderRepo>, String> {
     let token = provider_token("azure-devops").await?;
-    let endpoint =
-        provider_url.trim_end_matches('/').to_string() + "/_apis/git/repositories?api-version=7.1";
+    let base = validate_azure_org_url(&provider_url)?;
+    let endpoint = base + "/_apis/git/repositories?api-version=7.1";
     let response = reqwest::Client::new()
         .get(endpoint)
         .basic_auth("", Some(token))
@@ -1265,7 +1284,7 @@ async fn sync_azure_activity(
     app: AppHandle,
 ) -> Result<u32, String> {
     let token = provider_token("azure-devops").await?;
-    let base = provider_url.trim_end_matches('/');
+    let base = validate_azure_org_url(&provider_url)?;
     let response = reqwest::Client::new()
         .get(format!(
             "{base}/_apis/git/pullrequests?searchCriteria.status=all&api-version=7.1"
