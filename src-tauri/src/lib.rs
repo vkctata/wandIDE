@@ -69,6 +69,26 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn recover_interrupted_runs(conn: &Connection) -> rusqlite::Result<usize> {
+    let now = Utc::now().to_rfc3339();
+    let reason = "Wand closed before this run completed";
+    let recovered = conn.execute(
+        "UPDATE task_runs SET status='failed', finished_at=?1, error=COALESCE(error,?2) WHERE status IN ('queued','running')",
+        params![now, reason],
+    )?;
+    conn.execute(
+        "UPDATE tasks SET status=CASE WHEN lower(trim(cron))='one-off' THEN 'failed' ELSE 'queued' END WHERE status='running'",
+        [],
+    )?;
+    if recovered > 0 {
+        conn.execute(
+            "INSERT INTO events(kind,message,created_at) VALUES ('scheduler.recovered',?1,?2)",
+            params![format!("Recovered {recovered} interrupted task run(s)"), now],
+        )?;
+    }
+    Ok(recovered)
+}
+
 #[derive(Serialize)]
 struct FileVersions {
     original: String,
@@ -1825,7 +1845,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn read_repo_file(repo_path: String, relative_path: String) -> Result<String, String> {
@@ -2119,6 +2139,36 @@ mod tests {
             )
             .unwrap();
         assert_eq!(table, "agent_transcripts");
+    }
+
+    #[test]
+    fn recovers_interrupted_runs_without_disabling_recurring_tasks() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('recurring','Nightly','repo','0 0 * * *','[]','running','now'),('one-off','Once','repo','one-off','[]','running','now')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES ('run-recurring','recurring','slot','running'),('run-one-off','one-off','slot','queued')",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(recover_interrupted_runs(&conn).unwrap(), 2);
+        let recurring: String = conn
+            .query_row("SELECT status FROM tasks WHERE id='recurring'", [], |row| row.get(0))
+            .unwrap();
+        let one_off: String = conn
+            .query_row("SELECT status FROM tasks WHERE id='one-off'", [], |row| row.get(0))
+            .unwrap();
+        let failed_runs: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_runs WHERE status='failed'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(recurring, "queued");
+        assert_eq!(one_off, "failed");
+        assert_eq!(failed_runs, 2);
     }
 
     #[test]
