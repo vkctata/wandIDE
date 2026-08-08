@@ -974,13 +974,10 @@ async fn test_provider_connection(
 }
 #[tauri::command]
 fn save_provider_url(provider: String, url: String, db: State<Db>) -> Result<(), String> {
-    let value = url.trim().trim_end_matches('/').to_string();
-    if value.is_empty() {
-        return Err("Provider URL cannot be empty".into());
-    }
     if provider != "azure-devops" {
         return Err("Only Azure DevOps organization URLs are configurable".into());
     }
+    let value = validate_azure_org_url(&url)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO provider_settings(provider,url) VALUES (?1,?2)",
