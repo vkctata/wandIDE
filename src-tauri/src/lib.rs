@@ -1,7 +1,7 @@
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, sync::{Arc, Mutex}, thread, time::Duration};
+use std::{fs, path::PathBuf, sync::{Arc, Mutex}, thread, time::Duration, io::Write};
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Serialize)] struct CliResult { ok: bool, message: String }
@@ -23,15 +23,18 @@ fn list_tasks(db: State<Db>) -> Result<Vec<TaskRow>,String> { let conn=db.0.lock
 #[derive(Serialize)] struct CliStatus { id:String, name:String, command:String, installed:bool, version:String }
 #[tauri::command]
 fn detect_clis() -> Vec<CliStatus> { let specs=[("claude","Claude","claude"),("codex","Codex","codex"),("kimi","Kimi","kimi"),("gemini","Gemini CLI","gemini")]; specs.iter().map(|(id,name,cmd)|{let path=Command::new("sh").args(["-lc",&format!("command -v {cmd}")]).output().ok().filter(|o|o.status.success()).map(|o|String::from_utf8_lossy(&o.stdout).trim().to_string()); let version=Command::new(cmd).arg("--version").output().ok().map(|o|String::from_utf8_lossy(&o.stdout).lines().next().unwrap_or("").to_string()).unwrap_or_default(); CliStatus{id:id.to_string(),name:name.to_string(),command:cmd.to_string(),installed:path.is_some(),version}}).collect() }
+#[derive(Deserialize)] struct ChainRequest { task_id:String, prompt:String, repo_path:String, agents:Vec<String>, cli:String }
+fn allowed_cli(cli:&str)->Option<&'static str>{match cli{"claude"=>Some("claude"),"codex"=>Some("codex"),"kimi"=>Some("kimi"),"gemini"=>Some("gemini"),_=>None}}
+#[tauri::command]
+fn run_agent_chain(req:ChainRequest, db:State<Db>, app:AppHandle)->Result<(),String>{let command=allowed_cli(&req.cli).ok_or_else(||"Unsupported CLI".to_string())?.to_string(); let db_arc=db.0.clone(); thread::spawn(move||{for (index,agent) in req.agents.iter().enumerate(){let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"running"})); let mut child=match Command::new(&command).current_dir(&req.repo_path).arg("--print").arg(&req.prompt).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn(){Ok(c)=>c,Err(e)=>{let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":e.to_string()}));return}}; if let Some(mut stdin)=child.stdin.take(){let _=stdin.write_all(format!("You are the {agent} stage. Complete your part, then summarize the handoff for the next agent.\n").as_bytes());} let output=child.wait_with_output(); match output{Ok(out) if out.status.success()=>{if let Ok(conn)=db_arc.lock(){let _=conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",params!["agent.completed",format!("{agent} completed stage {}",index+1),Utc::now().to_rfc3339()]);} let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"completed","handoff":String::from_utf8_lossy(&out.stdout)}));},Ok(out)=>{let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":String::from_utf8_lossy(&out.stderr)}));return},Err(e)=>{let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":e.to_string()}));return}}} let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"status":"verified"}));}); Ok(())}
 #[derive(Clone, Serialize)]
 struct SyncEvent { source: String, message: String, timestamp: String }
 
-fn start_background_sync(app: AppHandle) {
+fn start_background_sync(app: AppHandle, db:Arc<Mutex<Connection>>) {
   thread::spawn(move || loop {
-    let event = SyncEvent { source: "workspace-sync".into(), message: "Background workers active — checking schedules and provider adapters".into(), timestamp: Utc::now().to_rfc3339() };
-    let _ = app.emit("wand://sync", event);
+    if let Ok(conn)=db.lock(){let count:i64=conn.query_row("SELECT COUNT(*) FROM tasks WHERE cron != 'one-off' AND status != 'completed'",[],|r|r.get(0)).unwrap_or(0); let event = SyncEvent { source: "scheduler".into(), message: format!("Background scheduler active — {count} recurring task(s) monitored"), timestamp: Utc::now().to_rfc3339() }; let _=app.emit("wand://sync", event);} 
     thread::sleep(Duration::from_secs(30));
   });
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); app.manage(Db(Arc::new(Mutex::new(conn)))); start_background_sync(app.handle().clone()); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,create_task,list_tasks,detect_clis]).run(tauri::generate_context!()).expect("error while running wand"); }
+pub fn run() { tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,run_agent_chain,create_task,list_tasks,detect_clis]).run(tauri::generate_context!()).expect("error while running wand"); }
