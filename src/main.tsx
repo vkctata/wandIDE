@@ -753,10 +753,15 @@ function App() {
             <button
               className="iconbtn"
               onClick={() => setView("notifications")}
-              title="Notifications"
+              title={notificationCount ? `${notificationCount} unread notifications` : "Notifications"}
+              aria-label={notificationCount ? `${notificationCount} unread notifications` : "Notifications"}
             >
               <Bell size={17} />
-              <i />
+              {notificationCount > 0 && (
+                <span className="notification-badge" aria-hidden="true">
+                  {notificationCount > 99 ? "99+" : notificationCount}
+                </span>
+              )}
             </button>
             <AccountMenu onSettings={() => setView("settings")} />
           </div>
@@ -2623,7 +2628,7 @@ function ThemeSection() {
     void invoke("save_workspace_setting", {
       key: "theme",
       value: name,
-    });
+    }).catch(() => {});
   };
   const setMode = (mode: "dark" | "light") => {
     const defaultTheme = mode === "light" ? "daylight" : "obsidian";
