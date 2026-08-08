@@ -837,6 +837,11 @@ fn create_thread_message(
     }
     let _ = app.emit("wand://thread", &message);
     if let Some(request) = launch_request {
+        let task_id = request.task_id.clone();
+        let _ = app.emit(
+            "wand://task",
+            serde_json::json!({"task_id": task_id, "repo": message.repo}),
+        );
         let cli = request.cli.clone();
         launch_chain_worker(request, cli, db.0.clone(), app.clone());
     }
