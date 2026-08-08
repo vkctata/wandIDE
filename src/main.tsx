@@ -3103,15 +3103,35 @@ function UpdateBanner() {
   const [update, setUpdate] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   useEffect(() => {
     if (!isTauriRuntime()) return;
-    check()
-      .then((value) => {
-        if (value) setUpdate(value);
-      })
-      .catch((reason) => setError(String(reason)));
-  }, []);
-  if (!update) return null;
+    let active = true;
+    const checkForUpdate = async () => {
+      if (!active) return;
+      setChecking(true);
+      try {
+        const value = await check();
+        if (!active) return;
+        setError("");
+        setUpdate(value ?? null);
+        setDismissed(false);
+      } catch (reason) {
+        if (active) setError(String(reason));
+      } finally {
+        if (active) setChecking(false);
+      }
+    };
+    void checkForUpdate();
+    const timer = window.setInterval(checkForUpdate, 6 * 60 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [retryToken]);
+  if ((!update && !error) || dismissed) return null;
   const install = async () => {
     try {
       setBusy(true);
@@ -3123,19 +3143,25 @@ function UpdateBanner() {
       setError(String(value));
     }
   };
+  const retry = () => {
+    setDismissed(false);
+    setError("");
+    setRetryToken((token) => token + 1);
+  };
   return (
-    <aside className="update-banner" aria-label="Wand update available">
+    <aside className="update-banner" aria-label={update ? "Wand update available" : "Wand update status"}>
       <div className="update-banner-icon">
         <Sparkles size={15} />
       </div>
       <div className="update-banner-copy">
-        <strong>{busy ? "Installing update…" : "Update available"}</strong>
-        <span>Wand {update.version}</span>
+        <strong>{busy ? "Installing update…" : update ? "Update available" : "Update check unavailable"}</strong>
+        <span>{update ? `Wand ${update.version}` : checking ? "Checking GitHub releases…" : "Retry when you are online"}</span>
         {error && <small>{error}</small>}
       </div>
-      <button onClick={install} disabled={busy}>
-        {busy ? "Installing…" : error ? "Retry" : "Approve"}
+      <button onClick={update ? install : retry} disabled={busy || checking}>
+        {busy ? "Installing…" : update ? "Approve" : "Retry"}
       </button>
+      {!busy && <button className="update-dismiss" aria-label="Dismiss update status" onClick={() => setDismissed(true)}>×</button>}
     </aside>
   );
 }
