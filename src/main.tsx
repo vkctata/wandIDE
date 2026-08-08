@@ -574,7 +574,6 @@ function App() {
           </span>
         </div>
         <div className="navgroup">
-          <label>Workspace</label>
           {nav("home")}
           {nav("code")}
           {nav("threads")}
@@ -1420,46 +1419,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
   return (
     <div className="onboarding">
       <div className="onboard-card">
-        <div className="onboard-mark">
-          <svg
-            viewBox="0 0 24 24"
-            width="30"
-            height="30"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M4.2 19.8 L16.8 7.2"
-              stroke="#f2d29a"
-              strokeWidth="2.8"
-              strokeLinecap="round"
-            />
-            <path
-              d="M4.2 19.8 L3 21 M5.4 21.2 L4.4 22.4"
-              stroke="#c68f55"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-              opacity=".7"
-            />
-            <g className="wand-tip">
-              <circle cx="17.4" cy="6.6" r="1.6" fill="#fff" />
-              <circle cx="17.4" cy="6.6" r="4.4" fill="#ffe9a8" opacity=".5" />
-              <path
-                d="M17.4 2.4 L18.3 5.7 L21.6 6.6 L18.3 7.5 L17.4 10.8 L16.5 7.5 L13.2 6.6 L16.5 5.7 Z"
-                fill="#fff"
-                opacity=".95"
-                className="wand-star"
-              />
-            </g>
-            <path
-              d="M19.6 3.2 L20.2 4 M20.8 8.2 L21.6 8.8 M14.6 4.4 L15.2 5"
-              stroke="#fff"
-              strokeWidth="1"
-              strokeLinecap="round"
-              opacity=".8"
-            />
-          </svg>
-        </div>
+        <div className="onboard-mark" aria-hidden="true"><span className="onboard-w">W</span><span className="onboard-sparkles">✦</span></div>
         <p className="eyebrow">WAND / GETTING STARTED</p>
         <h1>{current[0]}</h1>
         <p>{current[1]}</p>
@@ -2073,7 +2033,7 @@ function WhatsNewSection() {
       highlights: [
         {
           title: "Typographic Brand Identity & Magic Sparkles",
-          desc: "Standalone wand. wordmark with metallic theme gradient and subtle magic sparkles on letter d.",
+          desc: "Sparkle W wordmark with a metallic theme gradient and subtle magic accents.",
           icon: Sparkles,
         },
         {
@@ -2602,6 +2562,7 @@ function ModalHost() {
 function WindowChrome() {
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
     return null;
+  if (navigator.platform.toLowerCase().includes("mac")) return null;
   const appWindow = getCurrentWindow();
   return (
     <div className="window-chrome" data-tauri-drag-region>

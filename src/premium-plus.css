@@ -150,6 +150,9 @@ body[data-theme="obsidian"] .app {
   margin-bottom: 16px;
   display: block;
 }
+.onboard-w { font-size: 44px; font-weight: 850; line-height: 1; letter-spacing: -.08em; color: var(--wand-ink, #fff); text-shadow: 0 0 22px color-mix(in srgb, var(--wand-accent) 45%, transparent); }
+.onboard-sparkles { display: inline-block; margin-left: 4px; vertical-align: top; color: var(--wand-accent, #a98cff); font-size: 20px; animation: sparkle-float 2.6s ease-in-out infinite; }
+@keyframes sparkle-float { 50% { transform: translateY(-3px) rotate(8deg); opacity: .72; } }
 
 /* ------------------------------------------------------------------ */
 /* Navigation — calm active state, no color-leak                        */
@@ -293,7 +296,6 @@ body[data-theme="lavender"] .wand-modal {
 .primary::after { display: none; }
 .brand .mark::after { display: none; }
 .app::before, .app::after { display: none; }
-.wand-star, .wand-tip { animation: none; }
 .onboard-mark { animation: none; }
 .live-dot { animation: none; box-shadow: 0 0 10px rgba(111,218,160,.55); }
 .stat svg { filter: none; }
