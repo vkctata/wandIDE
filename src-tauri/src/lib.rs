@@ -2353,6 +2353,8 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                         );
                                         continue;
                                     };
+                                    let fallback_cli = cli.to_string();
+                                    let enabled_clis = cli_access_from_db(&conn).unwrap_or_default();
                                     let agent_configs = agents
                                         .iter()
                                         .filter_map(|agent_id| {
@@ -2360,9 +2362,17 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                                 "SELECT cli,model,role,skills FROM agents WHERE id=?1",
                                                 params![agent_id],
                                                 |r| {
+                                                    let stored_cli: String = r.get(0)?;
+                                                    let stage_cli = if enabled_clis.iter().any(|item| item == &stored_cli)
+                                                        && installed_cli_path(&stored_cli).is_some()
+                                                    {
+                                                        stored_cli
+                                                    } else {
+                                                        fallback_cli.clone()
+                                                    };
                                                     let skills_json: String = r.get(3)?;
                                                     Ok(AgentExecution {
-                                                        cli: r.get(0)?,
+                                                        cli: stage_cli,
                                                         model: r.get(1)?,
                                                         responsibility: r.get(2)?,
                                                         skills: serde_json::from_str(&skills_json)
