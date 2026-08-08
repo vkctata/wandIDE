@@ -79,6 +79,15 @@ To run the desktop application through Tauri:
 npm run tauri dev
 ```
 
+To build and launch a local macOS application bundle:
+
+```bash
+npm run tauri build -- --bundles app
+open src-tauri/target/release/bundle/macos/Wand.app
+```
+
+Local packaging produces the application bundle even when updater signing secrets are not present. Release updater artifacts require `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+
 The first launch displays the Wand onboarding walkthrough. Completion is stored locally so it does not repeat on every start.
 
 ## Download Wand
