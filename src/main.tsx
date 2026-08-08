@@ -1110,7 +1110,13 @@ function Tasks({
     status: string;
     error?: string;
   };
+  type Transcript = {
+    id: number; run_id: string; task_id: string; repo: string; agent: string;
+    stage: number; status: string; content: string; created_at: string;
+  };
   const [runs, setRuns] = useState<Run[]>([]);
+  const [transcripts, setTranscripts] = useState<Record<string, Transcript[]>>({});
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const load = () =>
     invoke<Run[]>("list_task_runs", { limit: 30 })
       .then(setRuns)
@@ -1136,6 +1142,14 @@ function Tasks({
   const retry = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (task) runTask(task);
+  };
+  const toggleTranscript = async (run: Run) => {
+    if (expandedRun === run.id) { setExpandedRun(null); return; }
+    setExpandedRun(run.id);
+    if (!transcripts[run.id]) {
+      const rows = await invoke<Transcript[]>("list_agent_transcripts", { taskId: run.task_id }).catch(() => []);
+      setTranscripts((current) => ({ ...current, [run.id]: rows.filter((row) => row.run_id === run.id) }));
+    }
   };
   return (
     <section className="content">
@@ -1207,7 +1221,8 @@ function Tasks({
           </div>
         ) : (
           runs.map((run) => (
-            <div className="run-row" key={run.id}>
+            <React.Fragment key={run.id}>
+            <div className="run-row">
               <div>
                 <b>
                   {tasks.find((t) => t.id === run.task_id)?.name || run.task_id}
@@ -1229,6 +1244,9 @@ function Tasks({
               >
                 {run.status}
               </span>
+              <button className="retry-run" onClick={() => toggleTranscript(run)}>
+                <ChevronDown size={13} /> {expandedRun === run.id ? "Hide transcript" : "View transcript"}
+              </button>
               {run.status === "failed" ? (
                 <button
                   className="retry-run"
@@ -1245,6 +1263,17 @@ function Tasks({
                 </button>
               ) : null}
             </div>
+            {expandedRun === run.id && (
+              <div className="transcript-panel">
+                {(transcripts[run.id] || []).length === 0 ? <p className="sub">No persisted stage output for this run yet.</p> : transcripts[run.id].map((stage) => (
+                  <article className="transcript-stage" key={stage.id}>
+                    <div><b>Stage {stage.stage} · {stage.agent}</b><span className={"tag " + (stage.status === "failed" ? "red" : stage.status === "verified" ? "green" : "blue")}>{stage.status}</span></div>
+                    <pre>{stage.content}</pre>
+                  </article>
+                ))}
+              </div>
+            )}
+            </React.Fragment>
           ))
         )}
       </div>
