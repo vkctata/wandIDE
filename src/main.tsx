@@ -1174,6 +1174,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
+  const [postError, setPostError] = useState("");
   const hasRepo = repo.name !== emptyRepo.name;
   const load = () =>
     hasRepo
@@ -1200,15 +1201,22 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   }, [repo.name, hasRepo]);
   const create = async () => {
     if (!hasRepo || !draft.trim()) return;
-    await invoke("create_thread_message", {
-      repo: repo.name,
-      author: "You",
-      body: draft.trim(),
-      agentIds: tagged,
-    }).catch(() => {});
-    setDraft("");
-    setTagged([]);
-    load();
+    setPostError("");
+    try {
+      await invoke("create_thread_message", {
+        repo: repo.name,
+        author: "You",
+        body: draft.trim(),
+        agentIds: tagged,
+      });
+      setDraft("");
+      setTagged([]);
+      await load();
+    } catch (cause) {
+      setPostError(
+        cause instanceof Error ? cause.message : String(cause),
+      );
+    }
   };
   return (
     <section className="content threads-page">
@@ -1250,6 +1258,11 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               Post
             </button>
           </div>
+          {postError && (
+            <div className="thread-error" role="alert">
+              Could not post this thread: {postError}
+            </div>
+          )}
           <div className="threadlist">
             {messages.length === 0 ? (
               <div className="emptyhint">
