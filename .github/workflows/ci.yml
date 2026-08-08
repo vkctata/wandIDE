@@ -26,3 +26,39 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: cargo check
+
+  desktop-build:
+    name: Desktop (${{ matrix.target }})
+    needs: web-build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            args: '--target aarch64-apple-darwin'
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: '--target x86_64-pc-windows-msvc'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          args: ${{ matrix.args }}
+          includeDebug: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wand-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/

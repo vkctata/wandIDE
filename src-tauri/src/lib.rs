@@ -1,4 +1,6 @@
 use serde::Serialize;
+use std::{thread, time::Duration};
+use tauri::{AppHandle, Emitter};
 #[derive(Serialize)] struct CliResult { ok: bool, message: String }
 #[tauri::command]
 fn run_agent_cli(provider: String, prompt: String, repo_path: String) -> CliResult {
@@ -6,5 +8,15 @@ fn run_agent_cli(provider: String, prompt: String, repo_path: String) -> CliResu
   // after adding explicit user approval and encrypted credential lookup.
   CliResult { ok: true, message: format!("Queued {provider} task for {repo_path}: {prompt}") }
 }
+#[derive(Clone, Serialize)]
+struct SyncEvent { source: String, message: String, timestamp: String }
+
+fn start_background_sync(app: AppHandle) {
+  thread::spawn(move || loop {
+    let event = SyncEvent { source: "workspace-sync".into(), message: "Background sync heartbeat — provider adapters ready".into(), timestamp: format!("{:?}", std::time::SystemTime::now()) };
+    let _ = app.emit("wand://sync", event);
+    thread::sleep(Duration::from_secs(30));
+  });
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().invoke_handler(tauri::generate_handler![run_agent_cli]).run(tauri::generate_context!()).expect("error while running forgepad"); }
+pub fn run() { tauri::Builder::default().setup(|app| { start_background_sync(app.handle().clone()); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli]).run(tauri::generate_context!()).expect("error while running wand"); }
