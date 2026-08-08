@@ -5,7 +5,7 @@ import { listen as tauriListen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
-import { sendNotification } from "@tauri-apps/plugin-notification";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Editor, { DiffEditor, loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
@@ -2089,6 +2089,7 @@ function NotificationPreferencesSection() {
     ...JSON.parse(localStorage.getItem("wand.notification-prefs") || "{}"),
   }));
   const [saved, setSaved] = useState(false);
+  const [permission, setPermission] = useState<"granted" | "denied" | "checking" | "unavailable">("checking");
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "notification-prefs" })
       .then((value) => {
@@ -2101,6 +2102,16 @@ function NotificationPreferencesSection() {
       })
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!isTauriRuntime()) { setPermission("unavailable"); return; }
+    isPermissionGranted().then((granted) => setPermission(granted ? "granted" : "denied")).catch(() => setPermission("unavailable"));
+  }, []);
+  const enableDesktopNotifications = async () => {
+    try {
+      const next = await requestPermission();
+      setPermission(next === "granted" ? "granted" : "denied");
+    } catch { setPermission("unavailable"); }
+  };
   const toggle = (key: keyof Prefs) => {
     const next = { ...prefs, [key]: !prefs[key] };
     setPrefs(next);
@@ -2162,6 +2173,14 @@ function NotificationPreferencesSection() {
             />
           </label>
         ))}
+      </div>
+      <div className="notification-permission-row">
+        <div>
+          <b>Desktop notification permission</b>
+          <small>{permission === "granted" ? "Wand can show native OS notifications." : permission === "denied" ? "Allow notifications to receive background updates." : permission === "unavailable" ? "Available in the installed desktop app." : "Checking system permission…"}</small>
+        </div>
+        {permission !== "granted" && permission !== "unavailable" && <button className="outline" onClick={enableDesktopNotifications}>Enable desktop notifications</button>}
+        {permission === "granted" && <span className="tag green">Enabled</span>}
       </div>
     </div>
   );
