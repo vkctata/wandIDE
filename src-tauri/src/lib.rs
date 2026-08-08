@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::{Arc, Mutex},
     thread,
@@ -2117,7 +2117,85 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                     let _ = conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)", params!["scheduler.due", message, now.to_rfc3339()]);
                     let _ = app.emit("wand://scheduler", serde_json::json!({"task_id":id,"name":name,"status":"due","at":now.to_rfc3339()}));
                     let cli = first_enabled_installed_cli(&conn);
-                    if let Some(cli) = cli { if let Ok((agents_json, repo_name)) = conn.query_row("SELECT agents,repo FROM tasks WHERE id=?1",params![id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))) { if let Ok(agents) = serde_json::from_str::<Vec<String>>(&agents_json) { if let Ok(repo_path) = conn.query_row("SELECT path FROM repos WHERE name=?1",params![repo_name],|r|r.get::<_,String>(0)) { let agent_configs = agents.iter().filter_map(|agent_id| conn.query_row("SELECT cli,model,role,skills FROM agents WHERE id=?1",params![agent_id],|r| { let skills_json: String = r.get(3)?; Ok(AgentExecution { cli: r.get(0)?, model: r.get(1)?, responsibility: r.get(2)?, skills: serde_json::from_str(&skills_json).unwrap_or_default() }) }).ok().map(|config| (agent_id.clone(), config))).collect(); let run_id=format!("{}-{}",id,slot); let run_inserted=conn.execute("INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",params![run_id,id,slot]).unwrap_or(0); if run_inserted>0 { launch_chain_worker(ChainRequest{task_id:id.clone(),prompt:format!("Scheduled task: {name}"),repo_path,agents,cli:cli.to_string(),model:"default".into(),agent_configs,run_id:Some(run_id)},cli.to_string(),db.clone(),app.clone()); } } } } }
+                    if let Some(cli) = cli {
+                        if let Ok((agents_json, repo_name)) = conn.query_row(
+                            "SELECT agents,repo FROM tasks WHERE id=?1",
+                            params![id],
+                            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+                        ) {
+                            if let Ok(agents) = serde_json::from_str::<Vec<String>>(&agents_json) {
+                                if let Ok(repo_path) = conn.query_row(
+                                    "SELECT path FROM repos WHERE name=?1",
+                                    params![repo_name],
+                                    |r| r.get::<_, String>(0),
+                                ) {
+                                    let Some(repo_path) = Path::new(&repo_path)
+                                        .canonicalize()
+                                        .ok()
+                                        .filter(|path| path.is_dir())
+                                    else {
+                                        let skipped = format!(
+                                            "Scheduled task skipped: {name} requires a local repository folder"
+                                        );
+                                        let _ = conn.execute(
+                                            "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
+                                            params!["scheduler.skipped", skipped, now.to_rfc3339()],
+                                        );
+                                        let _ = app.emit(
+                                            "wand://scheduler",
+                                            serde_json::json!({"task_id":id,"name":name,"status":"skipped","reason":"local repository folder required"}),
+                                        );
+                                        continue;
+                                    };
+                                    let agent_configs = agents
+                                        .iter()
+                                        .filter_map(|agent_id| {
+                                            conn.query_row(
+                                                "SELECT cli,model,role,skills FROM agents WHERE id=?1",
+                                                params![agent_id],
+                                                |r| {
+                                                    let skills_json: String = r.get(3)?;
+                                                    Ok(AgentExecution {
+                                                        cli: r.get(0)?,
+                                                        model: r.get(1)?,
+                                                        responsibility: r.get(2)?,
+                                                        skills: serde_json::from_str(&skills_json)
+                                                            .unwrap_or_default(),
+                                                    })
+                                                },
+                                            )
+                                            .ok()
+                                            .map(|config| (agent_id.clone(), config))
+                                        })
+                                        .collect();
+                                    let run_id = format!("{}-{}", id, slot);
+                                    let run_inserted = conn
+                                        .execute(
+                                            "INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",
+                                            params![run_id, id, slot],
+                                        )
+                                        .unwrap_or(0);
+                                    if run_inserted > 0 {
+                                        launch_chain_worker(
+                                            ChainRequest {
+                                                task_id: id.clone(),
+                                                prompt: format!("Scheduled task: {name}"),
+                                                repo_path: repo_path.to_string_lossy().into_owned(),
+                                                agents,
+                                                cli: cli.to_string(),
+                                                model: "default".into(),
+                                                agent_configs,
+                                                run_id: Some(run_id),
+                                            },
+                                            cli.to_string(),
+                                            db.clone(),
+                                            app.clone(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                   }
                 }
               }
