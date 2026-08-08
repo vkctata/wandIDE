@@ -1038,7 +1038,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
         </div>
         <button className="primary" disabled={repo === emptyRepo || !draft.trim()} onClick={create}><Plus size={16} /> New thread</button>
       </div>
-      <div className="thread-composer"><AgentMentionInput value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Write a repository thread… Type @ to tag an agent" /><button className="primary" disabled={!draft.trim()} onClick={create}>Post</button></div>
+      <div className="thread-composer"><AgentMentionInput repo={repo.name} value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Write a repository thread… Type @ to tag an agent" /><button className="primary" disabled={!draft.trim()} onClick={create}>Post</button></div>
       <div className="threadlist">
         {messages.length === 0 ? (
           <div className="emptyhint">
@@ -1878,7 +1878,7 @@ function RepoChat({ repo, agents }: { repo: string; agents: Agent[] }) {
         ))}
       </div>
       <div className="chat-compose">
-        <AgentMentionInput value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Message this repository… Type @ to tag an agent" />
+        <AgentMentionInput repo={repo} value={draft} onChange={setDraft} agents={agents} tagged={tagged} onTagged={setTagged} placeholder="Message this repository… Type @ to tag an agent" />
         <button onClick={send}>Send</button>
       </div>
       {error && <small className="chat-error">{error}</small>}
@@ -1886,6 +1886,7 @@ function RepoChat({ repo, agents }: { repo: string; agents: Agent[] }) {
   );
 }
 function AgentMentionInput({
+  repo,
   value,
   onChange,
   agents,
@@ -1893,6 +1894,7 @@ function AgentMentionInput({
   onTagged,
   placeholder,
 }: {
+  repo: string;
   value: string;
   onChange: (value: string) => void;
   agents: Agent[];
@@ -1906,7 +1908,7 @@ function AgentMentionInput({
     (agent) =>
       !agent.scope ||
       agent.scope === "workspace" ||
-      agent.scope.startsWith("repo:"),
+      agent.scope === `repo:${repo}`,
   );
   const choose = (agent: Agent) => {
     const at = value.lastIndexOf("@");
