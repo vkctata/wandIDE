@@ -632,7 +632,7 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
         }
         if imported.scope != "workspace" {
             let repo = imported.scope.strip_prefix("repo:").unwrap_or_default();
-            let exists: bool = conn
+            let exists: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM repos WHERE name=?1)",
                     params![repo],
@@ -643,7 +643,7 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
                 return Err(format!("Unknown repository scope: {}", imported.scope));
             }
         }
-        let built_in: bool = conn
+        let built_in: bool = tx
             .query_row(
                 "SELECT COALESCE((SELECT built_in FROM agents WHERE id=?1),0)",
                 params![id],
