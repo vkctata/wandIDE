@@ -2237,6 +2237,7 @@ function AgentMentionInput({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [highlighted, setHighlighted] = useState(0);
   const available = agents.filter(
     (agent) =>
       !agent.scope ||
@@ -2253,6 +2254,7 @@ function AgentMentionInput({
     onTagged(tagged.includes(agent.id) ? tagged : [...tagged, agent.id]);
     setOpen(false);
     setQuery("");
+    setHighlighted(0);
   };
   const update = (next: string) => {
     onChange(next);
@@ -2260,7 +2262,16 @@ function AgentMentionInput({
     const fragment = at >= 0 ? next.slice(at + 1) : "";
     setQuery(fragment);
     setOpen(at >= 0 && !fragment.includes(" "));
+    setHighlighted(0);
   };
+  const matches = available
+    .filter((agent) =>
+      agent.name
+        .toLowerCase()
+        .replace(/\s+/g, "")
+        .includes(query.toLowerCase().replace(/\s+/g, "")),
+    )
+    .slice(0, 8);
   return (
     <div className="mention-composer">
       <textarea
@@ -2268,23 +2279,29 @@ function AgentMentionInput({
         onChange={(event) => update(event.target.value)}
         placeholder={placeholder}
         onKeyDown={(event) => {
-          if (event.key === "Escape") setOpen(false);
+          if (event.key === "Escape") {
+            setOpen(false);
+          } else if (open && event.key === "ArrowDown" && matches.length) {
+            event.preventDefault();
+            setHighlighted((index) => (index + 1) % matches.length);
+          } else if (open && event.key === "ArrowUp" && matches.length) {
+            event.preventDefault();
+            setHighlighted((index) => (index - 1 + matches.length) % matches.length);
+          } else if (open && event.key === "Enter" && matches.length) {
+            event.preventDefault();
+            choose(matches[highlighted]);
+          }
         }}
       />
       {open && (
-        <div className="mention-menu">
-          {available
-            .filter((agent) =>
-              agent.name
-                .toLowerCase()
-                .replace(/\s+/g, "")
-                .includes(query.toLowerCase().replace(/\s+/g, "")),
-            )
-            .slice(0, 8)
-            .map((agent) => (
+        <div className="mention-menu" role="listbox" aria-label="Agents to tag">
+          {matches.map((agent, index) => (
               <button
                 type="button"
                 key={agent.id}
+                role="option"
+                aria-selected={index === highlighted}
+                className={index === highlighted ? "highlighted" : ""}
                 onMouseDown={(event) => {
                   event.preventDefault();
                   choose(agent);
@@ -2302,6 +2319,7 @@ function AgentMentionInput({
                 </span>
               </button>
             ))}
+          {matches.length === 0 && <span className="mention-empty">No matching agents</span>}
         </div>
       )}
       {tagged.length > 0 && (
