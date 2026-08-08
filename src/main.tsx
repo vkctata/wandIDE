@@ -270,6 +270,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
   const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
+  const [enabledClis, setEnabledClis] = useState<string[]>([]);
   useEffect(
     () => localStorage.setItem("wand.repos", JSON.stringify(repos)),
     [repos],
@@ -301,6 +302,9 @@ function App() {
     invoke<AgentWorkflow[]>("list_agent_workflows")
       .then(setWorkflows)
       .catch(() => setWorkflows([]));
+    invoke<string[]>("cli_access")
+      .then(setEnabledClis)
+      .catch(() => setEnabledClis([]));
     invoke<string | null>("user_name")
       .then((value) => {
         if (value) setUserName(value);
@@ -499,8 +503,14 @@ function App() {
     }
     const available = agentCatalog.filter(
       (a) =>
-        !a.scope || a.scope === "workspace" || a.scope === `repo:${repo.name}`,
+        (!a.scope || a.scope === "workspace" || a.scope === `repo:${repo.name}`) &&
+        enabledClis.includes(a.cli || "codex"),
     );
+    if (!available.length) {
+      setNotice("Enable an installed CLI and a compatible agent in Settings first.");
+      setView("settings");
+      return;
+    }
     const values = await askModal(
       "Schedule an agent task",
       [
@@ -547,7 +557,9 @@ function App() {
         ? workflowAgents
         : selected.length
           ? selected
-        : ["planner", "builder", "reviewer", "sentinel"],
+          : ["planner", "builder", "reviewer", "sentinel"].filter((id) =>
+              available.some((agent) => agent.id === id),
+            ),
     };
     try {
       await invoke("create_task", {

@@ -228,18 +228,24 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
             task.repo.trim()
         ));
     }
+    let enabled_clis = cli_access_from_db(&conn)?;
     for agent_id in &task.agents {
-        let scope: String = conn
+        let (scope, cli): (String, String) = conn
             .query_row(
-                "SELECT scope FROM agents WHERE id=?1",
+                "SELECT scope,cli FROM agents WHERE id=?1",
                 params![agent_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|_| format!("Unknown agent: {agent_id}"))?;
         if scope != "workspace" && scope != format!("repo:{}", task.repo.trim()) {
             return Err(format!(
                 "Agent {agent_id} is not available in repository {}",
                 task.repo.trim()
+            ));
+        }
+        if !enabled_clis.iter().any(|item| item == &cli) || installed_cli_path(&cli).is_none() {
+            return Err(format!(
+                "Agent {agent_id} uses CLI runtime '{cli}', which is not enabled and installed"
             ));
         }
     }
