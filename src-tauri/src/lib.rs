@@ -1,6 +1,6 @@
 use chrono::Utc;
 use cron::Schedule;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -960,7 +960,9 @@ fn execute_stage(
     } else {
         skills.join(", ")
     };
-    let prompt = format!("{task_prompt}\n\nYou are the {agent} stage. {model_hint}\nRESPONSIBILITY: {responsibility}\nSKILLS: {skills_text}\nUse the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}");
+    let prompt = format!(
+        "{task_prompt}\n\nYou are the {agent} stage. {model_hint}\nRESPONSIBILITY: {responsibility}\nSKILLS: {skills_text}\nUse the repository state and the handoff below. Complete your part and return a concise handoff for the next stage.\n\nHANDOFF:\n{handoff}"
+    );
     let args = cli_args(command, model, prompt)?;
     let output = Command::new(command)
         .current_dir(repo_path)
@@ -1383,6 +1385,101 @@ async fn azure_pull_request_comment(
     }
     Ok("Azure DevOps pull request comment posted".into())
 }
+fn azure_pull_request_parts(raw: &str) -> Result<(String, String, String, u64), String> {
+    let parsed =
+        url::Url::parse(raw.trim()).map_err(|_| "Azure pull-request URL is invalid".to_string())?;
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    if parsed.scheme() != "https"
+        || !(host == "dev.azure.com"
+            || host.ends_with(".dev.azure.com")
+            || host.ends_with(".visualstudio.com"))
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+    {
+        return Err("Azure pull-request URL must use an approved HTTPS Azure DevOps host".into());
+    }
+    let segments: Vec<_> = parsed
+        .path_segments()
+        .map(|segments| segments.collect())
+        .unwrap_or_else(Vec::new);
+    let git_index = segments
+        .iter()
+        .position(|segment| *segment == "_git")
+        .ok_or_else(|| "Azure pull-request URL is missing its repository".to_string())?;
+    if git_index == 0 || git_index + 3 >= segments.len() || segments[git_index + 2] != "pullrequest"
+    {
+        return Err("Azure pull-request URL has an unsupported format".into());
+    }
+    let organization = if host == "dev.azure.com" {
+        segments.first().copied().unwrap_or_default()
+    } else {
+        host.split('.').next().unwrap_or_default()
+    };
+    let project_start = if host == "dev.azure.com" { 1 } else { 0 };
+    let project = segments[project_start..git_index].join("/");
+    let repository = segments[git_index + 1].to_string();
+    let pull_request_id = segments[git_index + 3]
+        .parse::<u64>()
+        .map_err(|_| "Azure pull-request number is invalid".to_string())?;
+    if organization.is_empty()
+        || project.is_empty()
+        || repository.is_empty()
+        || pull_request_id == 0
+    {
+        return Err("Azure pull-request URL is incomplete".into());
+    }
+    Ok((
+        organization.to_string(),
+        project,
+        repository,
+        pull_request_id,
+    ))
+}
+#[tauri::command]
+async fn azure_pull_request_approve(pull_request_url: String) -> Result<String, String> {
+    let (organization, project, repository, pull_request_id) =
+        azure_pull_request_parts(&pull_request_url)?;
+    let token = provider_token("azure-devops").await?;
+    let client = provider_http_client()?;
+    let identity_endpoint = format!(
+        "https://dev.azure.com/{organization}/_apis/connectionData?connectOptions=1&lastChangeId=-1&lastChangeId64=-1&api-version=7.1"
+    );
+    let identity_response = client
+        .get(identity_endpoint)
+        .basic_auth("", Some(&token))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !identity_response.status().is_success() {
+        return Err(format!(
+            "Azure DevOps returned {} while resolving the signed-in user",
+            identity_response.status()
+        ));
+    }
+    let identity: serde_json::Value = identity_response.json().await.map_err(|e| e.to_string())?;
+    let reviewer_id = identity["authenticatedUser"]["id"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Azure DevOps did not return the signed-in user identity".to_string())?;
+    let endpoint = format!(
+        "https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repository}/pullRequests/{pull_request_id}/reviewers/{reviewer_id}?api-version=7.1"
+    );
+    let response = client
+        .put(endpoint)
+        .basic_auth("", Some(&token))
+        .json(&serde_json::json!({"vote": 10}))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Azure DevOps returned {} while approving the pull request",
+            response.status()
+        ));
+    }
+    Ok("Azure DevOps pull request approved".into())
+}
 #[tauri::command]
 async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRepo>, String> {
     let token = provider_token("github").await?;
@@ -1443,7 +1540,9 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
     let client = provider_http_client()?;
     let mut added = 0;
     for name in names {
-        let endpoint=format!("https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc");
+        let endpoint = format!(
+            "https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc"
+        );
         let response = client
             .get(endpoint)
             .header("User-Agent", "Wand")
@@ -1802,7 +1901,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,create_git_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,create_git_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn run_agent_cli(
@@ -2177,5 +2276,18 @@ mod tests {
         assert_eq!(columns, 3);
         assert_eq!(thread_columns, 1);
         assert_eq!(seeded, 1);
+    }
+
+    #[test]
+    fn parses_supported_azure_pull_request_urls() {
+        let parts = azure_pull_request_parts(
+            "https://dev.azure.com/acme/Platform/_git/wand/pullrequest/42?view=overview",
+        )
+        .unwrap();
+        assert_eq!(parts, ("acme".into(), "Platform".into(), "wand".into(), 42));
+        assert!(
+            azure_pull_request_parts("https://example.com/acme/Platform/_git/wand/pullrequest/42")
+                .is_err()
+        );
     }
 }
