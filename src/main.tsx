@@ -106,6 +106,7 @@ type Task = {
   cron: string;
   active: boolean;
   agents: string[];
+  status?: string;
 };
 type AgentWorkflow = { name: string; agents: string[]; steps: string[] };
 const defaultRepos: Repo[] = [];
@@ -238,7 +239,8 @@ function App() {
           rows.map((r) => ({
             ...r,
             provider: "Agent chain",
-            active: r.status !== "failed",
+            active: r.status !== "failed" && r.status !== "cancelled",
+            status: r.status,
             agents: JSON.parse(r.agents || "[]"),
           })),
         ),
@@ -521,6 +523,10 @@ function App() {
     setView("tasks");
   };
   const runTask = async (t: Task) => {
+    if (t.status === "cancelled") {
+      setNotice("Cancelled tasks cannot be run again. Create a new task instead.");
+      return;
+    }
     const selected = t.agents
       .map((id) => agentCatalog.find((a) => a.id === id))
       .filter(Boolean) as Agent[];
@@ -565,6 +571,17 @@ function App() {
       setNotice(
         message || `Unable to start ${chain || "agent chain"}. Check CLI access in Settings.`,
       );
+    }
+  };
+  const cancelTask = async (task: Task) => {
+    try {
+      await invoke("cancel_task", { taskId: task.id });
+      setTasks((current) => current.map((item) => item.id === task.id
+        ? { ...item, active: false, status: "cancelled" }
+        : item));
+      setNotice(`Cancelled ${task.name}`);
+    } catch (error) {
+      setNotice(String(error).replace(/^Error:\s*/i, ""));
     }
   };
   const nav = (v: View) => (
@@ -717,7 +734,7 @@ function App() {
         ) : view === "threads" ? (
           <Threads repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
-          <Tasks tasks={tasks} addTask={addTask} runTask={runTask} />
+          <Tasks tasks={tasks} addTask={addTask} runTask={runTask} cancelTask={cancelTask} />
         ) : view === "notifications" ? (
           <Notifications />
         ) : (
@@ -1114,10 +1131,12 @@ function Tasks({
   tasks,
   addTask,
   runTask,
+  cancelTask,
 }: {
   tasks: Task[];
   addTask: () => void;
   runTask: (t: Task) => void;
+  cancelTask: (t: Task) => void;
 }) {
   type Run = {
     id: string;
@@ -1151,11 +1170,13 @@ function Tasks({
     running: runs.filter((r) => r.status === "running").length,
     completed: runs.filter((r) => r.status === "completed").length,
     failed: runs.filter((r) => r.status === "failed").length,
+    cancelled: runs.filter((r) => r.status === "cancelled").length,
   };
   const summaryItems: Array<[string, number, string]> = [
     ["running", summary.running, "Running"],
     ["completed", summary.completed, "Completed"],
     ["failed", summary.failed, "Failed"],
+    ["cancelled", summary.cancelled, "Cancelled"],
   ];
   const retry = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
@@ -1197,12 +1218,15 @@ function Tasks({
             </p>
           </div>
           <code>{t.cron}</code>
-          <span className={"tag " + (t.active ? "green" : "blue")}>
-            {t.active ? "Active" : "Paused"}
+          <span className={"tag " + (t.status === "cancelled" ? "red" : t.active ? "green" : "blue")}>
+            {t.status === "cancelled" ? "Cancelled" : t.active ? "Active" : "Paused"}
           </span>
-          <button className="run" onClick={() => runTask(t)}>
+          {t.status !== "cancelled" && <button className="run" onClick={() => runTask(t)}>
             <Play size={14} /> Run now
-          </button>
+          </button>}
+          {(t.status === "queued" || t.status === "running" || t.active) && <button className="retry-run" onClick={() => cancelTask(t)}>
+            Cancel
+          </button>}
         </div>
       ))}
       <div className="sectionhead">
