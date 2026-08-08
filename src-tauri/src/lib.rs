@@ -1997,7 +1997,7 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         .ok()
         .flatten()
     };
-    let Some(base) = base else {
+    let Some(raw_base) = base else {
         emit_provider_health(
             &app,
             "azure-devops",
@@ -2005,6 +2005,18 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
             Some("Azure DevOps organization URL is not configured".into()),
         );
         return;
+    };
+    let base = match validate_azure_org_url(&raw_base) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_provider_health(
+                &app,
+                "azure-devops",
+                "error",
+                Some(format!("Stored Azure DevOps URL is invalid: {error}")),
+            );
+            return;
+        }
     };
     let client = match provider_http_client() {
         Ok(value) => value,
