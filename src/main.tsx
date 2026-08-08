@@ -1056,6 +1056,16 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
       setError(String(e));
     }
   };
+  const createWorktree = async () => {
+    const values = await askModal("Create a repository worktree", [{ id: "branch", label: "Branch name", placeholder: "wand/feature-name", value: "wand/" }], "Wand creates an isolated worktree under .wand/worktrees.");
+    if (!values?.branch) return;
+    try { const path = await invoke<string>("create_git_worktree", { repoPath: repo.path, branch: values.branch }); setError(`Worktree ready: ${path}`); } catch (e) { setError(String(e)); }
+  };
+  const applyPatch = async () => {
+    const values = await askModal("Apply a Git patch", [{ id: "patch", label: "Unified diff", placeholder: "diff --git …", multiline: true, maxLength: 200000 }], "Wand validates the patch with git apply --check before applying it to the selected repository.");
+    if (!values?.patch) return;
+    try { await invoke("apply_git_patch", { repoPath: repo.path, patch: values.patch }); await load(); setError("Patch applied successfully."); } catch (e) { setError(String(e)); }
+  };
   const save = async () => {
     try {
       setSaving(true);
@@ -1120,6 +1130,8 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
           >
             {saving ? "Saving…" : "Save"}
           </button>
+          <button className="outline" onClick={createWorktree}>Worktree</button>
+          <button className="outline" onClick={applyPatch}>Apply patch</button>
           <button className="primary" onClick={load}>
             Open
           </button>
