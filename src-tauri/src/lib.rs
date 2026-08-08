@@ -541,6 +541,40 @@ fn detect_clis() -> Vec<CliStatus> {
         })
         .collect()
 }
+fn cli_access_from_db(conn: &Connection) -> Result<Vec<String>, String> {
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT value FROM workspace_settings WHERE key='allowed-clis'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(value
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+        .unwrap_or_default())
+}
+#[tauri::command]
+fn cli_access(db: State<Db>) -> Result<Vec<String>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    cli_access_from_db(&conn)
+}
+#[tauri::command]
+fn save_cli_access(clis: Vec<String>, db: State<Db>) -> Result<(), String> {
+    let mut normalized = clis
+        .into_iter()
+        .filter_map(|cli| allowed_cli(cli.trim()).map(str::to_string))
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR REPLACE INTO workspace_settings(key,value) VALUES ('allowed-clis',?1)",
+        params![serde_json::to_string(&normalized).map_err(|e| e.to_string())?],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
 fn legacy_provider_service(provider: &str) -> Result<&'static str, String> {
     match provider {
         "github" => Ok("wand-github-pat"),
@@ -739,6 +773,10 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
         .to_string();
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let allowed = cli_access_from_db(&conn)?;
+        if !allowed.iter().any(|item| item == &command) {
+            return Err(format!("CLI runtime '{command}' is disabled in Wand settings"));
+        }
         let (repo_name, stored_path): (String, String) = conn
             .query_row(
                 "SELECT tasks.repo,repos.path FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
@@ -816,6 +854,15 @@ fn launch_chain_worker(
                 .and_then(|item| allowed_cli(&item.cli))
                 .unwrap_or(&command)
                 .to_string();
+            if let Ok(conn) = db_arc.lock() {
+                let allowed = cli_access_from_db(&conn).unwrap_or_default();
+                if !allowed.iter().any(|item| item == &stage_command) {
+                    let message = format!("CLI runtime '{stage_command}' is disabled in Wand settings");
+                    finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                    let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
+                    return;
+                }
+            }
             let stage_model = config.map(|item| item.model.as_str()).unwrap_or(&req.model);
             let responsibility = config
                 .map(|item| item.responsibility.as_str())
@@ -1374,7 +1421,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,save_provider_token,provider_status,save_provider_url,provider_url,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![run_agent_cli,read_repo_file,write_repo_file,git_diff,git_file_versions,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,list_tasks,list_task_runs,list_events,list_agents,save_agent,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,provider_status,save_provider_url,provider_url,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn run_agent_cli(
