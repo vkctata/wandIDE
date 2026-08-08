@@ -1758,6 +1758,7 @@ function CliManager() {
 function ProviderAccess() {
   const [status, setStatus] = useState<Record<string, boolean>>({});
   const [syncing, setSyncing] = useState("");
+  const [testing, setTesting] = useState("");
   const [message, setMessage] = useState("");
   const refresh = () =>
     Promise.all(
@@ -1826,6 +1827,39 @@ function ProviderAccess() {
       setSyncing("");
     }
   };
+  const test = async (provider: string) => {
+    try {
+      setTesting(provider);
+      setMessage("");
+      let providerUrl: string | undefined;
+      if (provider === "azure-devops") {
+        providerUrl =
+          (await invoke<string | null>("provider_url", { provider })) ||
+          undefined;
+        if (!providerUrl) {
+          const values = await askModal("Azure DevOps organization", [
+            {
+              id: "url",
+              label: "Organization URL",
+              placeholder: "https://dev.azure.com/your-org",
+            },
+          ]);
+          providerUrl = values?.url || undefined;
+          if (!providerUrl) return;
+          await invoke("save_provider_url", { provider, url: providerUrl });
+        }
+      }
+      const result = await invoke<string>("test_provider_connection", {
+        provider,
+        providerUrl,
+      });
+      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"}: ${result}.`);
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setTesting("");
+    }
+  };
   return (
     <div className="provider-access">
       <div className="sectionhead">
@@ -1849,6 +1883,13 @@ function ProviderAccess() {
           </div>
           <button className="outline" onClick={() => connect(id)}>
             {status[id] ? "Replace PAT" : "Connect"}
+          </button>
+          <button
+            className="outline"
+            disabled={!status[id] || !!syncing || !!testing}
+            onClick={() => test(id)}
+          >
+            {testing === id ? "Testing…" : "Test connection"}
           </button>
           <button
             className="outline"
