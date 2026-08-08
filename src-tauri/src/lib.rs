@@ -209,25 +209,41 @@ fn save_repository(name: String, path: String, db: State<Db>) -> Result<ScannedR
 
 #[tauri::command]
 fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
+    if task.id.trim().is_empty() {
+        return Err("Task id cannot be empty".into());
+    }
     if task.name.trim().is_empty() {
         return Err("Task name cannot be empty".into());
     }
+    if task.name.chars().count() > 200 {
+        return Err("Task name must be 200 characters or fewer".into());
+    }
     if task.repo.trim().is_empty() {
         return Err("A repository is required".into());
+    }
+    if task.agents.is_empty() {
+        return Err("At least one agent is required".into());
+    }
+    let mut unique_agents = std::collections::HashSet::new();
+    if task.agents.iter().any(|agent| {
+        agent.trim().is_empty() || !unique_agents.insert(agent.trim().to_string())
+    }) {
+        return Err("Task agents must be non-empty and unique".into());
     }
     if task.cron.trim() != "one-off" {
         parse_cron(task.cron.trim())
             .map_err(|error| format!("Invalid cron expression: {error}"))?;
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let repo_provider: Option<String> = conn
+    let repo_record: Option<(String, String)> = conn
         .query_row(
-            "SELECT provider FROM repos WHERE name=?1",
+            "SELECT provider,path FROM repos WHERE name=?1",
             params![task.repo.trim()],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
+        .optional()
         .map_err(|e| e.to_string())?;
-    let Some(repo_provider) = repo_provider else {
+    let Some((repo_provider, repo_path)) = repo_record else {
         return Err(format!("Unknown repository: {}", task.repo.trim()));
     };
     if repo_provider != "local" {
@@ -236,6 +252,7 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
             task.repo.trim()
         ));
     }
+    registered_repo_root(&repo_path, &conn)?;
     let enabled_clis = cli_access_from_db(&conn)?;
     for agent_id in &task.agents {
         let (scope, cli): (String, String) = conn
