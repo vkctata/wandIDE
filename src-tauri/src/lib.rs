@@ -1311,6 +1311,17 @@ fn launch_chain_worker(
                 .and_then(|item| allowed_cli(&item.cli))
                 .unwrap_or(&command)
                 .to_string();
+            if installed_cli_path(&stage_command).is_none() {
+                let message = format!(
+                    "CLI runtime '{stage_command}' is no longer installed on this machine"
+                );
+                finish_run(&db_arc, &req.run_id, "failed", Some(&message));
+                let _ = app.emit(
+                    "wand://agent",
+                    serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
+                );
+                return;
+            }
             if let Ok(conn) = db_arc.lock() {
                 let allowed = cli_access_from_db(&conn).unwrap_or_default();
                 if !allowed.iter().any(|item| item == &stage_command) {
@@ -2706,6 +2717,12 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn agent_runtime_selection_is_allowlisted() {
+        assert_eq!(allowed_cli("codex"), Some("codex"));
+        assert_eq!(allowed_cli("shell"), None);
     }
 
     #[test]
