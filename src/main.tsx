@@ -1401,6 +1401,16 @@ function Notifications() {
       setActionMessage(String(error));
     }
   };
+  const commentOnAzurePullRequest = async (item: Notice) => {
+    const values = await askModal("Comment on Azure pull request", [{ id: "body", label: "Comment", placeholder: "Share context with the team…", multiline: true, maxLength: 4000 }], item.repo);
+    if (!values?.body) return;
+    try {
+      setActionMessage(await invoke<string>("azure_pull_request_comment", { url: item.url, body: values.body }));
+      await sync();
+    } catch (error) {
+      setActionMessage(String(error));
+    }
+  };
   return (
     <section className="content">
       <div className="hero compact">
@@ -1451,6 +1461,7 @@ function Notifications() {
               <a className="textbtn" href={item.url || "#"} target="_blank" rel="noreferrer">Open</a>
               {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "comment")}>Comment</button>}
               {item.provider === "github" && <button className="textbtn" onClick={() => actOnPullRequest(item, "approve")}>Approve</button>}
+              {item.provider === "azure-devops" && <button className="textbtn" onClick={() => commentOnAzurePullRequest(item)}>Comment</button>}
             </div>
           </div>
         ))
