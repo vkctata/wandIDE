@@ -1204,11 +1204,35 @@ fn launch_chain_worker(
     app: AppHandle,
 ) {
     thread::spawn(move || {
-        if let Ok(conn) = db_arc.lock() {
-            let _ = conn.execute(
-                "UPDATE tasks SET status='running' WHERE id=?1",
-                params![req.task_id],
+        let cancelled_before_start = match db_arc.lock() {
+            Ok(conn) => {
+                let changed = conn
+                    .execute(
+                        "UPDATE tasks SET status='running' WHERE id=?1 AND status != 'cancelled'",
+                        params![req.task_id],
+                    )
+                    .unwrap_or(0);
+                changed == 0
+                    && conn
+                        .query_row(
+                            "SELECT status FROM tasks WHERE id=?1",
+                            params![req.task_id],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .map(|status| status == "cancelled")
+                        .unwrap_or(false)
+            }
+            Err(_) => false,
+        };
+        if cancelled_before_start {
+            finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
+            let _ = app.emit(
+                "wand://agent",
+                serde_json::json!({"task_id":req.task_id,"status":"cancelled","error":"Cancelled by user"}),
             );
+            return;
+        }
+        if let Ok(conn) = db_arc.lock() {
             if let Some(run_id) = &req.run_id {
                 let _ = conn.execute(
                     "UPDATE task_runs SET status='running',started_at=?2 WHERE id=?1",
