@@ -229,8 +229,6 @@ struct NewAgent {
     color: String,
     cli: String,
     model: String,
-    #[serde(default)]
-    system_prompt: String,
     #[serde(default = "default_agent_scope")]
     scope: String,
 }
@@ -302,9 +300,18 @@ fn save_agent(agent: NewAgent, db: State<Db>) -> Result<(), String> {
     if agent.id.trim().is_empty() || agent.name.trim().is_empty() {
         return Err("Agent id and name are required".into());
     }
+    if agent.role.chars().count() > 1000 {
+        return Err("Agent responsibility must be 1000 characters or fewer".into());
+    }
+    if allowed_cli(&agent.cli).is_none() {
+        return Err("Unsupported CLI runtime".into());
+    }
+    if agent.model.trim().is_empty() {
+        return Err("Agent model is required".into());
+    }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     ensure_agent_prompt(&conn).map_err(|e| e.to_string())?;
-    conn.execute("INSERT OR REPLACE INTO agents(id,name,role,skills,color,cli,model,system_prompt,scope,built_in) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0)",params![agent.id,agent.name,agent.role,serde_json::to_string(&agent.skills).map_err(|e|e.to_string())?,agent.color,agent.cli,agent.model,agent.system_prompt,agent.scope]).map_err(|e|e.to_string())?;
+    conn.execute("INSERT OR REPLACE INTO agents(id,name,role,skills,color,cli,model,system_prompt,scope,built_in) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0)",params![agent.id,agent.name,agent.role,serde_json::to_string(&agent.skills).map_err(|e|e.to_string())?,agent.color,agent.cli,agent.model,agent.role,agent.scope]).map_err(|e|e.to_string())?;
     Ok(())
 }
 
