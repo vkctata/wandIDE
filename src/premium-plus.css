@@ -418,14 +418,14 @@ body[data-theme="lavender"] {
 }
 
 .account-heading strong {
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
   font-weight: 700;
   color: var(--wand-ink, #f1f5f9);
 }
 
 .account-heading small {
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 11px;
   color: color-mix(in srgb, var(--wand-accent, #9678ff) 75%, var(--wand-ink, #94a3b8));
   margin-top: 2px;
@@ -441,7 +441,7 @@ body[data-theme="lavender"] {
   color: var(--wand-ink, #cbd5e1);
   padding: 9px 10px;
   border-radius: 8px;
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -558,7 +558,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
 }
 
 .settings-modal-header h2 {
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 20px;
   font-weight: 700;
   margin: 0;
@@ -614,7 +614,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
   border-radius: 9px;
   background: transparent;
   color: var(--wand-muted, #94a3b8);
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -671,7 +671,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
 }
 
 .settings-section-head h2 {
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 18px;
   font-weight: 700;
   margin: 2px 0 4px 0;
@@ -701,7 +701,7 @@ body[data-theme="lavender"] .account-dropdown button:hover {
   border: 1px solid var(--wand-border, rgba(255, 255, 255, 0.1));
   background: var(--wand-surface-2, rgba(255, 255, 255, 0.03));
   color: var(--wand-muted, #94a3b8);
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -865,7 +865,7 @@ body[data-theme="lavender"] .settings-nav-item.active {
 }
 
 .release-header h3 {
-  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, sans-serif;
+  font-family: 'Manrope', 'Avenir Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13.5px;
   font-weight: 700;
   color: var(--wand-ink, #f1f5f9);
