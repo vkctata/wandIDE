@@ -1740,6 +1740,21 @@ function ProviderAccess() {
     await invoke("save_provider_token", { provider, token: values.token });
     refresh();
   };
+  const disconnect = async (provider: string, name: string) => {
+    const confirmed = await askModal(
+      `Disconnect ${name}?`,
+      [],
+      "Wand will remove the PAT from the native credential store and stop syncing this provider.",
+    );
+    if (confirmed === null) return;
+    try {
+      await invoke("disconnect_provider", { provider });
+      await refresh();
+      setMessage(`${name} disconnected.`);
+    } catch (e) {
+      setMessage(String(e));
+    }
+  };
   const sync = async (provider: string) => {
     try {
       setSyncing(provider);
@@ -1806,6 +1821,15 @@ function ProviderAccess() {
           >
             {syncing === id ? "Syncing…" : "Sync repos"}
           </button>
+          {status[id] && (
+            <button
+              className="outline danger"
+              disabled={!!syncing}
+              onClick={() => disconnect(id, name)}
+            >
+              Disconnect
+            </button>
+          )}
         </div>
       ))}
       {message && <p className="provider-message">{message}</p>}
