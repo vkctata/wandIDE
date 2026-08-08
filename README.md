@@ -22,7 +22,7 @@ The current build provides the desktop-ready product foundation:
 - Configurable agent responsibilities (textarea, capped at 1,000 characters), supported CLI runtimes, model choices, skills, and repository scopes; every agent can be edited after creation
 - Repository-scoped agents created automatically when local repositories are scanned
 - Scheduled task execution with five- and seven-field cron expressions, durable run history, and background Rust scheduling
-- Background provider polling and normalized `wand://` events to the UI, with a persistent worker heartbeat indicator
+- Background provider polling and normalized `wand://` events to the UI, with a persistent worker heartbeat indicator and provider health errors
 - GitHub and Azure DevOps repository and pull-request comment synchronization
 - Repository threads with live human/agent messages and persisted agent handoff comments
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
