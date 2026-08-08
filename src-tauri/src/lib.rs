@@ -731,38 +731,115 @@ fn create_thread_message(
         return Err("Message cannot be empty".into());
     }
     let created_at = Utc::now().to_rfc3339();
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
     let agent_ids = agent_ids.unwrap_or_default();
-    for agent_id in &agent_ids {
-        let scope: String = conn
-            .query_row(
-                "SELECT scope FROM agents WHERE id=?1",
-                params![agent_id],
-                |row| row.get(0),
-            )
-            .map_err(|_| format!("Unknown agent mention: {agent_id}"))?;
-        if scope != "workspace" && scope != format!("repo:{repo}") {
-            return Err(format!(
-                "Agent {agent_id} is not available in repository {repo}"
-            ));
+    let mut launch_request: Option<ChainRequest> = None;
+    let message;
+    {
+        let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        for agent_id in &agent_ids {
+            let scope: String = tx
+                .query_row(
+                    "SELECT scope FROM agents WHERE id=?1",
+                    params![agent_id],
+                    |row| row.get(0),
+                )
+                .map_err(|_| format!("Unknown agent mention: {agent_id}"))?;
+            if scope != "workspace" && scope != format!("repo:{repo}") {
+                return Err(format!(
+                    "Agent {agent_id} is not available in repository {repo}"
+                ));
+            }
         }
+        tx.execute(
+            "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
+            params![
+                repo,
+                author,
+                body,
+                created_at,
+                serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        let id = tx.last_insert_rowid();
+        message = ThreadMessage {
+            id,
+            repo: repo.clone(),
+            author,
+            body: body.clone(),
+            created_at: created_at.clone(),
+            agent_ids: agent_ids.clone(),
+        };
+
+        if !agent_ids.is_empty() {
+            let cli = first_enabled_installed_cli(&tx)
+                .ok_or_else(|| "No enabled and installed CLI is available for this agent task".to_string())?;
+            let repo_path: String = tx
+                .query_row(
+                    "SELECT path FROM repos WHERE name=?1 AND (provider='local' OR provider='')",
+                    params![repo],
+                    |row| row.get(0),
+                )
+                .map_err(|_| "Tagged agent tasks require a local repository".to_string())?;
+            let repo_path = std::path::Path::new(&repo_path)
+                .canonicalize()
+                .map_err(|_| "The tagged repository folder is no longer available".to_string())?;
+            if !repo_path.is_dir() {
+                return Err("The tagged repository folder is no longer available".into());
+            }
+            let configs = agent_ids
+                .iter()
+                .filter_map(|agent_id| {
+                    tx.query_row(
+                        "SELECT cli,model,role,skills FROM agents WHERE id=?1",
+                        params![agent_id],
+                        |row| {
+                            let skills_json: String = row.get(3)?;
+                            Ok(AgentExecution {
+                                cli: row.get(0)?,
+                                model: row.get(1)?,
+                                responsibility: row.get(2)?,
+                                skills: serde_json::from_str(&skills_json).unwrap_or_default(),
+                            })
+                        },
+                    )
+                    .ok()
+                    .map(|config| (agent_id.clone(), config))
+                })
+                .collect::<HashMap<_, _>>();
+            let task_id = uuid::Uuid::new_v4().to_string();
+            let task_name: String = body.chars().take(120).collect();
+            let agents_json = serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES (?1,?2,?3,'one-off',?4,'queued',?5)",
+                params![task_id, task_name, repo, agents_json, created_at],
+            )
+            .map_err(|e| e.to_string())?;
+            let run_id = uuid::Uuid::new_v4().to_string();
+            tx.execute(
+                "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",
+                params![run_id, task_id, created_at],
+            )
+            .map_err(|e| e.to_string())?;
+            launch_request = Some(ChainRequest {
+                task_id,
+                prompt: body,
+                repo_path: repo_path.to_string_lossy().into_owned(),
+                agents: agent_ids,
+                cli,
+                model: "default".into(),
+                agent_configs: configs,
+                run_id: Some(run_id),
+            });
+        }
+        tx.commit().map_err(|e| e.to_string())?;
     }
-    let agent_ids_json = serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
-        params![repo, author, body, created_at, agent_ids_json],
-    )
-    .map_err(|e| e.to_string())?;
-    let id = conn.last_insert_rowid();
-    let message = ThreadMessage {
-        id,
-        repo,
-        author,
-        body,
-        created_at,
-        agent_ids,
-    };
     let _ = app.emit("wand://thread", &message);
+    if let Some(request) = launch_request {
+        let cli = request.cli.clone();
+        launch_chain_worker(request, cli, db.0.clone(), app.clone());
+    }
     Ok(message)
 }
 
