@@ -2656,6 +2656,29 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn registered_repo_root_rejects_unregistered_paths() {
+        let registered_path = std::env::temp_dir().join(format!("wand-registered-{}", uuid::Uuid::new_v4()));
+        let unregistered_path = std::env::temp_dir().join(format!("wand-unregistered-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&registered_path).unwrap();
+        std::fs::create_dir_all(&unregistered_path).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let registered = registered_path.to_string_lossy().to_string();
+        conn.execute(
+            "INSERT INTO repos(name,path,provider) VALUES ('registered',?1,'local')",
+            params![registered],
+        )
+        .unwrap();
+
+        assert!(registered_repo_root(registered_path.to_str().unwrap(), &conn).is_ok());
+        assert!(registered_repo_root(unregistered_path.to_str().unwrap(), &conn).is_err());
+
+        let _ = std::fs::remove_dir_all(&registered_path);
+        let _ = std::fs::remove_dir_all(&unregistered_path);
+    }
+
     use super::*;
 
     #[test]
