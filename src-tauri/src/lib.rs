@@ -737,6 +737,35 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
     let command = allowed_cli(&req.cli)
         .ok_or_else(|| "Unsupported CLI".to_string())?
         .to_string();
+    {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let (repo_name, stored_path): (String, String) = conn
+            .query_row(
+                "SELECT tasks.repo,repos.path FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
+                params![req.task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|_| "Task or repository does not exist".to_string())?;
+        if std::path::Path::new(&stored_path).canonicalize().ok()
+            != std::path::Path::new(&req.repo_path).canonicalize().ok()
+        {
+            return Err("Agent execution path does not match the task repository".into());
+        }
+        for agent_id in &req.agents {
+            let scope: String = conn
+                .query_row(
+                    "SELECT scope FROM agents WHERE id=?1",
+                    params![agent_id],
+                    |row| row.get(0),
+                )
+                .map_err(|_| format!("Unknown agent: {agent_id}"))?;
+            if scope != "workspace" && scope != format!("repo:{repo_name}") {
+                return Err(format!(
+                    "Agent {agent_id} is not available in repository {repo_name}"
+                ));
+            }
+        }
+    }
     let run_id = req
         .run_id
         .take()
