@@ -1,11 +1,12 @@
 {
   "name": "wand",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check:ipc": "node scripts/check-ipc-contract.mjs",
     "tauri": "tauri"
   },
   "overrides": {

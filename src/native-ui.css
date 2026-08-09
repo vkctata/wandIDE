@@ -253,6 +253,34 @@ body[data-theme="paper"] header,
 body[data-theme="mint"] header,
 body[data-theme="lavender"] header { background: color-mix(in srgb, var(--wand-surface-2) 92%, transparent); }
 
+/* The timeline is also a surface: keep its cards and text readable in light themes. */
+body[data-theme="daylight"] .event,
+body[data-theme="paper"] .event,
+body[data-theme="mint"] .event,
+body[data-theme="lavender"] .event {
+  background: var(--wand-surface) !important;
+  border-color: var(--wand-border) !important;
+  color: #26334a;
+}
+body[data-theme="daylight"] .event:hover,
+body[data-theme="paper"] .event:hover,
+body[data-theme="mint"] .event:hover,
+body[data-theme="lavender"] .event:hover {
+  background: color-mix(in srgb, var(--wand-accent) 7%, var(--wand-surface)) !important;
+}
+body[data-theme="daylight"] .event h3,
+body[data-theme="paper"] .event h3,
+body[data-theme="mint"] .event h3,
+body[data-theme="lavender"] .event h3 { color: #26334a !important; }
+body[data-theme="daylight"] .event p,
+body[data-theme="paper"] .event p,
+body[data-theme="mint"] .event p,
+body[data-theme="lavender"] .event p { color: #65758d !important; }
+body[data-theme="daylight"] .event .kind,
+body[data-theme="paper"] .event .kind,
+body[data-theme="mint"] .event .kind,
+body[data-theme="lavender"] .event .kind { color: #526581 !important; }
+
 @media (max-width: 760px) {
   aside { width: 68px; }
   .content { padding: 30px 20px 56px; }

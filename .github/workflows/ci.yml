@@ -26,6 +26,7 @@ jobs:
       - run: npm ci
       - name: Verify canonical logo copies match
         run: cmp src-tauri/icons/wand.svg website/assets/wand-logo.svg
+      - run: npm run check:ipc
       - run: npm run build
 
   rust-check:
@@ -89,8 +90,8 @@ jobs:
           includeDebug: false
           tagName: wand-v__VERSION__
           releaseName: Wand v__VERSION__
-          releaseBody: Signed Wand desktop release
-          releaseDraft: true
+          releaseBody: Signed Wand desktop release for macOS Apple Silicon, macOS Intel, Windows, and Linux.
+          releaseDraft: false
           prerelease: false
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

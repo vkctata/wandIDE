@@ -140,6 +140,12 @@ The resulting bundles are uploaded as workflow artifacts. Tagged releases produc
 
 The release matrix covers Apple Silicon macOS, Intel macOS, Windows x64, and Linux x64.
 
+Tagged releases are published automatically after the desktop matrix completes. The public release page includes macOS DMG and app archives, Windows EXE/MSI installers, Linux DEB/RPM/AppImage packages, and signed updater metadata.
+
+### CLI runtime discovery
+
+Settings detects Claude, Codex, Kimi, and Gemini CLI installations from the desktop process environment. Because macOS apps launched from Finder do not inherit an interactive shell's PATH, Wand also checks standard Homebrew, npm, Bun, Cargo, pnpm, and nvm locations. Windows npm command shims (`.exe`, `.cmd`, and `.bat`) are supported. Users still explicitly enable detected runtimes in Settings before an agent can execute.
+
 ## Credential security
 
 Provider PATs can be disconnected from Settings at any time; disconnect removes the installation-scoped and legacy credential entries and clears Azure organization settings. Provider PATs are never stored in Wand's SQLite database, browser storage, a `.pfx` file, or a repository. Wand stores them through the native OS credential manager: macOS Keychain, Windows Credential Manager, or the Linux Secret Service/keyring backend. Each installation gets a random installation namespace in the same OS credential manager, so one installation cannot accidentally reuse another installation's credential slot. Existing legacy Wand credentials are migrated into the installation-scoped slot on first use.
@@ -157,7 +163,7 @@ TAURI_SIGNING_PRIVATE_KEY
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
-The private key must never be committed. The public key is embedded in the desktop configuration and is safe to publish. The release workflow creates signed updater artifacts and drafts a GitHub Release for approval.
+The private key must never be committed. The public key is embedded in the desktop configuration and is safe to publish. The release workflow creates signed updater artifacts and publishes a GitHub Release after the matrix succeeds.
 
 ## Product concepts
 
