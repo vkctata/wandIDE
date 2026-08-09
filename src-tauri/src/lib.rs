@@ -1533,6 +1533,11 @@ fn task_failure_status(cron: &str) -> &'static str {
         "queued"
     }
 }
+fn agent_runtime_enabled_and_installed(cli: &str, enabled_clis: &[String]) -> bool {
+    allowed_cli(cli).is_some()
+        && enabled_clis.iter().any(|item| item == cli)
+        && installed_cli_path(cli).is_some()
+}
 fn mark_task_failed_or_requeue(db: &Arc<Mutex<Connection>>, task_id: &str) {
     if let Ok(conn) = db.lock() {
         let cron: Result<String, _> = conn.query_row(
@@ -2727,9 +2732,8 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                         );
                                         continue;
                                     };
-                                    let fallback_cli = cli.to_string();
                                     let enabled_clis = cli_access_from_db(&conn).unwrap_or_default();
-                                    let agent_configs = agents
+                                    let agent_configs: HashMap<String, AgentExecution> = agents
                                         .iter()
                                         .filter_map(|agent_id| {
                                             conn.query_row(
@@ -2737,13 +2741,13 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                                 params![agent_id],
                                                 |r| {
                                                     let stored_cli: String = r.get(0)?;
-                                                    let stage_cli = if enabled_clis.iter().any(|item| item == &stored_cli)
-                                                        && installed_cli_path(&stored_cli).is_some()
-                                                    {
-                                                        stored_cli
-                                                    } else {
-                                                        fallback_cli.clone()
-                                                    };
+                                                    if !agent_runtime_enabled_and_installed(
+                                                        &stored_cli,
+                                                        &enabled_clis,
+                                                    ) {
+                                                        return Err(rusqlite::Error::QueryReturnedNoRows);
+                                                    }
+                                                    let stage_cli = stored_cli;
                                                     let skills_json: String = r.get(3)?;
                                                     Ok(AgentExecution {
                                                         cli: stage_cli,
@@ -2758,6 +2762,25 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                             .map(|config| (agent_id.clone(), config))
                                         })
                                         .collect();
+                                    if agent_configs.len() != agents.len() {
+                                        let skipped = format!(
+                                            "Scheduled task skipped: {name} requires every selected agent runtime to be enabled and installed"
+                                        );
+                                        let _ = conn.execute(
+                                            "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
+                                            params!["scheduler.skipped", skipped, now.to_rfc3339()],
+                                        );
+                                        let _ = app.emit(
+                                            "wand://scheduler",
+                                            serde_json::json!({
+                                                "task_id": id,
+                                                "name": name,
+                                                "status": "skipped",
+                                                "reason": "every selected agent runtime must be enabled and installed"
+                                            }),
+                                        );
+                                        continue;
+                                    }
                                     let run_id = format!("{}-{}", id, slot);
                                     let run_inserted = conn
                                         .execute(
@@ -3414,6 +3437,15 @@ mod tests {
     fn agent_runtime_selection_is_allowlisted() {
         assert_eq!(allowed_cli("codex"), Some("codex"));
         assert_eq!(allowed_cli("shell"), None);
+    }
+
+    #[test]
+    fn scheduler_does_not_substitute_an_unavailable_agent_runtime() {
+        assert!(!agent_runtime_enabled_and_installed(
+            "definitely-not-installed",
+            &["codex".into()]
+        ));
+        assert!(!agent_runtime_enabled_and_installed("codex", &[]));
     }
 
     #[test]
