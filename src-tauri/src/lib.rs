@@ -41,6 +41,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE thread_messages ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'",
         [],
     );
+    let _ = conn.execute("ALTER TABLE thread_messages ADD COLUMN parent_id INTEGER", []);
     let _ = conn.execute(
         "ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",
         [],

@@ -1253,6 +1253,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   const [draft, setDraft] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
   const [postError, setPostError] = useState("");
+  const [selected, setSelected] = useState<Message | null>(null);
   const hasRepo = repo.name !== emptyRepo.name;
   const load = () =>
     hasRepo
@@ -1341,6 +1342,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               Could not post this thread: {postError}
             </div>
           )}
+          <div className="thread-layout">
           <div className="threadlist">
             {messages.length === 0 ? (
               <div className="emptyhint">
@@ -1353,7 +1355,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               </div>
             ) : (
               messages.map((message) => (
-                <div className="thread" key={message.id}>
+                <button className={"thread thread-card " + (selected?.id === message.id ? "selected" : "")} key={message.id} onClick={() => setSelected(message)}>
                   <div className="threadicon">
                     <Hash size={16} />
                   </div>
@@ -1363,12 +1365,20 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                       {message.author} · {message.created_at}
                     </p>
                   </div>
-                  {message.agent_ids?.map((id) => <span className="tag purple" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
-                  <span className="tag blue">message</span>
+                  {message.agent_ids?.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
+                  <span className="tag blue">post</span>
                   <ChevronDown size={14} />
-                </div>
+                </button>
               ))
             )}
+          </div>
+          {selected && <aside className="thread-detail-pane">
+            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" onClick={() => setSelected(null)}>×</button></div>
+            <p className="thread-detail-time">{selected.created_at}</p>
+            <div className="thread-detail-body">{selected.body}</div>
+            {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
+            <div className="thread-comments"><h3>Comments</h3><p>Comments on this post will appear here.</p><textarea placeholder="Write a comment…" /></div>
+          </aside>}
           </div>
         </>
       )}
