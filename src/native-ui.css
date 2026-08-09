@@ -855,3 +855,14 @@ body[data-theme="daylight"] aside .repo.selected {
   color: #fffdf8 !important;
   background: rgba(201, 255, 79, .15) !important;
 }
+
+/* Let the rail and title bar meet as one continuous piece of chrome. The
+   rounded lower-left edge eases the workspace canvas into the frame. */
+body[data-theme] aside {
+  border-right: 0 !important;
+}
+body[data-theme] .app > main > header {
+  border-bottom: 0 !important;
+  border-bottom-left-radius: 24px;
+  overflow: hidden;
+}
