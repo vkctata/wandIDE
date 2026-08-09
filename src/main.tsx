@@ -2075,13 +2075,14 @@ function CliManager() {
   );
 }
 function ProviderAccess() {
+  const providerLabel = (provider: string) => provider === "github" ? "GitHub" : provider === "azure-devops" ? "Azure DevOps" : "Linear";
   const [status, setStatus] = useState<Record<string, boolean>>({});
   const [syncing, setSyncing] = useState("");
   const [testing, setTesting] = useState("");
   const [message, setMessage] = useState("");
   const refresh = () =>
     Promise.all(
-      ["github", "azure-devops"].map(
+      ["github", "azure-devops", "linear"].map(
         async (p) =>
           [
             p,
@@ -2096,7 +2097,7 @@ function ProviderAccess() {
   }, []);
   const connect = async (provider: string) => {
     const values = await askModal(
-      `Connect ${provider === "github" ? "GitHub" : "Azure DevOps"}`,
+      `Connect ${providerLabel(provider)}`,
       [
         {
           id: "token",
@@ -2111,7 +2112,7 @@ function ProviderAccess() {
     try {
       await invoke("save_provider_token", { provider, token: values.token });
       await refresh();
-      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"} connected securely.`);
+      setMessage(`${providerLabel(provider)} connected securely.`);
     } catch (cause) {
       setMessage(
         `Could not save ${provider === "github" ? "GitHub" : "Azure DevOps"} credentials: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -2156,7 +2157,7 @@ function ProviderAccess() {
       }
       const args = provider === "azure-devops" ? { providerUrl } : {};
       const rows = await invoke<any[]>(
-        provider === "github" ? "sync_github" : "sync_azure_devops",
+        provider === "github" ? "sync_github" : provider === "linear" ? "sync_linear" : "sync_azure_devops",
         args,
       );
       setMessage(
@@ -2212,6 +2213,7 @@ function ProviderAccess() {
       {[
         ["github", "GitHub"],
         ["azure-devops", "Azure DevOps"],
+        ["linear", "Linear"],
       ].map(([id, name]) => (
         <div className="provider-row" key={id}>
           <div>
