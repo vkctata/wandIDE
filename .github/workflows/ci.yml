@@ -26,6 +26,7 @@ jobs:
       - run: npm ci
       - name: Verify canonical logo copies match
         run: cmp src-tauri/icons/wand.svg website/assets/wand-logo.svg
+      - run: npm run check:ipc
       - run: npm run build
 
   rust-check:

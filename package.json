@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check:ipc": "node scripts/check-ipc-contract.mjs",
     "tauri": "tauri"
   },
   "overrides": {
