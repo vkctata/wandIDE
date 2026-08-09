@@ -2031,6 +2031,40 @@ async fn sync_linear(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
     Ok(out)
 }
 
+async fn sync_linear_activity_impl(db: &Db, app: AppHandle) -> Result<u32, String> {
+    let token = provider_token("linear").await?;
+    let response = provider_http_client()?
+        .post("https://api.linear.app/graphql")
+        .header("Content-Type", "application/json")
+        .header("Authorization", &token)
+        .json(&serde_json::json!({"query":"query TeamIssues { teams(first: 100) { nodes { id key name issues(first: 50, orderBy: updatedAt) { nodes { id identifier title url updatedAt creator { name } } } } } }"}))
+        .send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() { return Err(format!("Linear returned {}", response.status())); }
+    let payload: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    if payload.get("errors").and_then(|v| v.as_array()).is_some_and(|v| !v.is_empty()) {
+        return Err("Linear returned a GraphQL error while loading issues".into());
+    }
+    let teams = payload["data"]["teams"]["nodes"].as_array().ok_or_else(|| "Linear returned no teams".to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut added = 0;
+    for team in teams {
+        let repo = format!("{} · {}", team["key"].as_str().unwrap_or("Linear"), team["name"].as_str().unwrap_or("team"));
+        for issue in team["issues"]["nodes"].as_array().into_iter().flatten() {
+            let id = format!("linear:{}", issue["id"].as_str().unwrap_or_default());
+            if id == "linear:" { continue; }
+            let changed = conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'linear',?2,?3,?4,?5,?6,1,?7)", params![id, repo, issue["title"].as_str().unwrap_or("Linear issue"), issue["identifier"].as_str().unwrap_or_default(), issue["url"].as_str().unwrap_or_default(), issue["creator"]["name"].as_str().unwrap_or("Linear"), issue["updatedAt"].as_str().unwrap_or_default()]).map_err(|e| e.to_string())?;
+            added += changed as u32;
+        }
+    }
+    let _ = app.emit("wand://notifications", serde_json::json!({"provider":"linear","added":added}));
+    Ok(added)
+}
+
+#[tauri::command]
+async fn sync_linear_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, String> {
+    sync_linear_activity_impl(&db, app).await
+}
+
 #[tauri::command]
 async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, String> {
     let token = provider_token("github").await?;
@@ -2282,7 +2316,7 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     emit_provider_health(&app, "github", "ok", None);
 }
 async fn report_provider_credentials(app: AppHandle) {
-    for provider in ["github", "azure-devops"] {
+    for provider in ["github", "azure-devops", "linear"] {
         if let Err(error) = provider_token(provider).await {
             let _=app.emit("wand://provider",serde_json::json!({"provider":provider,"status":"error","error":format!("Credential check failed: {error}")}));
         }
@@ -2434,6 +2468,12 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     emit_provider_health(&app, "azure-devops", "ok", None);
 }
 
+async fn background_linear_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
+    if provider_token("linear").await.is_err() { return; }
+    let db_state = Db(db);
+    let _ = sync_linear_activity_impl(&db_state, app).await;
+}
+
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
     thread::spawn(move || {
         let mut last_due: HashMap<String, String> = HashMap::new();
@@ -2469,7 +2509,8 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 tauri::async_runtime::spawn(async move {
                     report_provider_credentials(poll_app.clone()).await;
                     background_github_activity(poll_db.clone(), poll_app.clone()).await;
-                    background_azure_activity(poll_db, poll_app).await;
+                    background_azure_activity(poll_db.clone(), poll_app.clone()).await;
+                    background_linear_activity(poll_db, poll_app).await;
                     poll_running.store(false, Ordering::Release);
                 });
             }
@@ -2603,7 +2644,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear,sync_linear_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn read_repo_file(

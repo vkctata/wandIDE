@@ -1673,6 +1673,7 @@ function Notifications() {
     setLoading(true);
     try {
       await invoke("sync_github_activity");
+      await invoke("sync_linear_activity");
       await load();
     } catch {
     } finally {
