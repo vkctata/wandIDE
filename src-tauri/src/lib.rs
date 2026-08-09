@@ -1505,6 +1505,31 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
             },
         );
     }
+    if let Ok((cli, model, responsibility, skills_json)) = conn.query_row(
+        "SELECT cli,model,role,skills FROM agents WHERE id='sentinel'",
+        [],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        },
+    ) {
+        req.agent_configs.insert(
+            "sentinel-verifier".into(),
+            AgentExecution {
+                cli,
+                model,
+                responsibility,
+                skills: serde_json::from_str(&skills_json).unwrap_or_default(),
+            },
+        );
+    }
+    if !req.agent_configs.contains_key("sentinel-verifier") {
+        return Err("Sentinel verifier agent is not configured".into());
+    }
     }
     let run_id = req
         .run_id
@@ -2762,7 +2787,40 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                             .map(|config| (agent_id.clone(), config))
                                         })
                                         .collect();
-                                    if agent_configs.len() != agents.len() {
+                                    let agent_configs = {
+                                        let mut configs = agent_configs;
+                                        if let Ok((cli, model, responsibility, skills_json)) = conn
+                                            .query_row(
+                                                "SELECT cli,model,role,skills FROM agents WHERE id='sentinel'",
+                                                [],
+                                                |r| {
+                                                    Ok((
+                                                        r.get::<_, String>(0)?,
+                                                        r.get::<_, String>(1)?,
+                                                        r.get::<_, String>(2)?,
+                                                        r.get::<_, String>(3)?,
+                                                    ))
+                                                },
+                                            )
+                                        {
+                                            if agent_runtime_enabled_and_installed(&cli, &enabled_clis) {
+                                                configs.insert(
+                                                    "sentinel-verifier".into(),
+                                                    AgentExecution {
+                                                        cli,
+                                                        model,
+                                                        responsibility,
+                                                        skills: serde_json::from_str(&skills_json)
+                                                            .unwrap_or_default(),
+                                                    },
+                                                );
+                                            }
+                                        }
+                                        configs
+                                    };
+                                    if agent_configs.len() != agents.len()
+                                        || !agent_configs.contains_key("sentinel-verifier")
+                                    {
                                         let skipped = format!(
                                             "Scheduled task skipped: {name} requires every selected agent runtime to be enabled and installed"
                                         );
