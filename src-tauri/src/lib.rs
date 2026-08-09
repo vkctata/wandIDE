@@ -2388,9 +2388,11 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
         }
     };
     let mut added = 0;
+    let mut had_error = false;
     for name in names {
         let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(error)=>{emit_provider_health(&app,"github","error",Some(format!("GitHub request failed for {name}: {error}"))); return;}};
         if !response.status().is_success() {
+            had_error = true;
             emit_provider_health(
                 &app,
                 "github",
@@ -2427,8 +2429,15 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
                     return;
                 }
             };
-            let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]);
-            if changed.unwrap_or(0) > 0 {
+            let changed=match conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]) {
+                Ok(value) => value,
+                Err(error) => {
+                    had_error = true;
+                    emit_provider_health(&app,"github","error",Some(format!("Unable to save GitHub review notification: {error}")));
+                    continue;
+                }
+            };
+            if changed > 0 {
                 added += 1
             }
         }
@@ -2439,7 +2448,9 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
             serde_json::json!({"provider":"github","added":added,"background":true}),
         );
     }
-    emit_provider_health(&app, "github", "ok", None);
+    if !had_error {
+        emit_provider_health(&app, "github", "ok", None);
+    }
 }
 async fn report_provider_credentials(app: AppHandle) {
     for provider in ["github", "azure-devops"] {
