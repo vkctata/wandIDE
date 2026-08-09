@@ -735,25 +735,35 @@ select {
 /* Final canvas contrast guard: legacy light/dark rules cannot dim empty states. */
 body[data-theme] .content .emptyhint h3 { color: #fffdf8 !important; }
 body[data-theme] .content .emptyhint p { color: #aeb1b9 !important; }
-body[data-theme="obsidian"] .hero h1,
-body[data-theme="obsidian"] .sectionhead h2,
-body[data-theme="obsidian"] .emptyhint h3,
-body[data-theme="graphite"] .hero h1,
-body[data-theme="graphite"] .sectionhead h2,
-body[data-theme="graphite"] .emptyhint h3 {
-  background: none !important;
-  color: #111318 !important;
+/* Dark materials need ink-on-dark contrast everywhere, including preference
+   panels that are rendered above the workspace canvas. */
+body[data-theme="obsidian"] .settings-modal,
+body[data-theme="graphite"] .settings-modal {
+  color: #fffdf8 !important;
 }
-body[data-theme="obsidian"] .sub,
-body[data-theme="obsidian"] .sectionhead p,
-body[data-theme="obsidian"] .emptyhint p,
-body[data-theme="graphite"] .sub,
-body[data-theme="graphite"] .sectionhead p,
-body[data-theme="graphite"] .emptyhint p {
-  color: #4e5159 !important;
+body[data-theme="obsidian"] .settings-modal .agent-management,
+body[data-theme="graphite"] .settings-modal .agent-management,
+body[data-theme="obsidian"] .settings-modal .agent-config,
+body[data-theme="graphite"] .settings-modal .agent-config {
+  background: rgba(21, 24, 30, .86) !important;
+  border-color: rgba(255, 255, 255, .13) !important;
+  color: #fffdf8 !important;
 }
-body[data-theme="obsidian"] .hero .eyebrow,
-body[data-theme="graphite"] .hero .eyebrow { color: #485c16 !important; }
+body[data-theme="obsidian"] .settings-modal .agent-config b,
+body[data-theme="graphite"] .settings-modal .agent-config b,
+body[data-theme="obsidian"] .settings-modal .sectionhead h2,
+body[data-theme="graphite"] .settings-modal .sectionhead h2 {
+  color: #fffdf8 !important;
+}
+body[data-theme="obsidian"] .settings-modal .agent-config p,
+body[data-theme="graphite"] .settings-modal .agent-config p,
+body[data-theme="obsidian"] .settings-modal .agent-config small,
+body[data-theme="graphite"] .settings-modal .agent-config small,
+body[data-theme="obsidian"] .settings-modal .sectionhead p,
+body[data-theme="graphite"] .settings-modal .sectionhead p {
+  color: #b9bdc8 !important;
+}
+body[data-theme] .agent-config .textbtn.danger { color: #ff9b9b !important; }
 
 /* Every primary view is a workspace now, so none should be constrained to a
    reading-column width. The gutter remains consistent across the app. */

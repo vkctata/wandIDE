@@ -2375,22 +2375,42 @@ function AgentManager({ repos }: { repos: Repo[] }) {
       "Give each agent one clear responsibility. This text is used as its execution instruction.",
     );
     if (!values?.name) return;
-    await invoke("save_agent", {
-      agent: {
-        id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-        name: values.name.trim(),
-        role: (values.role || "").slice(0, 1000),
-        skills: (values.skills || "")
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean),
-        color: agent?.color || "#a98cff",
-        cli: values.cli || "codex",
-        model: values.model || "default",
-        scope: values.scope || "workspace",
-      },
-    }).catch(() => {});
-    load();
+    try {
+      await invoke("save_agent", {
+        agent: {
+          id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          name: values.name.trim(),
+          role: (values.role || "").slice(0, 1000),
+          skills: (values.skills || "")
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean),
+          color: agent?.color || "#a98cff",
+          cli: values.cli || "codex",
+          model: values.model || "default",
+          scope: values.scope || "workspace",
+        },
+      });
+      setWorkflowMessage(`${values.name.trim()} was ${agent ? "updated" : "added"}.`);
+      load();
+    } catch (error) {
+      setWorkflowMessage(String(error));
+    }
+  };
+  const remove = async (agent: StoredAgent) => {
+    const confirmed = await askModal(
+      `Delete ${agent.name}?`,
+      [],
+      "This removes the agent from your team. You can create a replacement at any time.",
+    );
+    if (!confirmed) return;
+    try {
+      await invoke("delete_agent", { id: agent.id });
+      setWorkflowMessage(`${agent.name} was removed from your agent team.`);
+      load();
+    } catch (error) {
+      setWorkflowMessage(String(error));
+    }
   };
   return (
     <div className="agent-management">
@@ -2427,6 +2447,9 @@ function AgentManager({ repos }: { repos: Repo[] }) {
               <code>{agent.scope}</code>
               <button className="textbtn" onClick={() => edit(agent)}>
                 Edit
+              </button>
+              <button className="textbtn danger" onClick={() => remove(agent)}>
+                Delete
               </button>
             </footer>
           </div>
