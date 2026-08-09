@@ -18,6 +18,29 @@ body[data-platform="macos"] {
   --native-control: 30px;
   --native-sidebar: 248px;
 }
+/* The native macOS frame supplies the outer window geometry. The application
+   surface carries the same 12px continuous corner through the WebView. */
+html:has(body[data-platform="macos"]),
+body[data-platform="macos"],
+body[data-platform="macos"] #root {
+  background: var(--wand-surface-2, #11131b) !important;
+}
+body[data-platform="macos"] .app {
+  min-height: 100vh;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+body[data-platform="macos"] aside {
+  border-radius: 12px 0 0 12px;
+}
+body[data-platform="macos"] .app > main > header {
+  border-radius: 0 12px 0 0;
+}
+body[data-platform="macos"] .app > main > .content {
+  border-radius: 0 0 12px 0;
+}
 body[data-platform="windows"] {
   --native-radius-sm: 4px;
   --native-radius-md: 6px;
@@ -956,6 +979,25 @@ body[data-theme="daylight"] .code-controls .outline.active {
     0 8px 20px rgba(104, 132, 46, .12) !important;
 }
 
+/* Code actions are separated into scan, mode, and mutation groups so the
+   toolbar remains readable at every desktop width. */
+.code-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.code-controls > input { flex: 1 1 230px; min-width: 180px; }
+.code-mode-controls,
+.code-action-controls { display: inline-flex; align-items: center; gap: 6px; }
+.code-mode-controls { padding-right: 8px; border-right: 1px solid var(--wand-border, rgba(255,255,255,.12)); }
+@media (max-width: 860px) {
+  .code-controls { justify-content: flex-start; }
+  .code-controls > input { flex-basis: 100%; }
+  .code-mode-controls { border-right: 0; padding-right: 0; }
+}
+
 /* Give Light Mode a clearer material hierarchy: frosted chrome, a slightly
    brighter workspace, and lifted glass cards. */
 body[data-theme="daylight"] aside,
@@ -1146,16 +1188,17 @@ body[data-theme="daylight"] .font-picker-current { color: #506916; }
   --settings-shell: #0d0d12;
   --settings-pane: #22252b;
   --settings-seam: rgba(255, 255, 255, .13);
+  background: var(--settings-shell) !important;
+}
+.settings-modal-header,
+.settings-modal-body,
+.settings-modal-nav {
+  background: var(--settings-shell) !important;
 }
 .settings-modal-header {
-  background: var(--settings-shell) !important;
   border-bottom: 0 !important;
 }
-.settings-modal-body {
-  background: var(--settings-shell) !important;
-}
 .settings-modal-nav {
-  background: transparent !important;
   border-right: 0 !important;
 }
 .settings-modal-content {
@@ -1163,7 +1206,7 @@ body[data-theme="daylight"] .font-picker-current { color: #506916; }
   margin: 0;
   border-top: 1px solid var(--settings-seam);
   border-left: 1px solid var(--settings-seam);
-  border-top-left-radius: 26px;
+  border-top-left-radius: 30px;
   background-color: var(--settings-pane) !important;
   background-image:
     linear-gradient(rgba(255, 255, 255, .055) 1px, transparent 1px),
@@ -1173,9 +1216,18 @@ body[data-theme="daylight"] .font-picker-current { color: #506916; }
 }
 body[data-theme="daylight"] .settings-modal,
 body[data-theme="porcelain"] .settings-modal {
-  --settings-shell: rgba(211, 223, 228, .94);
-  --settings-pane: #e4ebee;
+  /* Header and navigation intentionally share one mist-glass surface. */
+  --settings-shell: #e4ebee;
+  --settings-pane: #f2f6f7;
   --settings-seam: rgba(53, 71, 80, .24);
+}
+body[data-theme="daylight"] .settings-modal-header,
+body[data-theme="daylight"] .settings-modal-body,
+body[data-theme="daylight"] .settings-modal-nav,
+body[data-theme="porcelain"] .settings-modal-header,
+body[data-theme="porcelain"] .settings-modal-body,
+body[data-theme="porcelain"] .settings-modal-nav {
+  background: #e4ebee !important;
 }
 body[data-theme="daylight"] .settings-modal-content,
 body[data-theme="porcelain"] .settings-modal-content {
@@ -1248,4 +1300,106 @@ body[data-theme="porcelain"] aside::after {
     transparent
   );
   box-shadow: 0 0 9px rgba(94, 126, 24, .16);
+}
+
+/* First-run setup belongs to the product, not a marketing interstitial.
+   Provider access and local runtime permissions are deliberately explicit:
+   a credential is saved only after the user supplies it, and CLI installation
+   links go to the provider rather than running an unreviewed shell command. */
+.onboard-card {
+  width: min(650px, calc(100vw - 40px));
+  min-height: 500px;
+  padding: 34px;
+  border-color: color-mix(in srgb, var(--wand-accent, #c9ff4f) 34%, var(--wand-border, #30343c));
+  background: color-mix(in srgb, var(--wand-surface, #171a24) 94%, transparent);
+  color: var(--wand-ink, #fffdf8);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .48), 0 0 38px color-mix(in srgb, var(--wand-accent, #c9ff4f) 10%, transparent);
+}
+.onboard-mark {
+  width: auto;
+  height: auto;
+  display: block;
+  margin: 0 0 22px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.onboard-mark .wand-wordmark { font-size: 34px; }
+.onboard-card h1 { color: var(--wand-ink, #fffdf8); font-size: 28px; }
+.onboard-card > p:not(.eyebrow) {
+  min-height: 0;
+  max-width: 570px;
+  margin-bottom: 18px;
+  color: var(--wand-muted, #aeb1b9);
+}
+.onboard-setup {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--wand-border, rgba(255, 255, 255, .12));
+  border-radius: var(--native-radius-md, 10px);
+  background: color-mix(in srgb, var(--wand-surface-2, #11131b) 78%, transparent);
+}
+.onboard-setup-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1px 2px 6px;
+  color: var(--wand-muted, #aeb1b9);
+  font-size: 11px;
+  font-weight: 700;
+}
+.onboard-setup-heading .textbtn { display: inline-flex; align-items: center; gap: 5px; }
+.onboard-setup-row {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 9px 8px;
+  border-radius: var(--native-radius-sm, 8px);
+}
+.onboard-setup-row:hover { background: color-mix(in srgb, var(--wand-ink, #fff) 4%, transparent); }
+.onboard-state {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--wand-muted, #9096a5);
+  border-radius: 999px;
+  opacity: .72;
+}
+.onboard-state.connected {
+  border-color: var(--wand-accent, #c9ff4f);
+  background: var(--wand-accent, #c9ff4f);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--wand-accent, #c9ff4f) 52%, transparent);
+  opacity: 1;
+}
+.onboard-setup-row strong,
+.onboard-setup-row small { display: block; }
+.onboard-setup-row strong { color: var(--wand-ink, #fffdf8); font-size: 12px; }
+.onboard-setup-row small { margin-top: 3px; color: var(--wand-muted, #aeb1b9); font-size: 10px; }
+.onboard-setup .outline { min-width: 82px; justify-content: center; }
+.onboard-setup .outline.enabled { color: var(--wand-accent, #c9ff4f); border-color: color-mix(in srgb, var(--wand-accent, #c9ff4f) 58%, var(--wand-border)); }
+.onboard-install { text-decoration: none; }
+.onboard-hint, .onboard-message {
+  margin: 5px 3px 0;
+  color: var(--wand-muted, #aeb1b9);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.onboard-message { color: var(--wand-accent, #c9ff4f); }
+body[data-theme="daylight"] .onboard-card {
+  background: rgba(235, 241, 243, .92);
+  box-shadow: 0 26px 76px rgba(43, 57, 62, .23), 0 0 28px rgba(94, 126, 24, .10);
+}
+body[data-theme="daylight"] .onboard-setup {
+  background: rgba(250, 252, 252, .58);
+  border-color: rgba(53, 71, 80, .2);
+}
+body[data-theme="daylight"] .onboard-setup-row:hover { background: rgba(94, 126, 24, .07); }
+body[data-theme="daylight"] .onboard-message { color: #506916; }
+@media (max-width: 620px) {
+  .onboard-card { min-height: 0; padding: 26px 22px; }
+  .onboard-setup-row { grid-template-columns: 8px minmax(0, 1fr); }
+  .onboard-setup-row .outline { grid-column: 2; justify-self: start; }
 }
