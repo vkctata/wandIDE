@@ -1514,6 +1514,29 @@ fn task_completion_status(cron: &str) -> &'static str {
         "queued"
     }
 }
+fn task_failure_status(cron: &str) -> &'static str {
+    if cron.trim().eq_ignore_ascii_case("one-off") {
+        "failed"
+    } else {
+        "queued"
+    }
+}
+fn mark_task_failed_or_requeue(db: &Arc<Mutex<Connection>>, task_id: &str) {
+    if let Ok(conn) = db.lock() {
+        let cron: Result<String, _> = conn.query_row(
+            "SELECT cron FROM tasks WHERE id=?1",
+            params![task_id],
+            |row| row.get(0),
+        );
+        let status = cron
+            .map(|value| task_failure_status(&value))
+            .unwrap_or("failed");
+        let _ = conn.execute(
+            "UPDATE tasks SET status=?2 WHERE id=?1",
+            params![task_id, status],
+        );
+    }
+}
 fn launch_chain_worker(
     req: ChainRequest,
     command: String,
@@ -1589,6 +1612,7 @@ fn launch_chain_worker(
                 let message = format!(
                     "CLI runtime '{stage_command}' is no longer installed on this machine"
                 );
+                mark_task_failed_or_requeue(&db_arc, &req.task_id);
                 finish_run(&db_arc, &req.run_id, "failed", Some(&message));
                 emit_task_status(&app, &req.task_id, "failed", Some(&message));
                 let _ = app.emit(
@@ -1602,6 +1626,7 @@ fn launch_chain_worker(
                 if !allowed.iter().any(|item| item == &stage_command) {
                     let message =
                         format!("CLI runtime '{stage_command}' is disabled in Wand settings");
+                    mark_task_failed_or_requeue(&db_arc, &req.task_id);
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
                     emit_task_status(&app, &req.task_id, "failed", Some(&message));
                     let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
@@ -1611,6 +1636,7 @@ fn launch_chain_worker(
                     let message = format!(
                         "CLI runtime '{stage_command}' is no longer installed on this machine"
                     );
+                    mark_task_failed_or_requeue(&db_arc, &req.task_id);
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
                     emit_task_status(&app, &req.task_id, "failed", Some(&message));
                     let _ = app.emit(
@@ -1717,11 +1743,8 @@ fn launch_chain_worker(
                                 params![run_id, req.task_id, repo, agent, index + 1, error, Utc::now().to_rfc3339()],
                             );
                         }
-                        let _ = conn.execute(
-                            "UPDATE tasks SET status='failed' WHERE id=?1",
-                            params![req.task_id],
-                        );
                     }
+                    mark_task_failed_or_requeue(&db_arc, &req.task_id);
                     finish_run(&db_arc, &req.run_id, "failed", Some(&error));
                     emit_task_status(&app, &req.task_id, "failed", Some(&error));
                     let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));
@@ -3140,6 +3163,33 @@ mod tests {
     fn recurring_tasks_remain_active_after_a_successful_run() {
         assert_eq!(task_completion_status("one-off"), "completed");
         assert_eq!(task_completion_status("0 9 * * 1"), "queued");
+        assert_eq!(task_failure_status("one-off"), "failed");
+        assert_eq!(task_failure_status("0 9 * * 1"), "queued");
+    }
+
+    #[test]
+    fn recurring_task_failure_does_not_disable_future_runs() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('recurring','Nightly','repo','0 9 * * 1','[]','running','now'),('one-off','Once','repo','one-off','[]','running','now')",
+            [],
+        )
+        .unwrap();
+        let db = Arc::new(Mutex::new(conn));
+
+        mark_task_failed_or_requeue(&db, "recurring");
+        mark_task_failed_or_requeue(&db, "one-off");
+
+        let conn = db.lock().unwrap();
+        let recurring: String = conn
+            .query_row("SELECT status FROM tasks WHERE id='recurring'", [], |row| row.get(0))
+            .unwrap();
+        let one_off: String = conn
+            .query_row("SELECT status FROM tasks WHERE id='one-off'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(recurring, "queued");
+        assert_eq!(one_off, "failed");
     }
 
     #[test]
