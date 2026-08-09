@@ -886,3 +886,29 @@ body[data-theme="daylight"] .content .emptyhint {
     0 0 28px rgba(201, 255, 79, .08) !important;
   backdrop-filter: saturate(132%) blur(22px) !important;
 }
+
+/* In Light Mode the shell is one continuous misty material, not dark chrome. */
+body[data-theme="daylight"] aside,
+body[data-theme="daylight"] header,
+body[data-theme="daylight"] .app > main > header {
+  background: #e9edef !important;
+  border-color: rgba(60, 76, 86, .14) !important;
+}
+body[data-theme="daylight"] aside .nav,
+body[data-theme="daylight"] aside .repo,
+body[data-theme="daylight"] aside .status,
+body[data-theme="daylight"] aside .navgroup label {
+  color: #47565f !important;
+}
+body[data-theme="daylight"] aside .nav.active,
+body[data-theme="daylight"] aside .repo.selected {
+  color: #162127 !important;
+  background: rgba(201, 255, 79, .24) !important;
+}
+body[data-theme="daylight"] header .search,
+body[data-theme="daylight"] header .iconbtn,
+body[data-theme="daylight"] header .account-trigger {
+  background: rgba(255, 255, 255, .56) !important;
+  border-color: rgba(60, 76, 86, .16) !important;
+  color: #162127 !important;
+}
