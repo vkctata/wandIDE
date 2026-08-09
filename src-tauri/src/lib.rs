@@ -1039,17 +1039,31 @@ fn provider_service(provider: &str) -> Result<String, String> {
     let install = installation_id()?;
     Ok(scoped_provider_service(base, &install))
 }
+fn ensure_provider_agent(conn: &Connection, provider: &str) -> Result<(), String> {
+    let (name, role, skills, color) = match provider {
+        "github" => ("GitHub", "Reads repositories, issues, pull requests, and review context", "[\"repositories\",\"issues\",\"pull requests\",\"reviews\"]", "#8ab4f8"),
+        "azure-devops" => ("Azure DevOps", "Reads Azure repositories, work items, pull requests, and comments", "[\"repositories\",\"work items\",\"pull requests\",\"comments\"]", "#63b3ed"),
+        "linear" => ("Linear", "Reads teams and issues, surfaces updates, and helps plan work", "[\"teams\",\"issues\",\"planning\",\"project context\"]", "#a78bfa"),
+        _ => return Err("Unsupported provider".into()),
+    };
+    conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,?3,?4,0,'codex','default','workspace')", params![format!("provider:{provider}"), name, role, skills, color]).map_err(|e| e.to_string())?;
+    Ok(())
+}
 #[tauri::command]
-fn save_provider_token(provider: String, token: String) -> Result<(), String> {
+fn save_provider_token(provider: String, token: String, db: State<Db>, app: AppHandle) -> Result<(), String> {
     if token.trim().is_empty() {
         return Err("Token cannot be empty".into());
     }
     let service = provider_service(&provider)?;
     let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
-    entry.set_password(&token).map_err(|e| e.to_string())
+    entry.set_password(&token).map_err(|e| e.to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, &provider)?;
+    let _ = app.emit("wand://agents", serde_json::json!({"provider": provider, "connected": true}));
+    Ok(())
 }
 #[tauri::command]
-fn disconnect_provider(provider: String, db: State<Db>) -> Result<(), String> {
+fn disconnect_provider(provider: String, db: State<Db>, app: AppHandle) -> Result<(), String> {
     let scoped = provider_service(&provider)?;
     if let Ok(entry) = keyring::Entry::new(&scoped, "default") {
         let _ = entry.delete_credential();
@@ -1066,6 +1080,10 @@ fn disconnect_provider(provider: String, db: State<Db>) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    if let Ok(conn) = db.0.lock() {
+        let _ = conn.execute("DELETE FROM agents WHERE id=?1", params![format!("provider:{provider}")]);
+    }
+    let _ = app.emit("wand://agents", serde_json::json!({"provider": provider, "connected": false}));
     Ok(())
 }
 #[tauri::command]
@@ -1971,6 +1989,7 @@ async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
     let repos: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, "github")?;
     for repo in repos {
         let name = repo["full_name"].as_str().unwrap_or_default().to_string();
         let url = repo["html_url"].as_str().unwrap_or_default().to_string();
@@ -2016,6 +2035,7 @@ async fn sync_linear(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
     }
     let teams = payload["data"]["teams"]["nodes"].as_array().ok_or_else(|| "Linear returned no teams".to_string())?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, "linear")?;
     let mut out = Vec::new();
     for team in teams {
         let id = team["id"].as_str().unwrap_or_default();
@@ -2142,6 +2162,7 @@ async fn sync_azure_devops(
     let payload: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, "azure-devops")?;
     for repo in payload["value"].as_array().cloned().unwrap_or_default() {
         let name = repo["name"].as_str().unwrap_or_default().to_string();
         let url = repo["webUrl"].as_str().unwrap_or_default().to_string();

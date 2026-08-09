@@ -439,6 +439,13 @@ function App() {
           `${count} repositories are available in Wand.`,
         );
       }),
+      listen<any>("wand://agents", () => {
+        invoke<any[]>("list_agents")
+          .then((rows) =>
+            setAgentCatalog(rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) }))),
+          )
+          .catch(() => {});
+      }),
       listen<any>("wand://notifications", (event) => {
         const added = event.payload?.added ?? 0;
         if (added > 0) {
@@ -2131,7 +2138,7 @@ function ProviderAccess() {
       setMessage(`${providerLabel(provider)} connected securely.`);
     } catch (cause) {
       setMessage(
-        `Could not save ${provider === "github" ? "GitHub" : "Azure DevOps"} credentials: ${cause instanceof Error ? cause.message : String(cause)}`,
+        `Could not save ${providerLabel(provider)} credentials: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
     }
   };
@@ -2144,7 +2151,7 @@ function ProviderAccess() {
     if (!confirmed) return;
     try {
       await invoke("disconnect_provider", { provider });
-      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"} disconnected.`);
+      setMessage(`${providerLabel(provider)} disconnected and its agent was removed.`);
       await refresh();
     } catch (error) {
       setMessage(String(error));
@@ -2177,7 +2184,7 @@ function ProviderAccess() {
         args,
       );
       setMessage(
-        `${rows.length} ${provider === "github" ? "GitHub" : "Azure DevOps"} repositories synced. Background activity polling enabled.`,
+        `${rows.length} ${providerLabel(provider)} ${provider === "linear" ? "teams" : "repositories"} synced. ${providerLabel(provider)} is now available as a taggable agent.`,
       );
     } catch (e) {
       setMessage(String(e));
@@ -2211,7 +2218,7 @@ function ProviderAccess() {
         provider,
         providerUrl,
       });
-      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"}: ${result}.`);
+      setMessage(`${providerLabel(provider)}: ${result}.`);
     } catch (e) {
       setMessage(String(e));
     } finally {
