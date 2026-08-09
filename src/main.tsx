@@ -68,10 +68,9 @@ const isTauriRuntime = () =>
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
   );
 type RuntimePlatform = "macos" | "windows" | "linux";
-type ThemeName = "obsidian" | "graphite" | "daylight" | "porcelain";
+type ThemeName = "obsidian" | "daylight";
 const normalizeTheme = (value: string | null | undefined): ThemeName => {
-  if (value === "graphite" || value === "porcelain") return value;
-  if (["daylight", "paper", "mint", "lavender"].includes(value || ""))
+  if (["daylight", "porcelain", "paper", "mint", "lavender"].includes(value || ""))
     return "daylight";
   return "obsidian";
 };
@@ -2777,7 +2776,7 @@ function ThemeSection() {
       })
       .catch(() => {});
   }, []);
-  const isLight = theme === "daylight" || theme === "porcelain";
+  const isLight = theme === "daylight";
   const choose = (name: ThemeName) => {
     setTheme(name);
     document.body.dataset.theme = name;
@@ -2795,11 +2794,8 @@ function ThemeSection() {
       <div className="settings-section-head">
         <div>
           <h2>Appearance</h2>
-          <p>
-            Four closely related materials, all built around Wand’s ink, paper, and signal-green palette.
-          </p>
+          <p>Choose between Wand’s focused dark and light appearances.</p>
         </div>
-        <span className="theme-current">{theme}</span>
       </div>
       <div className="mode-toggle-group">
         <button
@@ -2816,27 +2812,6 @@ function ThemeSection() {
           <Sun size={16} />
           <span>Light Mode</span>
         </button>
-      </div>
-      <div className="theme-grid-container">
-        <span className="theme-group-label">
-          {isLight ? "Light themes" : "Dark themes"}
-        </span>
-        <div className="theme-grid">
-          {(isLight
-            ? (["daylight", "porcelain"] as ThemeName[])
-            : (["obsidian", "graphite"] as ThemeName[])
-          ).map((name) => (
-            <button
-              aria-label={`${name} theme`}
-              className={`theme-choice ${name}${theme === name ? " active" : ""}`}
-              onClick={() => choose(name)}
-              key={name}
-            >
-              <span aria-hidden="true" />
-              {name}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

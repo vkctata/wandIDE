@@ -663,13 +663,14 @@ aside .nav { font-weight: 600; }
 aside .repo { font-weight: 500; }
 aside .navgroup label { font-weight: 600; }
 
-/* Preferences should fit their content instead of presenting a large empty pane. */
+/* Preferences are the primary management surface, so use the available canvas. */
 .settings-modal {
-  height: auto;
-  max-height: 86vh;
+  width: min(1200px, 96vw);
+  height: min(760px, 90vh);
+  max-height: 90vh;
 }
 .settings-modal-header { padding: 16px 52px 16px 22px; }
-.settings-modal-body { max-height: calc(86vh - 74px); }
+.settings-modal-body { max-height: calc(90vh - 74px); }
 .settings-modal-nav { padding: 12px 10px; }
 .settings-nav-item { padding: 9px 11px; }
 .settings-modal-content { padding: 20px 24px 24px; }
