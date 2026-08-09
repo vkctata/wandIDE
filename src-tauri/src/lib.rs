@@ -1901,6 +1901,11 @@ fn parse_azure_pull_request_url(raw: &str) -> Result<(String, String, String, i6
         || !(host == "dev.azure.com"
             || host.ends_with(".dev.azure.com")
             || host.ends_with(".visualstudio.com"))
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
     {
         return Err("Azure pull-request URL must use an approved HTTPS Azure DevOps host".into());
     }
@@ -3517,6 +3522,14 @@ mod tests {
         assert_eq!(parsed.3, 42);
         assert!(parse_azure_pull_request_url(
             "http://dev.azure.com/acme/Platform/_git/wand/pullrequest/42"
+        )
+        .is_err());
+        assert!(parse_azure_pull_request_url(
+            "https://dev.azure.com/acme/Platform/_git/wand/pullrequest/42?api-version=7.1"
+        )
+        .is_err());
+        assert!(parse_azure_pull_request_url(
+            "https://user:secret@dev.azure.com/acme/Platform/_git/wand/pullrequest/42"
         )
         .is_err());
     }
