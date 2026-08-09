@@ -2145,6 +2145,8 @@ function AgentManager({ repos }: { repos: Repo[] }) {
   const [items, setItems] = useState<StoredAgent[]>([]);
   const [enabledClis, setEnabledClis] = useState<string[]>([]);
   const [workflowMessage, setWorkflowMessage] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
   const load = () =>
     invoke<any[]>("list_agents")
       .then((rows) =>
@@ -2152,7 +2154,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) })),
         ),
       )
-      .catch(() => {});
+      .catch((error) => setSaveError(`Unable to load agents: ${String(error)}`));
   useEffect(() => {
     load();
     invoke<string[]>("cli_access").then(setEnabledClis).catch(() => {});
@@ -2179,6 +2181,8 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     }
   };
   const edit = async (agent?: StoredAgent) => {
+    setSaveError("");
+    setSaveMessage("");
     const cliOptions = (enabledClis.length ? enabledClis : ["codex"]).filter(
       (cli) => cli !== "kimi" || enabledClis.includes("kimi"),
     );
@@ -2237,22 +2241,27 @@ function AgentManager({ repos }: { repos: Repo[] }) {
       "Give each agent one clear responsibility. This text is used as its execution instruction.",
     );
     if (!values?.name) return;
-    await invoke("save_agent", {
-      agent: {
-        id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-        name: values.name.trim(),
-        role: (values.role || "").slice(0, 1000),
-        skills: (values.skills || "")
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean),
-        color: agent?.color || "#a98cff",
-        cli: values.cli || "codex",
-        model: values.model || "default",
-        scope: values.scope || "workspace",
-      },
-    }).catch(() => {});
-    load();
+    try {
+      await invoke("save_agent", {
+        agent: {
+          id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          name: values.name.trim(),
+          role: (values.role || "").slice(0, 1000),
+          skills: (values.skills || "")
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean),
+          color: agent?.color || "#a98cff",
+          cli: values.cli || "codex",
+          model: values.model || "default",
+          scope: values.scope || "workspace",
+        },
+      });
+      setSaveMessage(`${agent ? "Agent updated" : "Agent created"} successfully.`);
+      load();
+    } catch (error) {
+      setSaveError(`Unable to save agent: ${String(error)}`);
+    }
   };
   return (
     <div className="agent-management">
@@ -2271,6 +2280,8 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           Import workflow
         </button>
       </div>
+      {saveError && <p className="provider-message" role="alert">{saveError}</p>}
+      {saveMessage && <p className="provider-message">{saveMessage}</p>}
       {workflowMessage && <p className="provider-message">{workflowMessage}</p>}
       <div className="agent-config-grid">
         {items.map((agent) => (
