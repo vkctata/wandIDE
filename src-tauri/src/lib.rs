@@ -2025,6 +2025,10 @@ fn validate_github_repo(raw: &str) -> Result<String, String> {
     if parts.next().is_some()
         || owner.is_empty()
         || repo.is_empty()
+        || owner == "."
+        || owner == ".."
+        || repo == "."
+        || repo == ".."
         || owner.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
         || repo.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
     {
@@ -2058,6 +2062,9 @@ async fn github_pull_request_action(
         let text = body.unwrap_or_default();
         if text.trim().is_empty() {
             return Err("A comment cannot be empty".into());
+        }
+        if text.chars().count() > 4000 {
+            return Err("A comment cannot exceed 4000 characters".into());
         }
         serde_json::json!({"body":text})
     };
@@ -3512,5 +3519,13 @@ mod tests {
             "http://dev.azure.com/acme/Platform/_git/wand/pullrequest/42"
         )
         .is_err());
+    }
+
+    #[test]
+    fn validates_github_repository_segments_before_building_action_urls() {
+        assert_eq!(validate_github_repo("vkctata/wandIDE").unwrap(), "vkctata/wandIDE");
+        assert!(validate_github_repo("vkctata/../wandIDE").is_err());
+        assert!(validate_github_repo("vkctata/.").is_err());
+        assert!(validate_github_repo("github.com/vkctata/wandIDE").is_err());
     }
 }
