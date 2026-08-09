@@ -972,8 +972,8 @@ body[data-theme="daylight"] .app > main {
 body[data-theme="daylight"] .app > main > .content {
   background-color: #e4ebee !important;
   background-image:
-    linear-gradient(rgba(49, 68, 78, .15) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(49, 68, 78, .15) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, .52) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .52) 1px, transparent 1px),
     radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .76), transparent 70%),
     radial-gradient(680px 460px at 96% 4%, rgba(175, 199, 208, .50), transparent 72%) !important;
 }
