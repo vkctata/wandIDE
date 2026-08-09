@@ -647,3 +647,13 @@ body[data-theme="porcelain"] .mode-btn.active {
   border-color: #9cc33d !important;
   box-shadow: 0 0 0 2px rgba(201, 255, 79, .28) !important;
 }
+
+/* Code is a workspace, not a reading column: use the whole right pane. */
+.content.code-workspace {
+  max-width: none;
+  margin: 0;
+  padding: 40px 44px 64px;
+}
+@media (max-width: 760px) {
+  .content.code-workspace { padding: 28px 20px 56px; }
+}
