@@ -657,3 +657,8 @@ body[data-theme="porcelain"] .mode-btn.active {
 @media (max-width: 760px) {
   .content.code-workspace { padding: 28px 20px 56px; }
 }
+
+/* A little more weight makes the left-hand navigation easier to scan. */
+aside .nav { font-weight: 600; }
+aside .repo { font-weight: 500; }
+aside .navgroup label { font-weight: 600; }
