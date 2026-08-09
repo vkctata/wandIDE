@@ -794,11 +794,11 @@ body[data-theme] .app > main > header {
 body[data-theme="daylight"] .app {
   background-color: #e9edef !important;
   background-image:
+    linear-gradient(rgba(57, 75, 85, .18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 75, 85, .18) 1px, transparent 1px),
     radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .94), transparent 70%),
-    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%),
-    linear-gradient(rgba(71, 87, 96, .10) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(71, 87, 96, .10) 1px, transparent 1px) !important;
-  background-size: auto, auto, 32px 32px, 32px 32px !important;
+    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%) !important;
+  background-size: 32px 32px, 32px 32px, auto, auto !important;
 }
 body[data-theme="daylight"] .stat,
 body[data-theme="daylight"] .agent,
@@ -910,11 +910,11 @@ body[data-theme="daylight"] .app > main {
 body[data-theme="daylight"] .app > main > .content {
   background-color: #e9edef !important;
   background-image:
+    linear-gradient(rgba(57, 75, 85, .18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 75, 85, .18) 1px, transparent 1px),
     radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .94), transparent 70%),
-    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%),
-    linear-gradient(rgba(71, 87, 96, .10) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(71, 87, 96, .10) 1px, transparent 1px) !important;
-  background-size: auto, auto, 32px 32px, 32px 32px !important;
+    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%) !important;
+  background-size: 32px 32px, 32px 32px, auto, auto !important;
 }
 body[data-theme="daylight"] aside .nav,
 body[data-theme="daylight"] aside .repo,
