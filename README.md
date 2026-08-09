@@ -23,7 +23,7 @@ The current build provides the desktop-ready product foundation:
 - Repository-scoped agents created automatically when local repositories are scanned
 - Scheduled task execution with five- and seven-field cron expressions, durable run history, and background Rust scheduling
 - Background provider polling and normalized `wand://` events to the UI, with a persistent worker heartbeat indicator and provider health errors
-- GitHub and Azure DevOps repository and pull-request comment synchronization
+- GitHub, Azure DevOps, and Linear synchronization (Linear teams/issues via GraphQL)
 - Repository threads with live human/agent messages and persisted agent handoff comments
 - Tagging an agent in a repository thread creates a persisted one-off task and starts the ordered handoff plus final Sentinel verification chain; tagged work appears immediately in Tasks
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
@@ -33,7 +33,7 @@ The current build provides the desktop-ready product foundation:
 - Linux x64 packaging through GitHub Actions (`.deb` and `.AppImage`)
 - GitHub Actions for web checks, Rust checks, and desktop packaging
 
-The provider and CLI adapters are deliberately isolated behind the Tauri command boundary. This keeps credentials and process execution out of the browser layer and leaves room for GitHub, Azure DevOps, Claude, Codex, Kimi, and Gemini adapters.
+The provider and CLI adapters are deliberately isolated behind the Tauri command boundary. This keeps credentials and process execution out of the browser layer and leaves room for GitHub, Azure DevOps, Linear, Claude, Codex, Kimi, and Gemini adapters.
 
 ## Architecture
 
@@ -211,7 +211,7 @@ Repositories are selected from a local workspace folder and scanned for Git repo
 
 ### Integrations
 
-GitHub and Azure DevOps can be connected from Settings with PATs stored through the operating system credential manager. Repository sync and pull-request comment polling run in Rust background adapters, with normalized events sent to React.
+GitHub, Azure DevOps, and Linear can be connected from Settings with PATs/API keys stored through the operating system credential manager. GitHub/Azure repository sync and pull-request comment polling plus Linear team synchronization run in Rust adapters, with normalized events sent to React.
 
 ### Local-first data
 
