@@ -496,3 +496,94 @@ body[data-platform="macos"] .settings-modal { border-radius: 10px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Shared desktop/site finish: warm paper, deep ink, and one precise signal. */
+body[data-theme="obsidian"],
+body[data-theme="graphite"] { background: var(--wand-surface-2) !important; }
+body[data-theme="daylight"],
+body[data-theme="porcelain"] { background: var(--wand-surface-2) !important; }
+
+body[data-theme] .app {
+  background-color: var(--wand-surface-2) !important;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--wand-border) 46%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--wand-border) 46%, transparent) 1px, transparent 1px) !important;
+  background-size: 48px 48px !important;
+}
+body[data-theme] aside {
+  background: color-mix(in srgb, var(--wand-surface) 80%, transparent) !important;
+  border-color: var(--wand-border) !important;
+}
+body[data-theme] header,
+body[data-theme] .app > main > header {
+  background: color-mix(in srgb, var(--wand-surface-2) 78%, transparent) !important;
+  border-color: var(--wand-border) !important;
+}
+body[data-theme] aside,
+body[data-theme] header,
+body[data-theme] .app > main > header {
+  backdrop-filter: saturate(120%) blur(22px);
+}
+body[data-theme] .stat,
+body[data-theme] .agent,
+body[data-theme] .taskcard,
+body[data-theme] .settingscard,
+body[data-theme] .settings-section,
+body[data-theme] .settings-group > .provider-access,
+body[data-theme] .settings-group > .cli-manager,
+body[data-theme] .settings-group > .agent-management,
+body[data-theme] .event {
+  background: color-mix(in srgb, var(--wand-surface) 76%, transparent) !important;
+  border-color: var(--wand-border) !important;
+  box-shadow: inset 0 1px rgba(255, 253, 248, .10), 0 14px 34px rgba(11, 13, 16, .09);
+  backdrop-filter: blur(18px);
+}
+body[data-theme] .event:hover,
+body[data-theme] .taskcard:hover,
+body[data-theme] .agent:hover {
+  background: color-mix(in srgb, var(--wand-accent) 7%, var(--wand-surface)) !important;
+  border-color: color-mix(in srgb, var(--wand-accent) 42%, var(--wand-border)) !important;
+}
+body[data-theme] h1,
+body[data-theme] h2,
+body[data-theme] h3,
+body[data-theme] h4,
+body[data-theme] .event h3 { color: var(--wand-ink) !important; }
+body[data-theme] .sub,
+body[data-theme] .sectionhead p,
+body[data-theme] .event p,
+body[data-theme] small,
+body[data-theme] .nav,
+body[data-theme] .repo { color: var(--wand-muted) !important; }
+body[data-theme] .nav.active {
+  color: var(--wand-ink) !important;
+  background: color-mix(in srgb, var(--wand-accent) 12%, transparent) !important;
+  box-shadow: inset 2px 0 var(--wand-accent) !important;
+}
+body[data-theme] .primary {
+  background: var(--wand-accent) !important;
+  border-color: var(--wand-accent) !important;
+  color: var(--wand-action-ink) !important;
+  box-shadow: none !important;
+}
+body[data-theme] .primary:hover { filter: brightness(.94); }
+body[data-theme] .outline,
+body[data-theme] .filter,
+body[data-theme] .run,
+body[data-theme] .iconbtn,
+body[data-theme] .account-trigger,
+body[data-theme] .actions .search {
+  background: color-mix(in srgb, var(--wand-surface) 66%, transparent) !important;
+  border-color: var(--wand-border) !important;
+  color: var(--wand-ink) !important;
+}
+body[data-theme] :focus-visible {
+  outline: 2px solid var(--wand-accent) !important;
+  outline-offset: 2px;
+}
+body[data-theme] .wand-dot,
+body[data-theme] .d-sparkle { color: var(--wand-accent) !important; fill: var(--wand-accent) !important; }
+.theme-grid .theme-choice.obsidian span { background: linear-gradient(135deg, #0b0d10 56%, #c9ff4f 56%) !important; }
+.theme-grid .theme-choice.graphite span { background: linear-gradient(135deg, #1b1e24 56%, #c9ff4f 56%) !important; }
+.theme-grid .theme-choice.daylight span { background: linear-gradient(135deg, #fffdf8 56%, #c9ff4f 56%) !important; }
+.theme-grid .theme-choice.porcelain span { background: linear-gradient(135deg, #e8e4da 56%, #c9ff4f 56%) !important; }

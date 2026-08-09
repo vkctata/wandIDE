@@ -1,45 +1,50 @@
-/* Wand intentionally has two modes rather than a collection of competing
-   palettes. Both are built around the same quiet violet identity. */
+/* The desktop app shares the restrained ink, paper, and signal-green palette
+   used by the Wand site. Themes adjust material, not brand identity. */
 body[data-theme="obsidian"] {
-  --wand-accent: #a99aff;
-  --wand-accent-2: #8171dc;
-  --wand-surface: #17171e;
-  --wand-surface-2: #101016;
-  --wand-border: #2a2933;
-  --wand-ink: #f2f0f7;
-  --wand-muted: #9996a5;
-  background: #0d0d12;
+  --wand-accent: #c9ff4f;
+  --wand-accent-2: #c9ff4f;
+  --wand-surface: #15181e;
+  --wand-surface-2: #0b0d10;
+  --wand-border: rgba(255, 255, 255, .14);
+  --wand-ink: #fffdf8;
+  --wand-muted: #aeb1b9;
+  --wand-action-ink: #111318;
+  background: #0b0d10;
 }
 body[data-theme="graphite"] {
-  --wand-accent: #9b91d8;
-  --wand-accent-2: #7169b5;
-  --wand-surface: #1b1c21;
-  --wand-surface-2: #131419;
-  --wand-border: #303138;
-  --wand-ink: #f1f1f4;
-  --wand-muted: #a0a0aa;
-  background: #111217;
+  --wand-accent: #c9ff4f;
+  --wand-accent-2: #c9ff4f;
+  --wand-surface: #1b1e24;
+  --wand-surface-2: #111318;
+  --wand-border: rgba(255, 255, 255, .14);
+  --wand-ink: #fffdf8;
+  --wand-muted: #aeb1b9;
+  --wand-action-ink: #111318;
+  background: #111318;
 }
 body[data-theme="daylight"] {
-  --wand-accent: #6e5bd2;
-  --wand-accent-2: #5745b4;
-  --wand-surface: #ffffff;
-  --wand-surface-2: #f5f4f8;
-  --wand-border: #e2e0e8;
-  --wand-ink: #25242c;
-  --wand-muted: #716e7c;
-  background: #f5f4f8;
+  --wand-accent: #c9ff4f;
+  --wand-accent-2: #c9ff4f;
+  --wand-surface: #fffdf8;
+  --wand-surface-2: #f2efe7;
+  --wand-border: rgba(17, 19, 24, .14);
+  --wand-ink: #111318;
+  --wand-muted: #696c73;
+  --wand-action-ink: #111318;
+  background: #f2efe7;
 }
 body[data-theme="porcelain"] {
-  --wand-accent: #7664bc;
-  --wand-accent-2: #5e4da1;
-  --wand-surface: #fffefd;
-  --wand-surface-2: #f6f3f0;
-  --wand-border: #e5e0db;
-  --wand-ink: #2b292d;
-  --wand-muted: #777278;
-  background: #f6f3f0;
+  --wand-accent: #c9ff4f;
+  --wand-accent-2: #c9ff4f;
+  --wand-surface: #fffdf8;
+  --wand-surface-2: #e8e4da;
+  --wand-border: rgba(17, 19, 24, .14);
+  --wand-ink: #111318;
+  --wand-muted: #696c73;
+  --wand-action-ink: #111318;
+  background: #e8e4da;
 }
 body[data-theme] .primary {
-  background: linear-gradient(135deg, var(--wand-accent), var(--wand-accent-2));
+  background: var(--wand-accent);
+  color: var(--wand-action-ink);
 }
