@@ -156,7 +156,7 @@ fn scan_repositories(root_path: String, db: State<Db>) -> Result<Vec<ScannedRepo
             .and_then(|x| x.to_str())
             .unwrap_or_default()
             .to_string();
-        if name.is_empty() {
+        if name.is_empty() || validate_github_repo(&name).is_err() {
             continue;
         }
         let path_string = path.to_string_lossy().to_string();
