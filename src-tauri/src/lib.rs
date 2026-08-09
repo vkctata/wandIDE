@@ -920,22 +920,25 @@ struct CliStatus {
     version: String,
 }
 fn installed_cli_path(command: &str) -> Option<String> {
-    let lookup = if cfg!(windows) {
-        Command::new("where").arg(command).output().ok()
-    } else {
-        Command::new("which").arg(command).output().ok()
-    }?;
-    if !lookup.status.success() {
-        return None;
+    let mut candidates = Vec::new();
+    if let Ok(path) = std::env::var("PATH") {
+        candidates.extend(std::env::split_paths(&path).map(|dir| dir.join(command)));
     }
-    String::from_utf8_lossy(&lookup.stdout)
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| Path::new(value).canonicalize().ok())
-        .filter(|value| value.is_file())
-        .map(|value| value.to_string_lossy().into_owned())
+    if cfg!(target_os = "macos") {
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            candidates.push(home.join(".local/bin").join(command));
+            candidates.push(home.join(".npm-global/bin").join(command));
+            candidates.push(home.join(".cargo/bin").join(command));
+        }
+        candidates.extend([
+            PathBuf::from("/opt/homebrew/bin").join(command),
+            PathBuf::from("/usr/local/bin").join(command),
+            PathBuf::from("/usr/bin").join(command),
+        ]);
+    }
+    candidates.into_iter().find_map(|candidate| {
+        candidate.canonicalize().ok().filter(|path| path.is_file()).map(|path| path.to_string_lossy().into_owned())
+    })
 }
 #[tauri::command]
 fn detect_clis() -> Vec<CliStatus> {
