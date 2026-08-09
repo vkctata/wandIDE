@@ -1673,6 +1673,15 @@ function SettingsView({
   repos: Repo[];
   setRepos: React.Dispatch<React.SetStateAction<Repo[]>>;
 }) {
+  type SettingsSection =
+    | "workspace"
+    | "appearance"
+    | "providers"
+    | "clis"
+    | "agents"
+    | "notifications"
+    | "whats-new";
+  const [section, setSection] = useState<SettingsSection>("workspace");
   const [root, setRoot] = useState("");
   const [scanError, setScanError] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -1712,6 +1721,15 @@ function SettingsView({
       setScanning(false);
     }
   };
+  const sections = [
+    { id: "workspace", label: "Workspace", hint: "Repositories", icon: FolderGit2 },
+    { id: "appearance", label: "Appearance", hint: "Themes", icon: Sun },
+    { id: "providers", label: "Providers", hint: "GitHub & Azure", icon: Zap },
+    { id: "clis", label: "CLI Access", hint: "Local runtimes", icon: TerminalSquare },
+    { id: "agents", label: "Agent Team", hint: "Responsibilities", icon: Bot },
+    { id: "notifications", label: "Notifications", hint: "Delivery rules", icon: Bell },
+    { id: "whats-new", label: "What’s New", hint: "Release notes", icon: Sparkles },
+  ] as const;
   return (
     <section className="content settings-page">
       <div className="hero compact">
@@ -1726,27 +1744,52 @@ function SettingsView({
           </p>
         </div>
       </div>
-      <div className="settingscard">
-        <h2>Repository workspace</h2>
-        <p>
-          {root ||
-            "Choose one folder and Wand will scan its immediate Git repositories."}
-        </p>
-        <div className="folder">
-          <FolderGit2 size={18} />
-          <span>{repos.length} repositories in this local workspace</span>
-          <button className="outline" onClick={scan} disabled={scanning}>
-            {scanning ? "Scanning…" : "Choose folder & scan"}
-          </button>
+      <div className="settings-layout">
+        <nav className="settings-section-nav" aria-label="Settings sections">
+          {sections.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                className={"settings-section-nav-item " + (section === item.id ? "active" : "")}
+                aria-current={section === item.id ? "page" : undefined}
+                onClick={() => setSection(item.id)}
+              >
+                <Icon size={16} />
+                <span>
+                  <b>{item.label}</b>
+                  <small>{item.hint}</small>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="settings-section-content">
+          {section === "workspace" && (
+            <div className="settingscard">
+              <h2>Repository workspace</h2>
+              <p>
+                {root ||
+                  "Choose one folder and Wand will scan its immediate Git repositories."}
+              </p>
+              <div className="folder">
+                <FolderGit2 size={18} />
+                <span>{repos.length} repositories in this local workspace</span>
+                <button className="outline" onClick={scan} disabled={scanning}>
+                  {scanning ? "Scanning…" : "Choose folder & scan"}
+                </button>
+              </div>
+              {scanError && <p className="provider-message" role="alert">{scanError}</p>}
+            </div>
+          )}
+          {section === "appearance" && <ThemeSection />}
+          {section === "providers" && <ProviderAccess />}
+          {section === "clis" && <CliManager />}
+          {section === "agents" && <AgentManager repos={repos} />}
+          {section === "notifications" && <NotificationPreferencesSection />}
+          {section === "whats-new" && <WhatsNewSection />}
         </div>
-        {scanError && <p className="provider-message" role="alert">{scanError}</p>}
       </div>
-      <ThemeSection />
-      <ProviderAccess />
-      <CliManager />
-      <AgentManager repos={repos} />
-      <NotificationPreferencesSection />
-      <WhatsNewSection />
     </section>
   );
 }
