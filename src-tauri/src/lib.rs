@@ -2211,6 +2211,10 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
             }
         }
     }
+    // The manual activity endpoint above returns issue comments. Pull-request
+    // review comments use a separate GitHub API surface, so refresh that
+    // surface as part of the same user-triggered sync as well.
+    background_github_activity(db.0.clone(), app.clone()).await;
     let _ = app.emit(
         "wand://notifications",
         serde_json::json!({"provider":"github","added":added}),
