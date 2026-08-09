@@ -69,11 +69,24 @@ const isTauriRuntime = () =>
   );
 type RuntimePlatform = "macos" | "windows" | "linux";
 type ThemeName = "obsidian" | "daylight";
+type FontName = "system" | "fira-code" | "jetbrains-mono" | "avenir";
 const normalizeTheme = (value: string | null | undefined): ThemeName => {
   if (["daylight", "porcelain", "paper", "mint", "lavender"].includes(value || ""))
     return "daylight";
   return "obsidian";
 };
+const normalizeFont = (value: string | null | undefined): FontName => {
+  if (["system", "fira-code", "jetbrains-mono", "avenir"].includes(value || "")) {
+    return value as FontName;
+  }
+  return "system";
+};
+const fontOptions: Array<{ id: FontName; name: string; description: string }> = [
+  { id: "system", name: "System UI", description: "Native and polished" },
+  { id: "fira-code", name: "Fira Code", description: "Technical and expressive" },
+  { id: "jetbrains-mono", name: "JetBrains Mono", description: "Calm developer focus" },
+  { id: "avenir", name: "Avenir Next", description: "Warm and editorial" },
+];
 const runtimePlatform = (): RuntimePlatform => {
   if (typeof navigator === "undefined") return "linux";
   const identity = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
@@ -2765,6 +2778,9 @@ function ThemeSection() {
   const [theme, setTheme] = useState(() =>
     isTauriRuntime() ? "obsidian" : normalizeTheme(localStorage.getItem("wand.theme")),
   );
+  const [font, setFont] = useState<FontName>(() =>
+    isTauriRuntime() ? "system" : normalizeFont(localStorage.getItem("wand.font")),
+  );
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "theme" })
       .then((value) => {
@@ -2773,6 +2789,14 @@ function ThemeSection() {
         setTheme(nextTheme);
         document.body.dataset.theme = nextTheme;
         if (!isTauriRuntime()) localStorage.setItem("wand.theme", nextTheme);
+      })
+      .catch(() => {});
+    invoke<string | null>("workspace_setting", { key: "font" })
+      .then((value) => {
+        const nextFont = normalizeFont(value);
+        setFont(nextFont);
+        document.body.dataset.font = nextFont;
+        if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
       })
       .catch(() => {});
   }, []);
@@ -2788,6 +2812,15 @@ function ThemeSection() {
   };
   const setMode = (mode: "dark" | "light") => {
     choose(mode === "light" ? "daylight" : "obsidian");
+  };
+  const chooseFont = (name: FontName) => {
+    setFont(name);
+    document.body.dataset.font = name;
+    if (!isTauriRuntime()) localStorage.setItem("wand.font", name);
+    void invoke("save_workspace_setting", {
+      key: "font",
+      value: name,
+    }).catch(() => {});
   };
   return (
     <div className="settings-section appearance-section">
@@ -2812,6 +2845,29 @@ function ThemeSection() {
           <Sun size={16} />
           <span>Light Mode</span>
         </button>
+      </div>
+      <div className="font-picker">
+        <div className="font-picker-head">
+          <div>
+            <h3>Typography</h3>
+            <p>Try a typeface across the whole workspace.</p>
+          </div>
+          <span className="font-picker-current">{fontOptions.find((option) => option.id === font)?.name}</span>
+        </div>
+        <div className="font-option-grid" role="group" aria-label="Interface font">
+          {fontOptions.map((option) => (
+            <button
+              key={option.id}
+              className={"font-option font-option-" + option.id + (font === option.id ? " active" : "")}
+              onClick={() => chooseFont(option.id)}
+              aria-pressed={font === option.id}
+            >
+              <strong>{option.name}</strong>
+              <span>{option.description}</span>
+              <em aria-hidden="true">Ag</em>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -3441,6 +3497,7 @@ function OnboardingGate() {
       <RuntimeIdentity />
       <PlatformBootstrap />
       <ThemeBootstrap />
+      <FontBootstrap />
       <ModalHost />
       {show === true && <Onboarding done={finish} />}
     </>
@@ -3466,6 +3523,23 @@ function ThemeBootstrap() {
     invoke<string | null>("workspace_setting", { key: "theme" })
       .then((value) => apply(normalizeTheme(value)))
       .catch(() => apply("obsidian"));
+  }, []);
+  return null;
+}
+function FontBootstrap() {
+  useEffect(() => {
+    const apply = (value: string | null | undefined) => {
+      const nextFont = normalizeFont(value);
+      document.body.dataset.font = nextFont;
+      if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
+    };
+    if (!isTauriRuntime()) {
+      apply(localStorage.getItem("wand.font"));
+      return;
+    }
+    invoke<string | null>("workspace_setting", { key: "font" })
+      .then(apply)
+      .catch(() => apply("system"));
   }, []);
   return null;
 }

@@ -1027,3 +1027,114 @@ body[data-theme="daylight"] .sideplus:hover,
 body[data-theme="daylight"] .whats-new-nav:hover {
   color: #34470b !important;
 }
+
+/* Typography is intentionally a short, testable set. Every choice has
+   platform-native fallbacks, so Wand stays readable without fetching fonts. */
+body[data-font="system"],
+body[data-font="system"] button,
+body[data-font="system"] input,
+body[data-font="system"] textarea,
+body[data-font="system"] select {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, sans-serif !important;
+}
+body[data-font="fira-code"],
+body[data-font="fira-code"] button,
+body[data-font="fira-code"] input,
+body[data-font="fira-code"] textarea,
+body[data-font="fira-code"] select {
+  font-family: "Fira Code", "SF Mono", "Cascadia Code", ui-monospace, monospace !important;
+}
+body[data-font="jetbrains-mono"],
+body[data-font="jetbrains-mono"] button,
+body[data-font="jetbrains-mono"] input,
+body[data-font="jetbrains-mono"] textarea,
+body[data-font="jetbrains-mono"] select {
+  font-family: "JetBrains Mono", "Cascadia Code", "SF Mono", ui-monospace, monospace !important;
+}
+body[data-font="avenir"],
+body[data-font="avenir"] button,
+body[data-font="avenir"] input,
+body[data-font="avenir"] textarea,
+body[data-font="avenir"] select {
+  font-family: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+.font-picker {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--wand-border, rgba(255, 255, 255, .12));
+}
+.font-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.font-picker-head h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  letter-spacing: -.01em;
+}
+.font-picker-head p {
+  margin: 0;
+  color: var(--wand-muted, #aeb1b9);
+  font-size: 11px;
+}
+.font-picker-current {
+  color: var(--wand-accent, #c9ff4f);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.font-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.font-option {
+  position: relative;
+  min-height: 86px;
+  overflow: hidden;
+  padding: 13px 48px 13px 14px;
+  border: 1px solid var(--wand-border, rgba(255, 255, 255, .12));
+  border-radius: var(--native-radius-sm, 8px);
+  background: color-mix(in srgb, var(--wand-surface-2, #15181e) 80%, transparent);
+  color: var(--wand-ink, #fffdf8);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.font-option:hover {
+  border-color: color-mix(in srgb, var(--wand-accent, #c9ff4f) 46%, var(--wand-border));
+  background: color-mix(in srgb, var(--wand-accent, #c9ff4f) 7%, var(--wand-surface-2));
+}
+.font-option.active {
+  border-color: color-mix(in srgb, var(--wand-accent, #c9ff4f) 70%, var(--wand-border));
+  background: color-mix(in srgb, var(--wand-accent, #c9ff4f) 13%, var(--wand-surface-2));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .10), 0 0 18px color-mix(in srgb, var(--wand-accent, #c9ff4f) 13%, transparent);
+}
+.font-option strong,
+.font-option span { display: block; }
+.font-option strong { font-size: 13px; line-height: 1.25; }
+.font-option span { margin-top: 4px; color: var(--wand-muted, #aeb1b9); font-size: 10px; }
+.font-option em {
+  position: absolute;
+  right: 13px;
+  bottom: 10px;
+  color: var(--wand-accent, #c9ff4f);
+  font-size: 25px;
+  font-style: normal;
+  line-height: 1;
+  opacity: .85;
+}
+body[data-font] .font-option-system { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }
+body[data-font] .font-option-fira-code { font-family: "Fira Code", "SF Mono", ui-monospace, monospace !important; }
+body[data-font] .font-option-jetbrains-mono { font-family: "JetBrains Mono", "Cascadia Code", "SF Mono", ui-monospace, monospace !important; }
+body[data-font] .font-option-avenir { font-family: "Avenir Next", Avenir, -apple-system, sans-serif !important; }
+body[data-theme="daylight"] .font-option { background: rgba(250, 252, 252, .64); border-color: rgba(53, 71, 80, .22); }
+body[data-theme="daylight"] .font-option.active { background: rgba(201, 255, 79, .16); border-color: rgba(94, 126, 24, .56); }
+body[data-theme="daylight"] .font-picker-current { color: #506916; }
+@media (max-width: 620px) {
+  .font-option-grid { grid-template-columns: 1fr; }
+}
