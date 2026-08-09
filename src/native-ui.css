@@ -972,8 +972,8 @@ body[data-theme="daylight"] .app > main {
 body[data-theme="daylight"] .app > main > .content {
   background-color: #e4ebee !important;
   background-image:
-    linear-gradient(rgba(49, 68, 78, .21) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(49, 68, 78, .21) 1px, transparent 1px),
+    linear-gradient(rgba(49, 68, 78, .15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(49, 68, 78, .15) 1px, transparent 1px),
     radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .76), transparent 70%),
     radial-gradient(680px 460px at 96% 4%, rgba(175, 199, 208, .50), transparent 72%) !important;
 }
@@ -990,4 +990,21 @@ body[data-theme="daylight"] .content .emptyhint {
     inset 0 1px rgba(255, 255, 255, .86),
     0 18px 42px rgba(49, 68, 78, .18),
     0 0 28px rgba(201, 255, 79, .10) !important;
+}
+/* Ink-first wordmark with restrained signal-green details stays legible on
+   the frosted light shell. */
+body[data-theme="daylight"] aside .wand-wordmark {
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: #142127 !important;
+  color: #142127 !important;
+  filter: drop-shadow(0 1px 1px rgba(255, 255, 255, .72)) !important;
+}
+body[data-theme="daylight"] aside .wand-wordmark .wand-dot,
+body[data-theme="daylight"] aside .wand-wordmark .d-sparkle {
+  color: #82ad20 !important;
+  fill: #82ad20 !important;
+  -webkit-text-fill-color: #82ad20 !important;
+  filter: drop-shadow(0 1px 2px rgba(94, 126, 24, .24)) !important;
 }
