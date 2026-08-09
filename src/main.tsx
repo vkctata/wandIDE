@@ -1793,9 +1793,10 @@ function SettingsView({
     </section>
   );
 }
-function Onboarding({ done }: { done: (name: string) => void }) {
+function Onboarding({ done }: { done: (name: string) => Promise<void> }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  const [error, setError] = useState("");
   const slides = [
     [
       "Welcome to Wand",
@@ -1822,6 +1823,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
         <p className="eyebrow">WAND / GETTING STARTED</p>
         <h1>{current[0]}</h1>
         <p>{current[1]}</p>
+        {error && <p className="provider-message" role="alert">{error}</p>}
         {step === 0 && (
           <label className="onboard-field">
             <span>What should Wand call you?</span>
@@ -1852,9 +1854,18 @@ function Onboarding({ done }: { done: (name: string) => void }) {
           <button
             className="primary"
             disabled={step === 0 && !name.trim()}
-            onClick={() =>
-              step < slides.length - 1 ? setStep(step + 1) : done(name.trim())
-            }
+            onClick={async () => {
+              if (step < slides.length - 1) {
+                setStep(step + 1);
+                return;
+              }
+              setError("");
+              try {
+                await done(name.trim());
+              } catch (cause) {
+                setError(`Unable to save your name: ${String(cause)}`);
+              }
+            }}
           >
             {step < slides.length - 1 ? "Continue" : "Enter Wand"}
           </button>
@@ -3318,9 +3329,9 @@ function OnboardingGate() {
       );
   }, []);
   const finish = async (name: string) => {
-    await invoke("save_user_name", { name }).catch(() => {});
+    await invoke("save_user_name", { name });
     window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
-    localStorage.setItem("wand.onboarding.complete", "true");
+    if (!isTauriRuntime()) localStorage.setItem("wand.onboarding.complete", "true");
     setShow(false);
   };
   return (
