@@ -3116,10 +3116,7 @@ fn list_events(limit: Option<i64>, db: State<Db>) -> Result<Vec<EventRow>, Strin
 }
 #[tauri::command]
 fn save_workspace_root(root: String, db: State<Db>) -> Result<(), String> {
-    let value = root.trim().to_string();
-    if value.is_empty() {
-        return Err("Workspace root cannot be empty".into());
-    }
+    let value = canonical_workspace_root(&root)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO provider_settings(provider,url) VALUES ('workspace-root',?1)",
@@ -3127,6 +3124,19 @@ fn save_workspace_root(root: String, db: State<Db>) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+fn canonical_workspace_root(raw: &str) -> Result<String, String> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err("Workspace root cannot be empty".into());
+    }
+    let root = Path::new(value)
+        .canonicalize()
+        .map_err(|_| "Workspace root must be an existing folder".to_string())?;
+    if !root.is_dir() {
+        return Err("Workspace root must be an existing folder".into());
+    }
+    Ok(root.to_string_lossy().to_string())
 }
 #[tauri::command]
 fn workspace_root(db: State<Db>) -> Result<Option<String>, String> {
@@ -3540,5 +3550,18 @@ mod tests {
         assert!(validate_github_repo("vkctata/../wandIDE").is_err());
         assert!(validate_github_repo("vkctata/.").is_err());
         assert!(validate_github_repo("github.com/vkctata/wandIDE").is_err());
+    }
+
+    #[test]
+    fn canonicalizes_only_existing_workspace_roots() {
+        let root = std::env::temp_dir().join(format!("wand-workspace-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let canonical = root.canonicalize().unwrap().to_string_lossy().to_string();
+
+        assert_eq!(canonical_workspace_root(&format!("  {}  ", root.display())).unwrap(), canonical);
+        assert!(canonical_workspace_root(&root.join("missing").to_string_lossy()).is_err());
+        assert!(canonical_workspace_root(&root.join("file.txt").to_string_lossy()).is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
