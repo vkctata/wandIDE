@@ -780,3 +780,11 @@ body[data-theme] .agent-config .textbtn.danger { color: #ff9b9b !important; }
 .modal-path-picker { display: flex; gap: 8px; align-items: center; }
 .modal-path-picker input { min-width: 0; flex: 1; }
 .modal-path-picker .outline { flex: none; min-height: 42px; white-space: nowrap; }
+
+/* Keep the desktop chrome continuous: the sidebar is the same material as the
+   top bar in every appearance, rather than a competing theme surface. */
+body[data-theme] aside,
+body[data-theme] header,
+body[data-theme] .app > main > header {
+  background: #0d0d12 !important;
+}
