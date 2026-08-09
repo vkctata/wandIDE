@@ -296,6 +296,7 @@ function App() {
   });
   const [userName, setUserName] = useState("there");
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ id: string; label: string; detail: string; target: View; repo?: string }>>([]);
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
   const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
@@ -329,6 +330,28 @@ function App() {
       stop.then((unsubscribe) => unsubscribe());
     };
   }, []);
+  useEffect(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) { setSearchResults([]); return; }
+    let active = true;
+    const search = async () => {
+      const results: Array<{ id: string; label: string; detail: string; target: View; repo?: string }> = [];
+      repos.forEach((item) => {
+        if (`${item.name} ${item.path} ${item.provider}`.toLowerCase().includes(term)) results.push({ id: `repo:${item.name}`, label: item.name, detail: `${item.provider} repository`, target: "threads", repo: item.name });
+      });
+      tasks.forEach((item) => { if (`${item.name} ${item.repo} ${item.status}`.toLowerCase().includes(term)) results.push({ id: `task:${item.id}`, label: item.name, detail: `Task · ${item.status}`, target: "tasks" }); });
+      agentCatalog.forEach((item) => { if (`${item.name} ${item.role} ${item.skills.join(" ")}`.toLowerCase().includes(term)) results.push({ id: `agent:${item.id}`, label: `@${item.name}`, detail: `Agent · ${item.role}`, target: "home" }); });
+      const [notifications, events] = await Promise.all([
+        invoke<any[]>("list_notifications").catch(() => []),
+        invoke<any[]>("list_events", { limit: 100 }).catch(() => []),
+      ]);
+      notifications.forEach((item) => { if (`${item.title} ${item.body} ${item.repo} ${item.author}`.toLowerCase().includes(term)) results.push({ id: `notice:${item.id}`, label: item.title, detail: `${item.provider} · ${item.repo}`, target: "notifications" }); });
+      events.forEach((item) => { if (`${item.kind} ${item.message}`.toLowerCase().includes(term)) results.push({ id: `event:${item.id}`, label: item.message, detail: `Activity · ${item.created_at}`, target: "home" }); });
+      if (active) setSearchResults(results.slice(0, 12));
+    };
+    void search();
+    return () => { active = false; };
+  }, [query, repos, tasks, agentCatalog]);
   useEffect(() => {
     invoke<any[]>("list_tasks")
       .then((rows) =>
@@ -797,33 +820,20 @@ function App() {
         </header>
         {query.trim() && (
           <div className="search-palette">
-            {[
-              ["home", "Overview"],
-              ["code", "Code"],
-              ["threads", repo.name + " threads"],
-              ["tasks", "Scheduled tasks"],
-              ["notifications", "Notifications"],
-              ...repos.map((r) => ["threads", r.name]),
-              ...tasks.map((t) => ["tasks", t.name]),
-              ...agentCatalog.map((a) => ["settings", a.name]),
-            ]
-              .filter((item) =>
-                item[1].toLowerCase().includes(query.toLowerCase()),
-              )
-              .slice(0, 8)
-              .map(([target, label], index) => (
+            {searchResults.map((result) => (
                 <button
-                  key={target + label + index}
+                  key={result.id}
                   onMouseDown={() => {
-                    if (target === "settings") openSettings("agents");
-                    else setView(target as View);
+                    if (result.id.startsWith("agent:")) openSettings("agents");
+                    else { if (result.repo) { const selectedRepo = repos.find((item) => item.name === result.repo); if (selectedRepo) setRepo(selectedRepo); } setView(result.target); }
                     setQuery("");
                   }}
                 >
-                  <span>{label}</span>
-                  <small>{target}</small>
+                  <span>{result.label}</span>
+                  <small>{result.detail}</small>
                 </button>
               ))}
+            {searchResults.length === 0 && <div className="search-empty">No matching repositories, tasks, agents, activity, or notifications.</div>}
           </div>
         )}
         {notice && (
