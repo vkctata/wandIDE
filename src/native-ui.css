@@ -866,3 +866,23 @@ body[data-theme] .app > main > header {
   border-bottom-left-radius: 24px;
   overflow: hidden;
 }
+
+/* Activity's empty state is still a primary dashboard card, not a placeholder. */
+body[data-theme] .content .emptyhint {
+  background: color-mix(in srgb, var(--wand-surface) 76%, transparent) !important;
+  border: 1px solid var(--wand-border) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 253, 248, .10),
+    0 14px 34px rgba(11, 13, 16, .12),
+    0 0 28px color-mix(in srgb, var(--wand-accent) 9%, transparent) !important;
+  backdrop-filter: blur(18px) !important;
+}
+body[data-theme="daylight"] .content .emptyhint {
+  background: rgba(255, 255, 255, .56) !important;
+  border-color: rgba(60, 76, 86, .17) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .82),
+    0 18px 42px rgba(68, 84, 94, .13),
+    0 0 28px rgba(201, 255, 79, .08) !important;
+  backdrop-filter: saturate(132%) blur(22px) !important;
+}
