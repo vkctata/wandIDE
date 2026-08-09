@@ -3520,4 +3520,12 @@ mod tests {
         )
         .is_err());
     }
+
+    #[test]
+    fn validates_github_repository_segments_before_building_action_urls() {
+        assert_eq!(validate_github_repo("vkctata/wandIDE").unwrap(), "vkctata/wandIDE");
+        assert!(validate_github_repo("vkctata/../wandIDE").is_err());
+        assert!(validate_github_repo("vkctata/.").is_err());
+        assert!(validate_github_repo("github.com/vkctata/wandIDE").is_err());
+    }
 }
