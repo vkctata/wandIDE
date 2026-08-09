@@ -2201,7 +2201,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
       claude: ["default", "sonnet", "opus"],
       codex: ["default", "gpt-5-codex"],
       gemini: ["default", "gemini-2.5-pro"],
-      kimi: ["default", "kimi-k2"],
+      kimi: ["default", "kimi-k3"],
     };
     const selectedCli = cliOptions.includes(agent?.cli || "")
       ? agent?.cli || cliOptions[0]

@@ -3355,8 +3355,8 @@ mod tests {
             vec!["exec", "--model", "gpt-5", "hello"]
         );
         assert_eq!(
-            cli_args("kimi", "kimi-k2", "hello".into()).unwrap(),
-            vec!["--print", "--model", "kimi-k2", "hello"]
+            cli_args("kimi", "kimi-k3", "hello".into()).unwrap(),
+            vec!["--print", "--model", "kimi-k3", "hello"]
         );
         assert_eq!(
             cli_args("gemini", "gemini-2.5-pro", "hello".into()).unwrap(),
