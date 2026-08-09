@@ -1008,3 +1008,22 @@ body[data-theme="daylight"] aside .wand-wordmark .d-sparkle {
   -webkit-text-fill-color: #82ad20 !important;
   filter: drop-shadow(0 1px 2px rgba(94, 126, 24, .24)) !important;
 }
+
+/* Signal-green remains an accent in Daylight, but never carries body copy.
+   Deep olive keeps actionable text clear on the misty glass surfaces. */
+body[data-theme="daylight"] .content > .hero .eyebrow,
+body[data-theme="daylight"] .content .eyebrow,
+body[data-theme="daylight"] .settings-modal .eyebrow,
+body[data-theme="daylight"] .textbtn,
+body[data-theme="daylight"] .sideplus,
+body[data-theme="daylight"] .theme-current,
+body[data-theme="daylight"] .whats-new-nav,
+body[data-theme="daylight"] .settings-modal-content .agent-config small,
+body[data-theme="daylight"] .account-dropdown button:hover {
+  color: #506916 !important;
+}
+body[data-theme="daylight"] .textbtn:hover,
+body[data-theme="daylight"] .sideplus:hover,
+body[data-theme="daylight"] .whats-new-nav:hover {
+  color: #34470b !important;
+}
