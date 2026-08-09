@@ -1138,3 +1138,55 @@ body[data-theme="daylight"] .font-picker-current { color: #506916; }
 @media (max-width: 620px) {
   .font-option-grid { grid-template-columns: 1fr; }
 }
+
+/* Preferences use the same continuous chrome as the application shell. The
+   content pane begins at an outer corner, rather than creating a hard T-joint
+   between the title bar and settings navigation. */
+.settings-modal {
+  --settings-shell: #0d0d12;
+  --settings-pane: #22252b;
+  --settings-seam: rgba(255, 255, 255, .13);
+}
+.settings-modal-header {
+  background: var(--settings-shell) !important;
+  border-bottom: 0 !important;
+}
+.settings-modal-body {
+  background: var(--settings-shell) !important;
+}
+.settings-modal-nav {
+  background: transparent !important;
+  border-right: 0 !important;
+}
+.settings-modal-content {
+  position: relative;
+  margin: 0;
+  border-top: 1px solid var(--settings-seam);
+  border-left: 1px solid var(--settings-seam);
+  border-top-left-radius: 26px;
+  background-color: var(--settings-pane) !important;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .055) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .04);
+}
+body[data-theme="daylight"] .settings-modal,
+body[data-theme="porcelain"] .settings-modal {
+  --settings-shell: rgba(211, 223, 228, .94);
+  --settings-pane: #e4ebee;
+  --settings-seam: rgba(53, 71, 80, .24);
+}
+body[data-theme="daylight"] .settings-modal-content,
+body[data-theme="porcelain"] .settings-modal-content {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .50) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .50) 1px, transparent 1px),
+    radial-gradient(680px 420px at 96% 4%, rgba(175, 199, 208, .40), transparent 72%) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .62);
+}
+@media (max-width: 760px) {
+  .settings-modal-content {
+    border-top-left-radius: 18px;
+  }
+}
