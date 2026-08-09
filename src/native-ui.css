@@ -863,8 +863,18 @@ body[data-theme] aside {
 }
 body[data-theme] .app > main > header {
   border-bottom: 0 !important;
-  border-bottom-left-radius: 24px;
-  overflow: hidden;
+  border-bottom-left-radius: 0;
+}
+body[data-theme] .app > main {
+  background: #0d0d12 !important;
+}
+body[data-theme] .app > main > .content {
+  background-color: #22252b !important;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .075) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+  border-top-left-radius: 24px;
 }
 
 /* Activity's empty state is still a primary dashboard card, not a placeholder. */
@@ -893,6 +903,18 @@ body[data-theme="daylight"] header,
 body[data-theme="daylight"] .app > main > header {
   background: #e9edef !important;
   border-color: rgba(60, 76, 86, .14) !important;
+}
+body[data-theme="daylight"] .app > main {
+  background: #e9edef !important;
+}
+body[data-theme="daylight"] .app > main > .content {
+  background-color: #e9edef !important;
+  background-image:
+    radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .94), transparent 70%),
+    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%),
+    linear-gradient(rgba(71, 87, 96, .10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 87, 96, .10) 1px, transparent 1px) !important;
+  background-size: auto, auto, 32px 32px, 32px 32px !important;
 }
 body[data-theme="daylight"] aside .nav,
 body[data-theme="daylight"] aside .repo,
