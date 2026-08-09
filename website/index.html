@@ -3,18 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Wand is the local-first desktop workspace for running coding agents across repositories, tasks, reviews, and verification." />
-    <meta name="theme-color" content="#0b0d10" />
+    <meta name="description" content="Wand is the local-first desktop workspace for running coding agents across repositories, tasks, reviews, and verification — with focused dark and misty glass light modes." />
+    <meta name="theme-color" content="#0d0d12" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.github.com https:; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Wand — run the whole engineering loop" />
-    <meta property="og:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification." />
-    <meta property="og:image" content="https://vkctata.github.io/wandIDE/assets/og.png" />
+    <meta property="og:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification, with focused dark and misty glass light modes." />
+    <meta property="og:image" content="https://vkctata.github.io/wandIDE/assets/wand-home-obsidian.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Wand — run the whole engineering loop" />
-    <meta name="twitter:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification." />
-    <meta name="twitter:image" content="https://vkctata.github.io/wandIDE/assets/og.png" />
+    <meta name="twitter:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification, with focused dark and misty glass light modes." />
+    <meta name="twitter:image" content="https://vkctata.github.io/wandIDE/assets/wand-home-obsidian.jpg" />
     <title>Wand — run the whole engineering loop</title>
     <link rel="icon" type="image/svg+xml" href="./assets/wand-logo.svg" />
     <link rel="stylesheet" href="./styles.css" />
@@ -26,6 +26,7 @@
       <nav aria-label="Site links">
         <a href="#workflow">Workflow</a>
         <a href="#product">Product</a>
+        <a href="#themes">Themes</a>
         <a href="#security">Security</a>
       </nav>
       <a class="nav-cta" href="#download">Download <span aria-hidden="true">↗</span></a>
@@ -36,7 +37,7 @@
         <div class="hero-copy">
           <p class="eyebrow"><span class="live-dot"></span> Local-first agent workspace</p>
           <h1>Run the whole<br />engineering <em>loop.</em></h1>
-          <p class="lede">Wand puts your coding agents, repositories, tasks, reviews, and background verification in one focused desktop workspace.</p>
+          <p class="lede">Wand puts your coding agents, repositories, tasks, reviews, and background verification in one focused desktop workspace — tuned for either a calm misty canvas or a focused charcoal grid.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#download">Get Wand <span aria-hidden="true">↗</span></a>
             <a class="button button-quiet" href="https://github.com/vkctata/wandIDE" target="_blank" rel="noopener noreferrer">Explore the source <span aria-hidden="true">↗</span></a>
@@ -47,7 +48,7 @@
         </div>
         <div class="hero-product" aria-label="Wand product preview">
           <div class="window-chrome"><span></span><span></span><span></span><b>wand / workspace</b></div>
-          <img src="./assets/wand-home.png" alt="Wand desktop workspace showing repositories, tasks, activity, and active agents" />
+          <img src="./assets/wand-home-obsidian.jpg" alt="Latest Wand desktop workspace in focused Dark Mode" />
           <div class="agent-status status-builder"><span>B</span><div><small>BUILDER</small><strong>Implementing</strong></div><i></i></div>
           <div class="agent-status status-sentinel"><span>S</span><div><small>SENTINEL</small><strong>Verification queued</strong></div><i></i></div>
         </div>
@@ -96,13 +97,24 @@
             <img src="./assets/wand-workspace.png" alt="Wand repository workspace with navigation and repository context" loading="lazy" />
           </article>
           <article class="bento bento-tall">
-            <span class="card-number">02</span><h3>Your agent team, your way</h3><p>Configure responsibility, model, CLI runtime, skills, and scope for every specialist.</p>
-            <img src="./assets/wand-agents.png" alt="Wand agent team configuration" loading="lazy" />
+            <span class="card-number">02</span><h3>One focused control center</h3><p>Settings stay in one spacious modal for appearance, workspace, providers, CLI access, agents, and notifications.</p>
+            <img src="./assets/wand-settings-daylight.jpg" alt="Latest Wand Settings modal with focused sections in Light Mode" loading="lazy" />
           </article>
           <article class="bento bento-dark">
             <span class="card-number">03</span><h3>Background work without the mystery</h3><p>Scheduled runs, sync events, notifications, and handoffs land in one readable timeline.</p>
             <div class="event-stack" aria-hidden="true"><span><i></i> Builder completed</span><span><i></i> Review ready</span><span><i></i> Sentinel verifying</span></div>
           </article>
+        </div>
+      </section>
+
+      <section class="themes section" id="themes" aria-labelledby="themes-title">
+        <div class="section-intro row">
+          <div><p class="eyebrow">Two considered appearances</p><h2 id="themes-title">Misty by day.<br /><em>Focused by night.</em></h2></div>
+          <p>Light Mode uses frosted blue-grey chrome and a subtle grid. Dark Mode keeps the same canvas in charcoal, with signal-green reserved for the moments that matter.</p>
+        </div>
+        <div class="theme-preview-grid">
+          <figure class="theme-preview daylight-preview"><img src="./assets/wand-home-daylight.jpg" alt="Latest Wand home workspace in misty glass Light Mode" loading="lazy" /><figcaption><span>01</span><div><b>Light Mode</b><p>Misty glass, dark ink, and a quieter grid.</p></div></figcaption></figure>
+          <figure class="theme-preview obsidian-preview"><img src="./assets/wand-home-obsidian.jpg" alt="Latest Wand home workspace in charcoal grid Dark Mode" loading="lazy" /><figcaption><span>02</span><div><b>Dark Mode</b><p>Deep focus with restrained signal-green accents.</p></div></figcaption></figure>
         </div>
       </section>
 
@@ -112,9 +124,9 @@
           <p>Tasks, activity, provider events, and agent handoffs stay close to the code instead of disappearing across tools.</p>
         </div>
         <div class="gallery">
-          <figure class="gallery-main"><img src="./assets/wand-threads.jpg" alt="A repository thread in Wand with human and agent messages" loading="lazy" /><figcaption><b>Repository threads</b><span>Persistent discussion and agent handoffs, scoped to the work.</span></figcaption></figure>
-          <figure><img src="./assets/wand-tasks.jpg" alt="Wand task list showing agent runs and status" loading="lazy" /><figcaption><b>Task control</b><span>One-off and recurring runs with durable state.</span></figcaption></figure>
-          <figure><img src="./assets/wand-activity.png" alt="Wand activity timeline" loading="lazy" /><figcaption><b>Live activity</b><span>Provider sync, review events, and verification in one place.</span></figcaption></figure>
+          <figure class="gallery-main"><img src="./assets/wand-home-daylight.jpg" alt="Latest Wand home workspace in Light Mode" loading="lazy" /><figcaption><b>Light workspace</b><span>Readable dark ink, translucent cards, and a restrained grid for everyday work.</span></figcaption></figure>
+          <figure><img src="./assets/wand-settings-daylight.jpg" alt="Latest Wand Settings modal with settings sections" loading="lazy" /><figcaption><b>Unified settings</b><span>Appearance, workspace, providers, agents, and notifications in one modal.</span></figcaption></figure>
+          <figure><img src="./assets/wand-home-obsidian.jpg" alt="Latest Wand home workspace in Dark Mode" loading="lazy" /><figcaption><b>Focused workspace</b><span>Same layout, same hierarchy, with a deep charcoal grid for low-light focus.</span></figcaption></figure>
         </div>
       </section>
 

@@ -68,10 +68,9 @@ const isTauriRuntime = () =>
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
   );
 type RuntimePlatform = "macos" | "windows" | "linux";
-type ThemeName = "obsidian" | "graphite" | "daylight" | "porcelain";
+type ThemeName = "obsidian" | "daylight";
 const normalizeTheme = (value: string | null | undefined): ThemeName => {
-  if (value === "graphite" || value === "porcelain") return value;
-  if (["daylight", "paper", "mint", "lavender"].includes(value || ""))
+  if (["daylight", "porcelain", "paper", "mint", "lavender"].includes(value || ""))
     return "daylight";
   return "obsidian";
 };
@@ -97,8 +96,7 @@ const listen = <T = unknown,>(
 ): Promise<() => void> =>
   isTauriRuntime() ? tauriListen<T>(event, handler) : Promise.resolve(() => {});
 
-type View =
-  "home" | "code" | "threads" | "tasks" | "notifications" | "settings";
+type View = "home" | "code" | "threads" | "tasks" | "notifications";
 type Repo = {
   name: string;
   path: string;
@@ -197,6 +195,7 @@ type ModalField = {
   optionsFor?: (values: Record<string, string>) => string[];
   multiline?: boolean;
   maxLength?: number;
+  directory?: boolean;
 };
 type ModalRequest = {
   title: string;
@@ -278,6 +277,11 @@ function App() {
   }, []);
   const [view, setView] = useState<View>("home");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("appearance");
+  const openSettings = (tab = "appearance") => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
   const [repos, setRepos] = useState(() =>
     isTauriRuntime() ? defaultRepos : load("wand.repos", defaultRepos),
   );
@@ -506,7 +510,12 @@ function App() {
       "Add repository",
       [
         { id: "name", label: "Repository name", placeholder: "wand" },
-        { id: "path", label: "Local folder path", placeholder: "~/Code/wand" },
+        {
+          id: "path",
+          label: "Local folder path",
+          placeholder: "~/Code/wand",
+          directory: true,
+        },
       ],
       "Add a local repository to your Wand workspace.",
     );
@@ -540,7 +549,7 @@ function App() {
       setNotice(
         "Choose a repository folder in Settings before scheduling a task.",
       );
-      setView("settings");
+      openSettings("workspace");
       return;
     }
     if (repo.provider && repo.provider !== "local") {
@@ -557,7 +566,7 @@ function App() {
     );
     if (!available.length) {
       setNotice("Enable an installed CLI and a compatible agent in Settings first.");
-      setView("settings");
+      openSettings("agents");
       return;
     }
     const values = await askModal(
@@ -776,7 +785,7 @@ function App() {
                 </span>
               )}
             </button>
-            <AccountMenu onSettings={() => setSettingsOpen(true)} />
+            <AccountMenu onSettings={() => openSettings()} />
           </div>
         </header>
         {query.trim() && (
@@ -799,7 +808,8 @@ function App() {
                 <button
                   key={target + label + index}
                   onMouseDown={() => {
-                    setView(target as View);
+                    if (target === "settings") openSettings("agents");
+                    else setView(target as View);
                     setQuery("");
                   }}
                 >
@@ -815,17 +825,19 @@ function App() {
           </button>
         )}
         {view === "home" ? (
-          <Home setView={setView} userName={userName} />
+          <Home
+            openSettings={openSettings}
+            openTasks={() => setView("tasks")}
+            userName={userName}
+          />
         ) : view === "code" ? (
           <CodeWorkspace repo={repo} />
         ) : view === "threads" ? (
           <Threads repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
           <Tasks tasks={tasks} addTask={addTask} runTask={runTask} cancelTask={cancelTask} />
-        ) : view === "notifications" ? (
-          <Notifications />
         ) : (
-          <SettingsView repos={repos} setRepos={setRepos} />
+          <Notifications />
         )}
       </main>
       {settingsOpen && (
@@ -833,16 +845,19 @@ function App() {
           onClose={() => setSettingsOpen(false)}
           repos={repos}
           setRepos={setRepos}
+          initialTab={settingsTab}
         />
       )}
     </div>
   );
 }
 function Home({
-  setView,
+  openSettings,
+  openTasks,
   userName,
 }: {
-  setView: (v: View) => void;
+  openSettings: (tab?: string) => void;
+  openTasks: () => void;
   userName: string;
 }) {
   type Event = {
@@ -893,7 +908,7 @@ function Home({
             Your agents are ready to work across your repositories.
           </p>
         </div>
-        <button className="primary" onClick={() => setView("tasks")}>
+        <button className="primary" onClick={openTasks}>
           <Plus size={16} /> New task
         </button>
       </div>
@@ -962,7 +977,7 @@ function Home({
           <h2>Active agents</h2>
           <p>Configured coding specialists.</p>
         </div>
-        <button className="textbtn" onClick={() => setView("settings")}>
+        <button className="textbtn" onClick={() => openSettings("agents")}>
           Manage agents →
         </button>
       </div>
@@ -1145,13 +1160,13 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
             placeholder="relative path, e.g. src/main.tsx"
           />
           <button
-            className={mode === "file" ? "outline active" : ""}
+            className={"outline" + (mode === "file" ? " active" : "")}
             onClick={() => setMode("file")}
           >
             File
           </button>
           <button
-            className={mode === "diff" ? "outline active" : ""}
+            className={"outline" + (mode === "diff" ? " active" : "")}
             onClick={() => setMode("diff")}
           >
             Git diff
@@ -2359,22 +2374,42 @@ function AgentManager({ repos }: { repos: Repo[] }) {
       "Give each agent one clear responsibility. This text is used as its execution instruction.",
     );
     if (!values?.name) return;
-    await invoke("save_agent", {
-      agent: {
-        id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-        name: values.name.trim(),
-        role: (values.role || "").slice(0, 1000),
-        skills: (values.skills || "")
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean),
-        color: agent?.color || "#a98cff",
-        cli: values.cli || "codex",
-        model: values.model || "default",
-        scope: values.scope || "workspace",
-      },
-    }).catch(() => {});
-    load();
+    try {
+      await invoke("save_agent", {
+        agent: {
+          id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          name: values.name.trim(),
+          role: (values.role || "").slice(0, 1000),
+          skills: (values.skills || "")
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean),
+          color: agent?.color || "#a98cff",
+          cli: values.cli || "codex",
+          model: values.model || "default",
+          scope: values.scope || "workspace",
+        },
+      });
+      setWorkflowMessage(`${values.name.trim()} was ${agent ? "updated" : "added"}.`);
+      load();
+    } catch (error) {
+      setWorkflowMessage(String(error));
+    }
+  };
+  const remove = async (agent: StoredAgent) => {
+    const confirmed = await askModal(
+      `Delete ${agent.name}?`,
+      [],
+      "This removes the agent from your team. You can create a replacement at any time.",
+    );
+    if (!confirmed) return;
+    try {
+      await invoke("delete_agent", { id: agent.id });
+      setWorkflowMessage(`${agent.name} was removed from your agent team.`);
+      load();
+    } catch (error) {
+      setWorkflowMessage(String(error));
+    }
   };
   return (
     <div className="agent-management">
@@ -2411,6 +2446,9 @@ function AgentManager({ repos }: { repos: Repo[] }) {
               <code>{agent.scope}</code>
               <button className="textbtn" onClick={() => edit(agent)}>
                 Edit
+              </button>
+              <button className="textbtn danger" onClick={() => remove(agent)}>
+                Delete
               </button>
             </footer>
           </div>
@@ -2738,7 +2776,7 @@ function ThemeSection() {
       })
       .catch(() => {});
   }, []);
-  const isLight = theme === "daylight" || theme === "porcelain";
+  const isLight = theme === "daylight";
   const choose = (name: ThemeName) => {
     setTheme(name);
     document.body.dataset.theme = name;
@@ -2756,11 +2794,8 @@ function ThemeSection() {
       <div className="settings-section-head">
         <div>
           <h2>Appearance</h2>
-          <p>
-            Four closely related materials, all built around Wand’s ink, paper, and signal-green palette.
-          </p>
+          <p>Choose between Wand’s focused dark and light appearances.</p>
         </div>
-        <span className="theme-current">{theme}</span>
       </div>
       <div className="mode-toggle-group">
         <button
@@ -2777,27 +2812,6 @@ function ThemeSection() {
           <Sun size={16} />
           <span>Light Mode</span>
         </button>
-      </div>
-      <div className="theme-grid-container">
-        <span className="theme-group-label">
-          {isLight ? "Light themes" : "Dark themes"}
-        </span>
-        <div className="theme-grid">
-          {(isLight
-            ? (["daylight", "porcelain"] as ThemeName[])
-            : (["obsidian", "graphite"] as ThemeName[])
-          ).map((name) => (
-            <button
-              aria-label={`${name} theme`}
-              className={`theme-choice ${name}${theme === name ? " active" : ""}`}
-              onClick={() => choose(name)}
-              key={name}
-            >
-              <span aria-hidden="true" />
-              {name}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -3097,6 +3111,42 @@ function ModalHost() {
                       }))
                     }
                   />
+                ) : field.directory ? (
+                  <div className="modal-path-picker">
+                    <input
+                      autoFocus={request.fields[0].id === field.id}
+                      maxLength={field.maxLength}
+                      type="text"
+                      value={values[field.id] || ""}
+                      placeholder={field.placeholder}
+                      onChange={(event) =>
+                        setValues((current) => ({
+                          ...current,
+                          [field.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <button
+                      className="outline"
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const selected = await open({
+                            directory: true,
+                            multiple: false,
+                            title: "Choose repository folder",
+                          });
+                          if (typeof selected === "string") {
+                            setValues((current) => ({ ...current, [field.id]: selected }));
+                          }
+                        } catch {
+                          // The browser preview intentionally has no native folder dialog.
+                        }
+                      }}
+                    >
+                      Browse…
+                    </button>
+                  </div>
                 ) : (
                   <input
                     autoFocus={request.fields[0].id === field.id}

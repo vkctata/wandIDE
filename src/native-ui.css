@@ -663,13 +663,14 @@ aside .nav { font-weight: 600; }
 aside .repo { font-weight: 500; }
 aside .navgroup label { font-weight: 600; }
 
-/* Preferences should fit their content instead of presenting a large empty pane. */
+/* Preferences are the primary management surface, so use the available canvas. */
 .settings-modal {
-  height: auto;
-  max-height: 86vh;
+  width: min(1200px, 96vw);
+  height: min(760px, 90vh);
+  max-height: 90vh;
 }
 .settings-modal-header { padding: 16px 52px 16px 22px; }
-.settings-modal-body { max-height: calc(86vh - 74px); }
+.settings-modal-body { max-height: calc(90vh - 74px); }
 .settings-modal-nav { padding: 12px 10px; }
 .settings-nav-item { padding: 9px 11px; }
 .settings-modal-content { padding: 20px 24px 24px; }
@@ -677,4 +678,352 @@ aside .navgroup label { font-weight: 600; }
 @media (max-width: 760px) {
   .settings-modal-header { padding: 14px 48px 14px 18px; }
   .settings-modal-content { padding: 18px; }
+}
+
+/* One familiar canvas across themes: charcoal grid paper stays constant while
+   controls and chrome retain the chosen theme's material. */
+body[data-theme] .app {
+  background-color: #22252b !important;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .075) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+}
+body[data-theme] .content > .hero h1,
+body[data-theme] .content > .sectionhead h2,
+body[data-theme] .content > .code-toolbar h1,
+body[data-theme] .content > .emptyhint h3 {
+  background: none !important;
+  color: #fffdf8 !important;
+}
+body[data-theme] .content > .hero .sub,
+body[data-theme] .content > .sectionhead p,
+body[data-theme] .content > .emptyhint p { color: #aeb1b9 !important; }
+body[data-theme] .content > .hero .eyebrow { color: #c9ff4f !important; }
+body[data-theme] .content .emptyhint h3 { color: #fffdf8 !important; }
+body[data-theme] .content .emptyhint p { color: #aeb1b9 !important; }
+
+/* A quiet signal-green halo gives cards depth without turning the UI neon. */
+body[data-theme] .stat,
+body[data-theme] .agent,
+body[data-theme] .taskcard,
+body[data-theme] .settingscard,
+body[data-theme] .settings-section,
+body[data-theme] .event {
+  box-shadow:
+    inset 0 1px rgba(255, 253, 248, .10),
+    0 14px 34px rgba(11, 13, 16, .12),
+    0 0 28px color-mix(in srgb, var(--wand-accent) 9%, transparent) !important;
+}
+body[data-theme] .stat:hover,
+body[data-theme] .agent:hover,
+body[data-theme] .taskcard:hover {
+  box-shadow:
+    inset 0 1px rgba(255, 253, 248, .14),
+    0 18px 40px rgba(11, 13, 16, .16),
+    0 0 36px color-mix(in srgb, var(--wand-accent) 16%, transparent) !important;
+}
+
+/* Softer, more conversational UI typography; technical details stay mono. */
+body,
+button,
+input,
+textarea,
+select {
+  font-family: "Fira Code", "SF Mono", "Cascadia Mono", ui-monospace,
+    monospace !important;
+}
+/* Final canvas contrast guard: legacy light/dark rules cannot dim empty states. */
+body[data-theme] .content .emptyhint h3 { color: #fffdf8 !important; }
+body[data-theme] .content .emptyhint p { color: #aeb1b9 !important; }
+/* Dark materials need ink-on-dark contrast everywhere, including preference
+   panels that are rendered above the workspace canvas. */
+body[data-theme="obsidian"] .settings-modal,
+body[data-theme="graphite"] .settings-modal {
+  color: #fffdf8 !important;
+}
+body[data-theme="obsidian"] .settings-modal .agent-management,
+body[data-theme="graphite"] .settings-modal .agent-management,
+body[data-theme="obsidian"] .settings-modal .agent-config,
+body[data-theme="graphite"] .settings-modal .agent-config {
+  background: rgba(21, 24, 30, .86) !important;
+  border-color: rgba(255, 255, 255, .13) !important;
+  color: #fffdf8 !important;
+}
+body[data-theme="obsidian"] .settings-modal .agent-config b,
+body[data-theme="graphite"] .settings-modal .agent-config b,
+body[data-theme="obsidian"] .settings-modal .sectionhead h2,
+body[data-theme="graphite"] .settings-modal .sectionhead h2 {
+  color: #fffdf8 !important;
+}
+body[data-theme="obsidian"] .settings-modal .agent-config p,
+body[data-theme="graphite"] .settings-modal .agent-config p,
+body[data-theme="obsidian"] .settings-modal .agent-config small,
+body[data-theme="graphite"] .settings-modal .agent-config small,
+body[data-theme="obsidian"] .settings-modal .sectionhead p,
+body[data-theme="graphite"] .settings-modal .sectionhead p {
+  color: #b9bdc8 !important;
+}
+body[data-theme] .agent-config .textbtn.danger { color: #ff9b9b !important; }
+
+/* Every primary view is a workspace now, so none should be constrained to a
+   reading-column width. The gutter remains consistent across the app. */
+.content {
+  max-width: none;
+  margin: 0;
+  padding: 40px 44px 64px;
+}
+@media (max-width: 760px) {
+  .content { padding: 28px 20px 56px; }
+}
+
+.modal-path-picker { display: flex; gap: 8px; align-items: center; }
+.modal-path-picker input { min-width: 0; flex: 1; }
+.modal-path-picker .outline { flex: none; min-height: 42px; white-space: nowrap; }
+
+/* Keep the desktop chrome continuous: the sidebar is the same material as the
+   top bar in every appearance, rather than a competing theme surface. */
+body[data-theme] aside,
+body[data-theme] header,
+body[data-theme] .app > main > header {
+  background: #0d0d12 !important;
+}
+
+/* Daylight is a soft, misted glass material. The dark app chrome above stays
+   fixed so navigation remains calm and consistent while content feels light. */
+body[data-theme="daylight"] .app {
+  background-color: #e9edef !important;
+  background-image:
+    linear-gradient(rgba(57, 75, 85, .18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 75, 85, .18) 1px, transparent 1px),
+    radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .94), transparent 70%),
+    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%) !important;
+  background-size: 32px 32px, 32px 32px, auto, auto !important;
+}
+body[data-theme="daylight"] .stat,
+body[data-theme="daylight"] .agent,
+body[data-theme="daylight"] .taskcard,
+body[data-theme="daylight"] .settingscard,
+body[data-theme="daylight"] .settings-section,
+body[data-theme="daylight"] .event {
+  background: rgba(255, 255, 255, .56) !important;
+  border-color: rgba(60, 76, 86, .17) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .82),
+    0 18px 42px rgba(68, 84, 94, .13),
+    0 0 28px rgba(201, 255, 79, .08) !important;
+  backdrop-filter: saturate(132%) blur(22px) !important;
+}
+body[data-theme="daylight"] .settings-modal {
+  background: rgba(244, 248, 249, .78) !important;
+  border-color: rgba(46, 61, 70, .22) !important;
+  box-shadow: 0 28px 80px rgba(24, 36, 42, .27) !important;
+  backdrop-filter: saturate(142%) blur(28px) !important;
+}
+body[data-theme="daylight"] .settings-modal-header,
+body[data-theme="daylight"] .settings-modal-nav {
+  background: rgba(255, 255, 255, .42) !important;
+  border-color: rgba(46, 61, 70, .16) !important;
+  backdrop-filter: blur(20px) !important;
+}
+body[data-theme="daylight"] .content > .hero h1,
+body[data-theme="daylight"] .content > .sectionhead h2,
+body[data-theme="daylight"] .content > .code-toolbar h1,
+body[data-theme="daylight"] .content > .emptyhint h3 {
+  color: #162127 !important;
+}
+body[data-theme="daylight"] .content > .hero .sub,
+body[data-theme="daylight"] .content > .sectionhead p,
+body[data-theme="daylight"] .content > .emptyhint p {
+  color: #53636c !important;
+}
+body[data-theme="daylight"] .content .emptyhint h3 {
+  color: #162127 !important;
+}
+body[data-theme="daylight"] .content .emptyhint p {
+  color: #53636c !important;
+}
+/* The chrome remains dark in light mode, so restore its navigation contrast. */
+body[data-theme="daylight"] aside .nav,
+body[data-theme="daylight"] aside .repo,
+body[data-theme="daylight"] aside .status,
+body[data-theme="daylight"] aside .navgroup label {
+  color: #b9bec7 !important;
+}
+body[data-theme="daylight"] aside .nav.active,
+body[data-theme="daylight"] aside .repo.selected {
+  color: #fffdf8 !important;
+  background: rgba(201, 255, 79, .15) !important;
+}
+
+/* Let the rail and title bar meet as one continuous piece of chrome. The
+   rounded lower-left edge eases the workspace canvas into the frame. */
+body[data-theme] aside {
+  border-right: 0 !important;
+}
+body[data-theme] .app > main > header {
+  border-bottom: 0 !important;
+  border-bottom-left-radius: 0;
+}
+body[data-theme] .app > main {
+  background: #0d0d12 !important;
+}
+body[data-theme] .app > main > .content {
+  background-color: #22252b !important;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .075) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+  border-top-left-radius: 24px;
+}
+
+/* Activity's empty state is still a primary dashboard card, not a placeholder. */
+body[data-theme] .content .emptyhint {
+  background: color-mix(in srgb, var(--wand-surface) 76%, transparent) !important;
+  border: 1px solid var(--wand-border) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 253, 248, .10),
+    0 14px 34px rgba(11, 13, 16, .12),
+    0 0 28px color-mix(in srgb, var(--wand-accent) 9%, transparent) !important;
+  backdrop-filter: blur(18px) !important;
+}
+body[data-theme="daylight"] .content .emptyhint {
+  background: rgba(255, 255, 255, .56) !important;
+  border-color: rgba(60, 76, 86, .17) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .82),
+    0 18px 42px rgba(68, 84, 94, .13),
+    0 0 28px rgba(201, 255, 79, .08) !important;
+  backdrop-filter: saturate(132%) blur(22px) !important;
+}
+
+/* In Light Mode the shell is one continuous misty material, not dark chrome. */
+body[data-theme="daylight"] aside,
+body[data-theme="daylight"] header,
+body[data-theme="daylight"] .app > main > header {
+  background: #e9edef !important;
+  border-color: rgba(60, 76, 86, .14) !important;
+}
+body[data-theme="daylight"] .app > main {
+  background: #e9edef !important;
+}
+body[data-theme="daylight"] .app > main > .content {
+  background-color: #e9edef !important;
+  background-image:
+    linear-gradient(rgba(57, 75, 85, .18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 75, 85, .18) 1px, transparent 1px),
+    radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .94), transparent 70%),
+    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%) !important;
+  background-size: 32px 32px, 32px 32px, auto, auto !important;
+}
+body[data-theme="daylight"] aside .nav,
+body[data-theme="daylight"] aside .repo,
+body[data-theme="daylight"] aside .status,
+body[data-theme="daylight"] aside .navgroup label {
+  color: #47565f !important;
+}
+body[data-theme="daylight"] aside .nav.active,
+body[data-theme="daylight"] aside .repo.selected {
+  color: #162127 !important;
+  background: rgba(201, 255, 79, .24) !important;
+}
+body[data-theme="daylight"] header .search,
+body[data-theme="daylight"] header .iconbtn,
+body[data-theme="daylight"] header .account-trigger {
+  background: rgba(255, 255, 255, .56) !important;
+  border-color: rgba(60, 76, 86, .16) !important;
+  color: #162127 !important;
+}
+
+/* A selected editor mode should feel precise and quiet—not like a default
+   white button pasted into the workspace. */
+body[data-theme] .code-controls .outline.active {
+  background: color-mix(in srgb, var(--wand-accent) 15%, #15181e) !important;
+  border-color: color-mix(in srgb, var(--wand-accent) 58%, rgba(255, 255, 255, .18)) !important;
+  color: #fffdf8 !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .10),
+    0 0 0 1px color-mix(in srgb, var(--wand-accent) 12%, transparent),
+    0 0 18px color-mix(in srgb, var(--wand-accent) 16%, transparent) !important;
+}
+body[data-theme="daylight"] .code-controls .outline.active {
+  background: rgba(201, 255, 79, .22) !important;
+  border-color: rgba(121, 158, 38, .58) !important;
+  color: #25320f !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .76),
+    0 0 0 1px rgba(201, 255, 79, .16),
+    0 8px 20px rgba(104, 132, 46, .12) !important;
+}
+
+/* Give Light Mode a clearer material hierarchy: frosted chrome, a slightly
+   brighter workspace, and lifted glass cards. */
+body[data-theme="daylight"] aside,
+body[data-theme="daylight"] header,
+body[data-theme="daylight"] .app > main > header {
+  background: rgba(211, 223, 228, .88) !important;
+  border-color: rgba(53, 71, 80, .24) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .58) !important;
+  backdrop-filter: saturate(126%) blur(24px) !important;
+}
+body[data-theme="daylight"] .app > main {
+  background: #d3dfe4 !important;
+}
+body[data-theme="daylight"] .app > main > .content {
+  background-color: #e4ebee !important;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .52) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .52) 1px, transparent 1px),
+    radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .76), transparent 70%),
+    radial-gradient(680px 460px at 96% 4%, rgba(175, 199, 208, .50), transparent 72%) !important;
+}
+body[data-theme="daylight"] .stat,
+body[data-theme="daylight"] .agent,
+body[data-theme="daylight"] .taskcard,
+body[data-theme="daylight"] .settingscard,
+body[data-theme="daylight"] .settings-section,
+body[data-theme="daylight"] .event,
+body[data-theme="daylight"] .content .emptyhint {
+  background: rgba(250, 252, 252, .70) !important;
+  border-color: rgba(53, 71, 80, .23) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .86),
+    0 18px 42px rgba(49, 68, 78, .18),
+    0 0 28px rgba(201, 255, 79, .10) !important;
+}
+/* Ink-first wordmark with restrained signal-green details stays legible on
+   the frosted light shell. */
+body[data-theme="daylight"] aside .wand-wordmark {
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: #142127 !important;
+  color: #142127 !important;
+  filter: drop-shadow(0 1px 1px rgba(255, 255, 255, .72)) !important;
+}
+body[data-theme="daylight"] aside .wand-wordmark .wand-dot,
+body[data-theme="daylight"] aside .wand-wordmark .d-sparkle {
+  color: #82ad20 !important;
+  fill: #82ad20 !important;
+  -webkit-text-fill-color: #82ad20 !important;
+  filter: drop-shadow(0 1px 2px rgba(94, 126, 24, .24)) !important;
+}
+
+/* Signal-green remains an accent in Daylight, but never carries body copy.
+   Deep olive keeps actionable text clear on the misty glass surfaces. */
+body[data-theme="daylight"] .content > .hero .eyebrow,
+body[data-theme="daylight"] .content .eyebrow,
+body[data-theme="daylight"] .settings-modal .eyebrow,
+body[data-theme="daylight"] .textbtn,
+body[data-theme="daylight"] .sideplus,
+body[data-theme="daylight"] .theme-current,
+body[data-theme="daylight"] .whats-new-nav,
+body[data-theme="daylight"] .settings-modal-content .agent-config small,
+body[data-theme="daylight"] .account-dropdown button:hover {
+  color: #506916 !important;
+}
+body[data-theme="daylight"] .textbtn:hover,
+body[data-theme="daylight"] .sideplus:hover,
+body[data-theme="daylight"] .whats-new-nav:hover {
+  color: #34470b !important;
 }
