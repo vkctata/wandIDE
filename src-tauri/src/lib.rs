@@ -1237,6 +1237,17 @@ struct ChainRequest {
     #[serde(default)]
     run_id: Option<String>,
 }
+fn validate_requested_agents(stored_json: &str, requested: &[String]) -> Result<(), String> {
+    if requested.is_empty() {
+        return Err("At least one persisted task agent is required".into());
+    }
+    let stored: Vec<String> = serde_json::from_str(stored_json)
+        .map_err(|_| "Task agent configuration is invalid".to_string())?;
+    if stored.is_empty() || stored != requested {
+        return Err("Agent chain does not match the task's persisted agent selection".into());
+    }
+    Ok(())
+}
 fn allowed_cli(cli: &str) -> Option<&'static str> {
     match cli {
         "claude" => Some("claude"),
@@ -1446,13 +1457,14 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
                 "CLI runtime '{command}' is no longer installed on this machine"
             ));
         }
-        let (repo_name, stored_path): (String, String) = conn
+        let (repo_name, stored_path, stored_agents): (String, String, String) = conn
             .query_row(
-                "SELECT tasks.repo,repos.path FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
+                "SELECT tasks.repo,repos.path,tasks.agents FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
                 params![req.task_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(|_| "Task or repository does not exist".to_string())?;
+        validate_requested_agents(&stored_agents, &req.agents)?;
         if std::path::Path::new(&stored_path).canonicalize().ok()
             != std::path::Path::new(&req.repo_path).canonicalize().ok()
         {
@@ -3190,6 +3202,15 @@ mod tests {
             .unwrap();
         assert_eq!(recurring, "queued");
         assert_eq!(one_off, "failed");
+    }
+
+    #[test]
+    fn execution_must_use_the_task_agent_selection() {
+        let selected = vec!["planner".to_string(), "builder".to_string()];
+        assert!(validate_requested_agents(r#"["planner","builder"]"#, &selected).is_ok());
+        assert!(validate_requested_agents(r#"["planner"]"#, &selected).is_err());
+        assert!(validate_requested_agents(r#"["builder","planner"]"#, &selected).is_err());
+        assert!(validate_requested_agents(r#"[]"#, &[]).is_err());
     }
 
     #[test]
