@@ -706,3 +706,18 @@ body[data-theme="graphite"] .emptyhint p {
 }
 body[data-theme="obsidian"] .hero .eyebrow,
 body[data-theme="graphite"] .hero .eyebrow { color: #485c16 !important; }
+
+/* Every primary view is a workspace now, so none should be constrained to a
+   reading-column width. The gutter remains consistent across the app. */
+.content {
+  max-width: none;
+  margin: 0;
+  padding: 40px 44px 64px;
+}
+@media (max-width: 760px) {
+  .content { padding: 28px 20px 56px; }
+}
+
+.modal-path-picker { display: flex; gap: 8px; align-items: center; }
+.modal-path-picker input { min-width: 0; flex: 1; }
+.modal-path-picker .outline { flex: none; min-height: 42px; white-space: nowrap; }

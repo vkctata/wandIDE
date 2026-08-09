@@ -97,8 +97,7 @@ const listen = <T = unknown,>(
 ): Promise<() => void> =>
   isTauriRuntime() ? tauriListen<T>(event, handler) : Promise.resolve(() => {});
 
-type View =
-  "home" | "code" | "threads" | "tasks" | "notifications" | "settings";
+type View = "home" | "code" | "threads" | "tasks" | "notifications";
 type Repo = {
   name: string;
   path: string;
@@ -197,6 +196,7 @@ type ModalField = {
   optionsFor?: (values: Record<string, string>) => string[];
   multiline?: boolean;
   maxLength?: number;
+  directory?: boolean;
 };
 type ModalRequest = {
   title: string;
@@ -278,6 +278,11 @@ function App() {
   }, []);
   const [view, setView] = useState<View>("home");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("appearance");
+  const openSettings = (tab = "appearance") => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
   const [repos, setRepos] = useState(() =>
     isTauriRuntime() ? defaultRepos : load("wand.repos", defaultRepos),
   );
@@ -506,7 +511,12 @@ function App() {
       "Add repository",
       [
         { id: "name", label: "Repository name", placeholder: "wand" },
-        { id: "path", label: "Local folder path", placeholder: "~/Code/wand" },
+        {
+          id: "path",
+          label: "Local folder path",
+          placeholder: "~/Code/wand",
+          directory: true,
+        },
       ],
       "Add a local repository to your Wand workspace.",
     );
@@ -540,7 +550,7 @@ function App() {
       setNotice(
         "Choose a repository folder in Settings before scheduling a task.",
       );
-      setView("settings");
+      openSettings("workspace");
       return;
     }
     if (repo.provider && repo.provider !== "local") {
@@ -557,7 +567,7 @@ function App() {
     );
     if (!available.length) {
       setNotice("Enable an installed CLI and a compatible agent in Settings first.");
-      setView("settings");
+      openSettings("agents");
       return;
     }
     const values = await askModal(
@@ -776,7 +786,7 @@ function App() {
                 </span>
               )}
             </button>
-            <AccountMenu onSettings={() => setSettingsOpen(true)} />
+            <AccountMenu onSettings={() => openSettings()} />
           </div>
         </header>
         {query.trim() && (
@@ -799,7 +809,8 @@ function App() {
                 <button
                   key={target + label + index}
                   onMouseDown={() => {
-                    setView(target as View);
+                    if (target === "settings") openSettings("agents");
+                    else setView(target as View);
                     setQuery("");
                   }}
                 >
@@ -815,17 +826,19 @@ function App() {
           </button>
         )}
         {view === "home" ? (
-          <Home setView={setView} userName={userName} />
+          <Home
+            openSettings={openSettings}
+            openTasks={() => setView("tasks")}
+            userName={userName}
+          />
         ) : view === "code" ? (
           <CodeWorkspace repo={repo} />
         ) : view === "threads" ? (
           <Threads repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
           <Tasks tasks={tasks} addTask={addTask} runTask={runTask} cancelTask={cancelTask} />
-        ) : view === "notifications" ? (
-          <Notifications />
         ) : (
-          <SettingsView repos={repos} setRepos={setRepos} />
+          <Notifications />
         )}
       </main>
       {settingsOpen && (
@@ -833,16 +846,19 @@ function App() {
           onClose={() => setSettingsOpen(false)}
           repos={repos}
           setRepos={setRepos}
+          initialTab={settingsTab}
         />
       )}
     </div>
   );
 }
 function Home({
-  setView,
+  openSettings,
+  openTasks,
   userName,
 }: {
-  setView: (v: View) => void;
+  openSettings: (tab?: string) => void;
+  openTasks: () => void;
   userName: string;
 }) {
   type Event = {
@@ -893,7 +909,7 @@ function Home({
             Your agents are ready to work across your repositories.
           </p>
         </div>
-        <button className="primary" onClick={() => setView("tasks")}>
+        <button className="primary" onClick={openTasks}>
           <Plus size={16} /> New task
         </button>
       </div>
@@ -962,7 +978,7 @@ function Home({
           <h2>Active agents</h2>
           <p>Configured coding specialists.</p>
         </div>
-        <button className="textbtn" onClick={() => setView("settings")}>
+        <button className="textbtn" onClick={() => openSettings("agents")}>
           Manage agents →
         </button>
       </div>
@@ -3097,6 +3113,42 @@ function ModalHost() {
                       }))
                     }
                   />
+                ) : field.directory ? (
+                  <div className="modal-path-picker">
+                    <input
+                      autoFocus={request.fields[0].id === field.id}
+                      maxLength={field.maxLength}
+                      type="text"
+                      value={values[field.id] || ""}
+                      placeholder={field.placeholder}
+                      onChange={(event) =>
+                        setValues((current) => ({
+                          ...current,
+                          [field.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <button
+                      className="outline"
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const selected = await open({
+                            directory: true,
+                            multiple: false,
+                            title: "Choose repository folder",
+                          });
+                          if (typeof selected === "string") {
+                            setValues((current) => ({ ...current, [field.id]: selected }));
+                          }
+                        } catch {
+                          // The browser preview intentionally has no native folder dialog.
+                        }
+                      }}
+                    >
+                      Browse…
+                    </button>
+                  </div>
                 ) : (
                   <input
                     autoFocus={request.fields[0].id === field.id}
