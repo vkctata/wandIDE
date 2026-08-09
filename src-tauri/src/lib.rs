@@ -928,18 +928,84 @@ fn installed_cli_path(command: &str) -> Option<String> {
         Command::new("where").arg(command).output().ok()
     } else {
         Command::new("which").arg(command).output().ok()
-    }?;
-    if !lookup.status.success() {
-        return None;
+    };
+    if let Some(lookup) = lookup {
+        if lookup.status.success() {
+            if let Some(path) = String::from_utf8_lossy(&lookup.stdout)
+                .lines()
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .and_then(|value| Path::new(value).canonicalize().ok())
+                .filter(|value| value.is_file())
+            {
+                return Some(path.to_string_lossy().into_owned());
+            }
+        }
     }
-    String::from_utf8_lossy(&lookup.stdout)
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| Path::new(value).canonicalize().ok())
-        .filter(|value| value.is_file())
-        .map(|value| value.to_string_lossy().into_owned())
+
+    // Finder-launched macOS apps and desktop shortcuts do not inherit the
+    // user's interactive shell PATH. Check the conventional package-manager
+    // locations as a fallback so Settings and task execution agree with the
+    // CLI installations visible in Terminal.
+    let mut directories = std::env::var_os("PATH")
+        .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if cfg!(target_os = "macos") {
+        directories.extend([
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+            PathBuf::from("/opt/local/bin"),
+        ]);
+    }
+    if let Some(home_dir) = std::env::var_os("HOME") {
+        let home_dir = PathBuf::from(home_dir);
+        directories.extend([
+            home_dir.join(".local/bin"),
+            home_dir.join(".cargo/bin"),
+            home_dir.join(".bun/bin"),
+            home_dir.join(".npm-global/bin"),
+            home_dir.join("Library/pnpm"),
+        ]);
+        if let Ok(entries) = fs::read_dir(home_dir.join(".nvm/versions/node")) {
+            for entry in entries.flatten() {
+                directories.push(entry.path().join("bin"));
+            }
+        }
+    }
+    if cfg!(windows) {
+        if let Some(app_data) = std::env::var_os("APPDATA") {
+            directories.push(PathBuf::from(app_data).join("npm"));
+        }
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            directories.push(PathBuf::from(local_app_data).join("Programs"));
+        }
+    }
+    let candidate_names = if cfg!(windows) {
+        vec![
+            command.to_string(),
+            format!("{command}.exe"),
+            format!("{command}.cmd"),
+            format!("{command}.bat"),
+        ]
+    } else {
+        vec![command.to_string()]
+    };
+    directories
+        .into_iter()
+        .flat_map(|directory| {
+            candidate_names
+                .iter()
+                .map(move |name| directory.join(name))
+                .collect::<Vec<_>>()
+        })
+        .find_map(|candidate| {
+            candidate
+                .canonicalize()
+                .ok()
+                .filter(|path| path.is_file())
+                .map(|path| path.to_string_lossy().into_owned())
+        })
 }
 #[tauri::command]
 fn detect_clis() -> Vec<CliStatus> {
