@@ -1160,13 +1160,13 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
             placeholder="relative path, e.g. src/main.tsx"
           />
           <button
-            className={mode === "file" ? "outline active" : ""}
+            className={"outline" + (mode === "file" ? " active" : "")}
             onClick={() => setMode("file")}
           >
             File
           </button>
           <button
-            className={mode === "diff" ? "outline active" : ""}
+            className={"outline" + (mode === "diff" ? " active" : "")}
             onClick={() => setMode("diff")}
           >
             Git diff

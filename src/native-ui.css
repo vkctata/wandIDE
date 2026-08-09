@@ -912,3 +912,24 @@ body[data-theme="daylight"] header .account-trigger {
   border-color: rgba(60, 76, 86, .16) !important;
   color: #162127 !important;
 }
+
+/* A selected editor mode should feel precise and quiet—not like a default
+   white button pasted into the workspace. */
+body[data-theme] .code-controls .outline.active {
+  background: color-mix(in srgb, var(--wand-accent) 15%, #15181e) !important;
+  border-color: color-mix(in srgb, var(--wand-accent) 58%, rgba(255, 255, 255, .18)) !important;
+  color: #fffdf8 !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .10),
+    0 0 0 1px color-mix(in srgb, var(--wand-accent) 12%, transparent),
+    0 0 18px color-mix(in srgb, var(--wand-accent) 16%, transparent) !important;
+}
+body[data-theme="daylight"] .code-controls .outline.active {
+  background: rgba(201, 255, 79, .22) !important;
+  border-color: rgba(121, 158, 38, .58) !important;
+  color: #25320f !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .76),
+    0 0 0 1px rgba(201, 255, 79, .16),
+    0 8px 20px rgba(104, 132, 46, .12) !important;
+}
