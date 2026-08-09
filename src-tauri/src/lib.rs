@@ -1441,22 +1441,8 @@ fn begin_task_run(conn: &Connection, task_id: &str) -> rusqlite::Result<bool> {
 }
 #[tauri::command]
 fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
-    let command = allowed_cli(&req.cli)
-        .ok_or_else(|| "Unsupported CLI".to_string())?
-        .to_string();
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        let allowed = cli_access_from_db(&conn)?;
-        if !allowed.iter().any(|item| item == &command) {
-            return Err(format!(
-                "CLI runtime '{command}' is disabled in Wand settings"
-            ));
-        }
-        if installed_cli_path(&command).is_none() {
-            return Err(format!(
-                "CLI runtime '{command}' is no longer installed on this machine"
-            ));
-        }
         let (repo_name, stored_path, stored_agents): (String, String, String) = conn
             .query_row(
                 "SELECT tasks.repo,repos.path,tasks.agents FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
@@ -1531,6 +1517,12 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
         return Err("Sentinel verifier agent is not configured".into());
     }
     }
+    let command = req
+        .agent_configs
+        .values()
+        .next()
+        .map(|config| config.cli.clone())
+        .ok_or_else(|| "No configured agent runtime is available".to_string())?;
     let run_id = req
         .run_id
         .take()
