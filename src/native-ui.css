@@ -701,6 +701,27 @@ body[data-theme] .content > .hero .eyebrow { color: #c9ff4f !important; }
 body[data-theme] .content .emptyhint h3 { color: #fffdf8 !important; }
 body[data-theme] .content .emptyhint p { color: #aeb1b9 !important; }
 
+/* A quiet signal-green halo gives cards depth without turning the UI neon. */
+body[data-theme] .stat,
+body[data-theme] .agent,
+body[data-theme] .taskcard,
+body[data-theme] .settingscard,
+body[data-theme] .settings-section,
+body[data-theme] .event {
+  box-shadow:
+    inset 0 1px rgba(255, 253, 248, .10),
+    0 14px 34px rgba(11, 13, 16, .12),
+    0 0 28px color-mix(in srgb, var(--wand-accent) 9%, transparent) !important;
+}
+body[data-theme] .stat:hover,
+body[data-theme] .agent:hover,
+body[data-theme] .taskcard:hover {
+  box-shadow:
+    inset 0 1px rgba(255, 253, 248, .14),
+    0 18px 40px rgba(11, 13, 16, .16),
+    0 0 36px color-mix(in srgb, var(--wand-accent) 16%, transparent) !important;
+}
+
 /* Softer, more conversational UI typography; technical details stay mono. */
 body,
 button,
