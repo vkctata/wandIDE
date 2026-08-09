@@ -587,3 +587,63 @@ body[data-theme] .d-sparkle { color: var(--wand-accent) !important; fill: var(--
 .theme-grid .theme-choice.graphite span { background: linear-gradient(135deg, #1b1e24 56%, #c9ff4f 56%) !important; }
 .theme-grid .theme-choice.daylight span { background: linear-gradient(135deg, #fffdf8 56%, #c9ff4f 56%) !important; }
 .theme-grid .theme-choice.porcelain span { background: linear-gradient(135deg, #e8e4da 56%, #c9ff4f 56%) !important; }
+
+/* Lime is an excellent signal on ink, but it is not readable text on paper.
+   Light materials use a deep olive for text while retaining lime as the cue. */
+body[data-theme="daylight"],
+body[data-theme="porcelain"] {
+  --wand-muted: #4e5159;
+}
+body[data-theme="daylight"] .settings-modal,
+body[data-theme="porcelain"] .settings-modal {
+  background: #fffdf8 !important;
+  color: #111318 !important;
+}
+body[data-theme="daylight"] .settings-modal-header,
+body[data-theme="porcelain"] .settings-modal-header {
+  background: #f2efe7 !important;
+  border-color: rgba(17, 19, 24, .16) !important;
+}
+body[data-theme="daylight"] .settings-modal-nav,
+body[data-theme="porcelain"] .settings-modal-nav {
+  background: #f7f4ed !important;
+  border-color: rgba(17, 19, 24, .16) !important;
+}
+body[data-theme="daylight"] .settings-nav-item,
+body[data-theme="daylight"] .settings-nav-item svg,
+body[data-theme="porcelain"] .settings-nav-item,
+body[data-theme="porcelain"] .settings-nav-item svg,
+body[data-theme="daylight"] .settings-section-head p,
+body[data-theme="porcelain"] .settings-section-head p,
+body[data-theme="daylight"] .theme-group-label,
+body[data-theme="porcelain"] .theme-group-label {
+  color: #4e5159 !important;
+}
+body[data-theme="daylight"] .settings-nav-item.active,
+body[data-theme="daylight"] .settings-nav-item.active svg,
+body[data-theme="porcelain"] .settings-nav-item.active,
+body[data-theme="porcelain"] .settings-nav-item.active svg {
+  color: #354313 !important;
+  background: rgba(201, 255, 79, .22) !important;
+}
+body[data-theme="daylight"] .whats-new-nav,
+body[data-theme="porcelain"] .whats-new-nav,
+body[data-theme="daylight"] .theme-current,
+body[data-theme="porcelain"] .theme-current {
+  color: #485c16 !important;
+}
+body[data-theme="daylight"] .mode-btn,
+body[data-theme="daylight"] .theme-choice,
+body[data-theme="porcelain"] .mode-btn,
+body[data-theme="porcelain"] .theme-choice {
+  color: #25272d !important;
+  background: #eeeae0 !important;
+  border-color: rgba(17, 19, 24, .18) !important;
+}
+body[data-theme="daylight"] .mode-btn.active,
+body[data-theme="porcelain"] .mode-btn.active {
+  color: #24300b !important;
+  background: #f4fbdc !important;
+  border-color: #9cc33d !important;
+  box-shadow: 0 0 0 2px rgba(201, 255, 79, .28) !important;
+}
