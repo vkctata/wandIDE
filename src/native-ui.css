@@ -686,6 +686,7 @@ body[data-theme] .app {
   background-image:
     linear-gradient(rgba(255, 255, 255, .075) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, .075) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
 }
 body[data-theme] .content > .hero h1,
 body[data-theme] .content > .sectionhead h2,
