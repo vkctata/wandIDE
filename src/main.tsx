@@ -2755,7 +2755,7 @@ function ThemeSection() {
         <div>
           <h2>Appearance</h2>
           <p>
-            Four closely related themes, all built around a restrained Wand violet accent.
+            Four closely related materials, all built around Wand’s ink, paper, and signal-green palette.
           </p>
         </div>
         <span className="theme-current">{theme}</span>
