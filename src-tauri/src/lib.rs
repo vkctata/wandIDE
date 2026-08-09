@@ -2007,30 +2007,99 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
     };
     let client = provider_http_client()?;
     let mut added = 0;
+    let mut had_error = false;
     for name in names {
         let endpoint=format!("https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc");
-        let response = client
+        let response = match client
             .get(endpoint)
             .header("User-Agent", "Wand")
             .bearer_auth(&token)
             .send()
             .await
-            .map_err(|e| e.to_string())?;
+        {
+            Ok(value) => value,
+            Err(error) => {
+                had_error = true;
+                emit_provider_health(
+                    &app,
+                    "github",
+                    "error",
+                    Some(format!("GitHub activity request failed for {name}: {error}")),
+                );
+                continue;
+            }
+        };
         if !response.status().is_success() {
+            had_error = true;
+            emit_provider_health(
+                &app,
+                "github",
+                "error",
+                Some(format!("GitHub activity returned {} for {name}", response.status())),
+            );
             continue;
         }
-        let comments: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
+        let comments: Vec<serde_json::Value> = match response.json().await {
+            Ok(value) => value,
+            Err(error) => {
+                had_error = true;
+                emit_provider_health(
+                    &app,
+                    "github",
+                    "error",
+                    Some(format!("GitHub activity response could not be read for {name}: {error}")),
+                );
+                continue;
+            }
+        };
         for comment in comments {
             let id = format!("github:{}", comment["id"].as_i64().unwrap_or(0));
             let issue_url = comment["issue_url"].as_str().unwrap_or_default();
-            let issue_response = client
+            if issue_url.is_empty() {
+                continue;
+            }
+            let issue_response = match client
                 .get(issue_url)
                 .header("User-Agent", "Wand")
                 .bearer_auth(&token)
                 .send()
                 .await
-                .map_err(|e| e.to_string())?;
-            let issue: serde_json::Value = issue_response.json().await.unwrap_or_default();
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    had_error = true;
+                    emit_provider_health(
+                        &app,
+                        "github",
+                        "error",
+                        Some(format!("GitHub pull request lookup failed for {name}: {error}")),
+                    );
+                    continue;
+                }
+            };
+            if !issue_response.status().is_success() {
+                had_error = true;
+                emit_provider_health(
+                    &app,
+                    "github",
+                    "error",
+                    Some(format!("GitHub pull request lookup returned {} for {name}", issue_response.status())),
+                );
+                continue;
+            }
+            let issue: serde_json::Value = match issue_response.json().await {
+                Ok(value) => value,
+                Err(error) => {
+                    had_error = true;
+                    emit_provider_health(
+                        &app,
+                        "github",
+                        "error",
+                        Some(format!("GitHub pull request lookup could not be read for {name}: {error}")),
+                    );
+                    continue;
+                }
+            };
             if issue["pull_request"].is_null() {
                 continue;
             }
@@ -2045,6 +2114,9 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
         "wand://notifications",
         serde_json::json!({"provider":"github","added":added}),
     );
+    if !had_error {
+        emit_provider_health(&app, "github", "ok", None);
+    }
     Ok(added)
 }
 #[tauri::command]
