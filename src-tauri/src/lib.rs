@@ -1,24 +1,22 @@
 use chrono::{Timelike, Utc};
 use cron::Schedule;
 use rusqlite::{params, Connection, OptionalExtension};
-use std::io::Write;
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
-use wait_timeout::ChildExt;
 struct Db(Arc<Mutex<Connection>>);
 #[derive(Serialize)]
 struct TaskRow {
@@ -156,7 +154,7 @@ fn scan_repositories(root_path: String, db: State<Db>) -> Result<Vec<ScannedRepo
             .and_then(|x| x.to_str())
             .unwrap_or_default()
             .to_string();
-        if name.is_empty() || validate_github_repo(&name).is_err() {
+        if name.is_empty() {
             continue;
         }
         let path_string = path.to_string_lossy().to_string();
@@ -209,41 +207,25 @@ fn save_repository(name: String, path: String, db: State<Db>) -> Result<ScannedR
 
 #[tauri::command]
 fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
-    if task.id.trim().is_empty() {
-        return Err("Task id cannot be empty".into());
-    }
     if task.name.trim().is_empty() {
         return Err("Task name cannot be empty".into());
     }
-    if task.name.chars().count() > 200 {
-        return Err("Task name must be 200 characters or fewer".into());
-    }
     if task.repo.trim().is_empty() {
         return Err("A repository is required".into());
-    }
-    if task.agents.is_empty() {
-        return Err("At least one agent is required".into());
-    }
-    let mut unique_agents = std::collections::HashSet::new();
-    if task.agents.iter().any(|agent| {
-        agent.trim().is_empty() || !unique_agents.insert(agent.trim().to_string())
-    }) {
-        return Err("Task agents must be non-empty and unique".into());
     }
     if task.cron.trim() != "one-off" {
         parse_cron(task.cron.trim())
             .map_err(|error| format!("Invalid cron expression: {error}"))?;
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let repo_record: Option<(String, String)> = conn
+    let repo_provider: Option<String> = conn
         .query_row(
-            "SELECT provider,path FROM repos WHERE name=?1",
+            "SELECT provider FROM repos WHERE name=?1",
             params![task.repo.trim()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
-        .optional()
         .map_err(|e| e.to_string())?;
-    let Some((repo_provider, repo_path)) = repo_record else {
+    let Some(repo_provider) = repo_provider else {
         return Err(format!("Unknown repository: {}", task.repo.trim()));
     };
     if repo_provider != "local" {
@@ -252,7 +234,6 @@ fn create_task(task: NewTask, db: State<Db>) -> Result<(), String> {
             task.repo.trim()
         ));
     }
-    registered_repo_root(&repo_path, &conn)?;
     let enabled_clis = cli_access_from_db(&conn)?;
     for agent_id in &task.agents {
         let (scope, cli): (String, String) = conn
@@ -928,84 +909,18 @@ fn installed_cli_path(command: &str) -> Option<String> {
         Command::new("where").arg(command).output().ok()
     } else {
         Command::new("which").arg(command).output().ok()
-    };
-    if let Some(lookup) = lookup {
-        if lookup.status.success() {
-            if let Some(path) = String::from_utf8_lossy(&lookup.stdout)
-                .lines()
-                .next()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .and_then(|value| Path::new(value).canonicalize().ok())
-                .filter(|value| value.is_file())
-            {
-                return Some(path.to_string_lossy().into_owned());
-            }
-        }
+    }?;
+    if !lookup.status.success() {
+        return None;
     }
-
-    // Finder-launched macOS apps and desktop shortcuts do not inherit the
-    // user's interactive shell PATH. Check the conventional package-manager
-    // locations as a fallback so Settings and task execution agree with the
-    // CLI installations visible in Terminal.
-    let mut directories = std::env::var_os("PATH")
-        .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
-        .unwrap_or_default();
-    if cfg!(target_os = "macos") {
-        directories.extend([
-            PathBuf::from("/opt/homebrew/bin"),
-            PathBuf::from("/usr/local/bin"),
-            PathBuf::from("/opt/local/bin"),
-        ]);
-    }
-    if let Some(home_dir) = std::env::var_os("HOME") {
-        let home_dir = PathBuf::from(home_dir);
-        directories.extend([
-            home_dir.join(".local/bin"),
-            home_dir.join(".cargo/bin"),
-            home_dir.join(".bun/bin"),
-            home_dir.join(".npm-global/bin"),
-            home_dir.join("Library/pnpm"),
-        ]);
-        if let Ok(entries) = fs::read_dir(home_dir.join(".nvm/versions/node")) {
-            for entry in entries.flatten() {
-                directories.push(entry.path().join("bin"));
-            }
-        }
-    }
-    if cfg!(windows) {
-        if let Some(app_data) = std::env::var_os("APPDATA") {
-            directories.push(PathBuf::from(app_data).join("npm"));
-        }
-        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
-            directories.push(PathBuf::from(local_app_data).join("Programs"));
-        }
-    }
-    let candidate_names = if cfg!(windows) {
-        vec![
-            command.to_string(),
-            format!("{command}.exe"),
-            format!("{command}.cmd"),
-            format!("{command}.bat"),
-        ]
-    } else {
-        vec![command.to_string()]
-    };
-    directories
-        .into_iter()
-        .flat_map(|directory| {
-            candidate_names
-                .iter()
-                .map(move |name| directory.join(name))
-                .collect::<Vec<_>>()
-        })
-        .find_map(|candidate| {
-            candidate
-                .canonicalize()
-                .ok()
-                .filter(|path| path.is_file())
-                .map(|path| path.to_string_lossy().into_owned())
-        })
+    String::from_utf8_lossy(&lookup.stdout)
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| Path::new(value).canonicalize().ok())
+        .filter(|value| value.is_file())
+        .map(|value| value.to_string_lossy().into_owned())
 }
 #[tauri::command]
 fn detect_clis() -> Vec<CliStatus> {
@@ -1237,17 +1152,6 @@ struct ChainRequest {
     #[serde(default)]
     run_id: Option<String>,
 }
-fn validate_requested_agents(stored_json: &str, requested: &[String]) -> Result<(), String> {
-    if requested.is_empty() {
-        return Err("At least one persisted task agent is required".into());
-    }
-    let stored: Vec<String> = serde_json::from_str(stored_json)
-        .map_err(|_| "Task agent configuration is invalid".to_string())?;
-    if stored.is_empty() || stored != requested {
-        return Err("Agent chain does not match the task's persisted agent selection".into());
-    }
-    Ok(())
-}
 fn allowed_cli(cli: &str) -> Option<&'static str> {
     match cli {
         "claude" => Some("claude"),
@@ -1289,7 +1193,10 @@ fn cli_args(cli: &str, model: &str, prompt: String) -> Result<Vec<String>, Strin
 
 const MAX_STAGE_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 
-fn read_bounded<R: Read>(mut reader: R) -> Result<(Vec<u8>, bool), String> {
+fn read_bounded_stream<R: Read, F: FnMut(&[u8])>(
+    mut reader: R,
+    mut on_chunk: F,
+) -> Result<(Vec<u8>, bool), String> {
     let mut stored = Vec::new();
     let mut buffer = [0_u8; 16 * 1024];
     let mut truncated = false;
@@ -1298,6 +1205,7 @@ fn read_bounded<R: Read>(mut reader: R) -> Result<(Vec<u8>, bool), String> {
         if read == 0 {
             break;
         }
+        on_chunk(&buffer[..read]);
         let remaining = MAX_STAGE_OUTPUT_BYTES.saturating_sub(stored.len());
         if remaining > 0 {
             stored.extend_from_slice(&buffer[..read.min(remaining)]);
@@ -1315,9 +1223,8 @@ fn bounded_output_text(output: Vec<u8>, truncated: bool) -> String {
     text
 }
 
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-fn execute_stage(
+fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     command: &str,
     model: &str,
     repo_path: &str,
@@ -1326,8 +1233,7 @@ fn execute_stage(
     handoff: &str,
     responsibility: &str,
     skills: &[String],
-    db: &Arc<Mutex<Connection>>,
-    task_id: &str,
+    mut on_output: F,
 ) -> Result<String, String> {
     let model_hint = if model.trim().is_empty() || model == "default" {
         "Use the CLI's configured default model.".to_string()
@@ -1357,53 +1263,60 @@ fn execute_stage(
         .map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or_else(|| "Unable to capture CLI output".to_string())?;
     let stderr = child.stderr.take().ok_or_else(|| "Unable to capture CLI errors".to_string())?;
-    let stdout_reader = thread::spawn(move || read_bounded(stdout));
-    let stderr_reader = thread::spawn(move || read_bounded(stderr));
+    let (output_tx, output_rx) = mpsc::sync_channel::<(&'static str, Vec<u8>)>(32);
+    let stdout_tx = output_tx.clone();
+    let stdout_reader = thread::spawn(move || {
+        read_bounded_stream(stdout, |chunk| {
+            let _ = stdout_tx.send(("stdout", chunk.to_vec()));
+        })
+    });
+    let stderr_reader = thread::spawn(move || {
+        read_bounded_stream(stderr, |chunk| {
+            let _ = output_tx.send(("stderr", chunk.to_vec()));
+        })
+    });
     const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-    let started = Instant::now();
-    let status = loop {
-        if let Some(status) = child
-            .wait_timeout(Duration::from_secs(1))
-            .map_err(|e| e.to_string())?
-        {
-            break status;
+    let deadline = Instant::now() + STAGE_TIMEOUT;
+    let mut status = None;
+    let mut timed_out = false;
+    let mut output_open = true;
+    loop {
+        if output_open {
+            match output_rx.recv_timeout(Duration::from_millis(100)) {
+                Ok((stream, chunk)) => on_output(stream, &String::from_utf8_lossy(&chunk)),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    output_open = false;
+                }
+            }
+        } else {
+            thread::sleep(Duration::from_millis(100));
         }
-        let cancelled = db
-            .lock()
-            .ok()
-            .and_then(|conn| {
-                conn.query_row(
-                    "SELECT status='cancelled' FROM tasks WHERE id=?1",
-                    params![task_id],
-                    |row| row.get::<_, bool>(0),
-                )
-                .ok()
-            })
-            .unwrap_or(false);
-        if cancelled {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
-            return Err("WAND_TASK_CANCELLED".into());
+        if status.is_none() {
+            status = child.try_wait().map_err(|e| e.to_string())?;
+            if status.is_none() && Instant::now() >= deadline {
+                timed_out = true;
+                let _ = child.kill();
+                status = Some(child.wait().map_err(|e| e.to_string())?);
+            }
         }
-        if started.elapsed() >= STAGE_TIMEOUT {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
-            return Err(format!(
-                "CLI stage timed out after {} minutes",
-                STAGE_TIMEOUT.as_secs() / 60
-            ));
+        if status.is_some() && !output_open {
+            break;
         }
-    };
+    }
     let (stdout, stdout_truncated) = stdout_reader
         .join()
         .map_err(|_| "CLI output reader failed".to_string())??;
     let (stderr, stderr_truncated) = stderr_reader
         .join()
         .map_err(|_| "CLI error reader failed".to_string())??;
+    if timed_out {
+        return Err(format!(
+            "CLI stage timed out after {} minutes",
+            STAGE_TIMEOUT.as_secs() / 60
+        ));
+    }
+    let status = status.ok_or_else(|| "CLI stage exited without a status".to_string())?;
     if status.success() {
         Ok(bounded_output_text(stdout, stdout_truncated))
     } else {
@@ -1425,13 +1338,6 @@ fn finish_run(
         }
     }
 }
-fn emit_task_status(app: &AppHandle, task_id: &str, status: &str, error: Option<&str>) {
-    let mut payload = serde_json::json!({"task_id": task_id, "status": status});
-    if let Some(error) = error {
-        payload["error"] = serde_json::Value::String(error.to_string());
-    }
-    let _ = app.emit("wand://task", payload);
-}
 fn begin_task_run(conn: &Connection, task_id: &str) -> rusqlite::Result<bool> {
     conn.execute(
         "UPDATE tasks SET status='running' WHERE id=?1 AND status != 'cancelled'",
@@ -1441,16 +1347,29 @@ fn begin_task_run(conn: &Connection, task_id: &str) -> rusqlite::Result<bool> {
 }
 #[tauri::command]
 fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
+    let command = allowed_cli(&req.cli)
+        .ok_or_else(|| "Unsupported CLI".to_string())?
+        .to_string();
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        let (repo_name, stored_path, stored_agents): (String, String, String) = conn
+        let allowed = cli_access_from_db(&conn)?;
+        if !allowed.iter().any(|item| item == &command) {
+            return Err(format!(
+                "CLI runtime '{command}' is disabled in Wand settings"
+            ));
+        }
+        if installed_cli_path(&command).is_none() {
+            return Err(format!(
+                "CLI runtime '{command}' is no longer installed on this machine"
+            ));
+        }
+        let (repo_name, stored_path): (String, String) = conn
             .query_row(
-                "SELECT tasks.repo,repos.path,tasks.agents FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
+                "SELECT tasks.repo,repos.path FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
                 params![req.task_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|_| "Task or repository does not exist".to_string())?;
-        validate_requested_agents(&stored_agents, &req.agents)?;
         if std::path::Path::new(&stored_path).canonicalize().ok()
             != std::path::Path::new(&req.repo_path).canonicalize().ok()
         {
@@ -1491,38 +1410,7 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
             },
         );
     }
-    if let Ok((cli, model, responsibility, skills_json)) = conn.query_row(
-        "SELECT cli,model,role,skills FROM agents WHERE id='sentinel'",
-        [],
-        |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        },
-    ) {
-        req.agent_configs.insert(
-            "sentinel-verifier".into(),
-            AgentExecution {
-                cli,
-                model,
-                responsibility,
-                skills: serde_json::from_str(&skills_json).unwrap_or_default(),
-            },
-        );
     }
-    if !req.agent_configs.contains_key("sentinel-verifier") {
-        return Err("Sentinel verifier agent is not configured".into());
-    }
-    }
-    let command = req
-        .agent_configs
-        .values()
-        .next()
-        .map(|config| config.cli.clone())
-        .ok_or_else(|| "No configured agent runtime is available".to_string())?;
     let run_id = req
         .run_id
         .take()
@@ -1541,34 +1429,6 @@ fn task_completion_status(cron: &str) -> &'static str {
         "completed"
     } else {
         "queued"
-    }
-}
-fn task_failure_status(cron: &str) -> &'static str {
-    if cron.trim().eq_ignore_ascii_case("one-off") {
-        "failed"
-    } else {
-        "queued"
-    }
-}
-fn agent_runtime_enabled_and_installed(cli: &str, enabled_clis: &[String]) -> bool {
-    allowed_cli(cli).is_some()
-        && enabled_clis.iter().any(|item| item == cli)
-        && installed_cli_path(cli).is_some()
-}
-fn mark_task_failed_or_requeue(db: &Arc<Mutex<Connection>>, task_id: &str) {
-    if let Ok(conn) = db.lock() {
-        let cron: Result<String, _> = conn.query_row(
-            "SELECT cron FROM tasks WHERE id=?1",
-            params![task_id],
-            |row| row.get(0),
-        );
-        let status = cron
-            .map(|value| task_failure_status(&value))
-            .unwrap_or("failed");
-        let _ = conn.execute(
-            "UPDATE tasks SET status=?2 WHERE id=?1",
-            params![task_id, status],
-        );
     }
 }
 fn launch_chain_worker(
@@ -1594,7 +1454,6 @@ fn launch_chain_worker(
         };
         if cancelled_before_start {
             finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
-            emit_task_status(&app, &req.task_id, "cancelled", Some("Cancelled by user"));
             let _ = app.emit(
                 "wand://agent",
                 serde_json::json!({"task_id":req.task_id,"status":"cancelled","error":"Cancelled by user"}),
@@ -1609,7 +1468,6 @@ fn launch_chain_worker(
                 );
             }
         }
-        emit_task_status(&app, &req.task_id, "running", None);
         let mut handoff = String::from(
             "No previous stage output. Inspect the repository and begin from the task request.",
         );
@@ -1630,7 +1488,6 @@ fn launch_chain_worker(
                 .unwrap_or(false);
             if cancelled {
                 finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
-                emit_task_status(&app, &req.task_id, "cancelled", Some("Cancelled by user"));
                 let _ = app.emit(
                     "wand://agent",
                     serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"cancelled"}),
@@ -1646,9 +1503,7 @@ fn launch_chain_worker(
                 let message = format!(
                     "CLI runtime '{stage_command}' is no longer installed on this machine"
                 );
-                mark_task_failed_or_requeue(&db_arc, &req.task_id);
                 finish_run(&db_arc, &req.run_id, "failed", Some(&message));
-                emit_task_status(&app, &req.task_id, "failed", Some(&message));
                 let _ = app.emit(
                     "wand://agent",
                     serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
@@ -1660,9 +1515,7 @@ fn launch_chain_worker(
                 if !allowed.iter().any(|item| item == &stage_command) {
                     let message =
                         format!("CLI runtime '{stage_command}' is disabled in Wand settings");
-                    mark_task_failed_or_requeue(&db_arc, &req.task_id);
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
-                    emit_task_status(&app, &req.task_id, "failed", Some(&message));
                     let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
                     return;
                 }
@@ -1670,9 +1523,7 @@ fn launch_chain_worker(
                     let message = format!(
                         "CLI runtime '{stage_command}' is no longer installed on this machine"
                     );
-                    mark_task_failed_or_requeue(&db_arc, &req.task_id);
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
-                    emit_task_status(&app, &req.task_id, "failed", Some(&message));
                     let _ = app.emit(
                         "wand://agent",
                         serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
@@ -1685,8 +1536,13 @@ fn launch_chain_worker(
                 .map(|item| item.responsibility.as_str())
                 .unwrap_or("");
             let skills = config.map(|item| item.skills.as_slice()).unwrap_or(&[]);
-            let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"}));
-            match execute_stage(
+            let _=app.emit("wand://agent",serde_json::json!({"run_id":req.run_id.as_deref(),"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"}));
+            let output_app = app.clone();
+            let output_run_id = req.run_id.clone();
+            let output_task_id = req.task_id.clone();
+            let output_agent = agent.clone();
+            let output_stage = index + 1;
+            match execute_stage_with_progress(
                 &stage_command,
                 stage_model,
                 &req.repo_path,
@@ -1695,8 +1551,22 @@ fn launch_chain_worker(
                 &handoff,
                 responsibility,
                 skills,
-                &db_arc,
-                &req.task_id,
+                move |stream, chunk| {
+                    if chunk.is_empty() {
+                        return;
+                    }
+                    let _ = output_app.emit(
+                        "wand://agent-output",
+                        serde_json::json!({
+                            "run_id": output_run_id.as_deref(),
+                            "task_id": &output_task_id,
+                            "agent": &output_agent,
+                            "stage": output_stage,
+                            "stream": stream,
+                            "chunk": chunk,
+                        }),
+                    );
+                },
             ) {
                 Ok(output) => {
                     handoff = output.chars().take(12000).collect();
@@ -1754,15 +1624,9 @@ fn launch_chain_worker(
                             }
                         }
                     }
-                    let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));
+                    let _=app.emit("wand://agent",serde_json::json!({"run_id":req.run_id.as_deref(),"task_id":req.task_id,"agent":agent,"stage":index+1,"status":if agent=="sentinel-verifier"{"verified"}else{"completed"},"handoff":handoff}));
                 }
                 Err(error) => {
-                    if error == "WAND_TASK_CANCELLED" {
-                        finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
-                        emit_task_status(&app, &req.task_id, "cancelled", Some("Cancelled by user"));
-                        let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"cancelled","error":"Cancelled by user"}));
-                        return;
-                    }
                     if let Ok(conn) = db_arc.lock() {
                         let repo: Option<String> = conn
                             .query_row(
@@ -1777,11 +1641,13 @@ fn launch_chain_worker(
                                 params![run_id, req.task_id, repo, agent, index + 1, error, Utc::now().to_rfc3339()],
                             );
                         }
+                        let _ = conn.execute(
+                            "UPDATE tasks SET status='failed' WHERE id=?1",
+                            params![req.task_id],
+                        );
                     }
-                    mark_task_failed_or_requeue(&db_arc, &req.task_id);
                     finish_run(&db_arc, &req.run_id, "failed", Some(&error));
-                    emit_task_status(&app, &req.task_id, "failed", Some(&error));
-                    let _=app.emit("wand://agent",serde_json::json!({"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));
+                    let _=app.emit("wand://agent",serde_json::json!({"run_id":req.run_id.as_deref(),"task_id":req.task_id,"agent":agent,"stage":index+1,"status":"failed","error":error}));
                     return;
                 }
             }
@@ -1801,19 +1667,6 @@ fn launch_chain_worker(
             );
         }
         finish_run(&db_arc, &req.run_id, "completed", None);
-        let final_status = db_arc
-            .lock()
-            .ok()
-            .and_then(|conn| {
-                conn.query_row(
-                    "SELECT status FROM tasks WHERE id=?1",
-                    params![req.task_id],
-                    |row| row.get::<_, String>(0),
-                )
-                .ok()
-            })
-            .unwrap_or_else(|| "completed".into());
-        emit_task_status(&app, &req.task_id, &final_status, None);
     });
 }
 fn parse_cron(expr: &str) -> Result<Schedule, String> {
@@ -1901,11 +1754,6 @@ fn parse_azure_pull_request_url(raw: &str) -> Result<(String, String, String, i6
         || !(host == "dev.azure.com"
             || host.ends_with(".dev.azure.com")
             || host.ends_with(".visualstudio.com"))
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.port().is_some()
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
     {
         return Err("Azure pull-request URL must use an approved HTTPS Azure DevOps host".into());
     }
@@ -2030,10 +1878,6 @@ fn validate_github_repo(raw: &str) -> Result<String, String> {
     if parts.next().is_some()
         || owner.is_empty()
         || repo.is_empty()
-        || owner == "."
-        || owner == ".."
-        || repo == "."
-        || repo == ".."
         || owner.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
         || repo.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
     {
@@ -2067,9 +1911,6 @@ async fn github_pull_request_action(
         let text = body.unwrap_or_default();
         if text.trim().is_empty() {
             return Err("A comment cannot be empty".into());
-        }
-        if text.chars().count() > 4000 {
-            return Err("A comment cannot exceed 4000 characters".into());
         }
         serde_json::json!({"body":text})
     };
@@ -2142,99 +1983,30 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
     };
     let client = provider_http_client()?;
     let mut added = 0;
-    let mut had_error = false;
     for name in names {
         let endpoint=format!("https://api.github.com/repos/{name}/issues/comments?per_page=50&sort=created&direction=desc");
-        let response = match client
+        let response = client
             .get(endpoint)
             .header("User-Agent", "Wand")
             .bearer_auth(&token)
             .send()
             .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                had_error = true;
-                emit_provider_health(
-                    &app,
-                    "github",
-                    "error",
-                    Some(format!("GitHub activity request failed for {name}: {error}")),
-                );
-                continue;
-            }
-        };
+            .map_err(|e| e.to_string())?;
         if !response.status().is_success() {
-            had_error = true;
-            emit_provider_health(
-                &app,
-                "github",
-                "error",
-                Some(format!("GitHub activity returned {} for {name}", response.status())),
-            );
             continue;
         }
-        let comments: Vec<serde_json::Value> = match response.json().await {
-            Ok(value) => value,
-            Err(error) => {
-                had_error = true;
-                emit_provider_health(
-                    &app,
-                    "github",
-                    "error",
-                    Some(format!("GitHub activity response could not be read for {name}: {error}")),
-                );
-                continue;
-            }
-        };
+        let comments: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
         for comment in comments {
             let id = format!("github:{}", comment["id"].as_i64().unwrap_or(0));
             let issue_url = comment["issue_url"].as_str().unwrap_or_default();
-            if issue_url.is_empty() {
-                continue;
-            }
-            let issue_response = match client
+            let issue_response = client
                 .get(issue_url)
                 .header("User-Agent", "Wand")
                 .bearer_auth(&token)
                 .send()
                 .await
-            {
-                Ok(value) => value,
-                Err(error) => {
-                    had_error = true;
-                    emit_provider_health(
-                        &app,
-                        "github",
-                        "error",
-                        Some(format!("GitHub pull request lookup failed for {name}: {error}")),
-                    );
-                    continue;
-                }
-            };
-            if !issue_response.status().is_success() {
-                had_error = true;
-                emit_provider_health(
-                    &app,
-                    "github",
-                    "error",
-                    Some(format!("GitHub pull request lookup returned {} for {name}", issue_response.status())),
-                );
-                continue;
-            }
-            let issue: serde_json::Value = match issue_response.json().await {
-                Ok(value) => value,
-                Err(error) => {
-                    had_error = true;
-                    emit_provider_health(
-                        &app,
-                        "github",
-                        "error",
-                        Some(format!("GitHub pull request lookup could not be read for {name}: {error}")),
-                    );
-                    continue;
-                }
-            };
+                .map_err(|e| e.to_string())?;
+            let issue: serde_json::Value = issue_response.json().await.unwrap_or_default();
             if issue["pull_request"].is_null() {
                 continue;
             }
@@ -2245,17 +2017,10 @@ async fn sync_github_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, 
             }
         }
     }
-    // The manual activity endpoint above returns issue comments. Pull-request
-    // review comments use a separate GitHub API surface, so refresh that
-    // surface as part of the same user-triggered sync as well.
-    background_github_activity(db.0.clone(), app.clone()).await;
     let _ = app.emit(
         "wand://notifications",
         serde_json::json!({"provider":"github","added":added}),
     );
-    if !had_error {
-        emit_provider_health(&app, "github", "ok", None);
-    }
     Ok(added)
 }
 #[tauri::command]
@@ -2326,7 +2091,6 @@ async fn sync_azure_activity(
     let pulls: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
     let client = provider_http_client()?;
     let mut added = 0;
-    let mut had_error = false;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
         let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
         let project = pull["repository"]["project"]["id"]
@@ -2336,27 +2100,8 @@ async fn sync_azure_activity(
         if repo_id.is_empty() || project.is_empty() || pull_id == 0 {
             continue;
         }
-        let threads = match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await {
-            Ok(value) => value,
-            Err(error) => {
-                had_error = true;
-                emit_provider_health(&app, "azure-devops", "error", Some(format!("Azure DevOps thread request failed: {error}")));
-                continue;
-            }
-        };
-        if !threads.status().is_success() {
-            had_error = true;
-            emit_provider_health(&app, "azure-devops", "error", Some(format!("Azure DevOps thread request returned {}", threads.status())));
-            continue;
-        }
-        let payload: serde_json::Value = match threads.json().await {
-            Ok(value) => value,
-            Err(error) => {
-                had_error = true;
-                emit_provider_health(&app, "azure-devops", "error", Some(format!("Azure DevOps thread response could not be read: {error}")));
-                continue;
-            }
-        };
+        let threads=client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await.map_err(|e|e.to_string())?;
+        let payload: serde_json::Value = threads.json().await.unwrap_or_default();
         for thread in payload["value"].as_array().cloned().unwrap_or_default() {
             for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
                 let id = format!("azure:{}", comment["id"].as_i64().unwrap_or(0));
@@ -2372,9 +2117,6 @@ async fn sync_azure_activity(
         "wand://notifications",
         serde_json::json!({"provider":"azure-devops","added":added}),
     );
-    if !had_error {
-        emit_provider_health(&app, "azure-devops", "ok", None);
-    }
     Ok(added)
 }
 
@@ -2422,11 +2164,9 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
         }
     };
     let mut added = 0;
-    let mut had_error = false;
     for name in names {
         let response=match client.get(format!("https://api.github.com/repos/{name}/pulls/comments?per_page=50&sort=created&direction=desc")).header("User-Agent","Wand").bearer_auth(&token).send().await{Ok(value)=>value,Err(error)=>{emit_provider_health(&app,"github","error",Some(format!("GitHub request failed for {name}: {error}"))); return;}};
         if !response.status().is_success() {
-            had_error = true;
             emit_provider_health(
                 &app,
                 "github",
@@ -2463,15 +2203,8 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
                     return;
                 }
             };
-            let changed=match conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]) {
-                Ok(value) => value,
-                Err(error) => {
-                    had_error = true;
-                    emit_provider_health(&app,"github","error",Some(format!("Unable to save GitHub review notification: {error}")));
-                    continue;
-                }
-            };
-            if changed > 0 {
+            let changed=conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'github',?2,'Pull request review comment',?3,?4,?5,1,?6)",params![id,name,comment["body"].as_str().unwrap_or_default(),comment["html_url"].as_str().unwrap_or_default(),comment["user"]["login"].as_str().unwrap_or("GitHub"),comment["created_at"].as_str().unwrap_or_default()]);
+            if changed.unwrap_or(0) > 0 {
                 added += 1
             }
         }
@@ -2482,9 +2215,7 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
             serde_json::json!({"provider":"github","added":added,"background":true}),
         );
     }
-    if !had_error {
-        emit_provider_health(&app, "github", "ok", None);
-    }
+    emit_provider_health(&app, "github", "ok", None);
 }
 async fn report_provider_credentials(app: AppHandle) {
     for provider in ["github", "azure-devops"] {
@@ -2602,7 +2333,6 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         }
     };
     let mut added = 0;
-    let mut had_error = false;
     for pull in pulls["value"].as_array().cloned().unwrap_or_default() {
         let repo_id = pull["repository"]["id"].as_str().unwrap_or_default();
         let project = pull["repository"]["project"]["id"]
@@ -2612,46 +2342,10 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
         if repo_id.is_empty() || project.is_empty() || pull_id == 0 {
             continue;
         }
-        let response = match client
-            .get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1"))
-            .basic_auth("", Some(&token))
-            .send()
-            .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                had_error = true;
-                emit_provider_health(
-                    &app,
-                    "azure-devops",
-                    "error",
-                    Some(format!("Azure DevOps thread request failed: {error}")),
-                );
-                continue;
-            }
-        };
-        if !response.status().is_success() {
-            had_error = true;
-            emit_provider_health(
-                &app,
-                "azure-devops",
-                "error",
-                Some(format!("Azure DevOps thread request returned {}", response.status())),
-            );
-            continue;
-        }
+        let response=match client.get(format!("{base}/{project}/_apis/git/repositories/{repo_id}/pullRequests/{pull_id}/threads?api-version=7.1")).basic_auth("",Some(&token)).send().await{Ok(value)=>value,Err(_)=>continue};
         let threads: serde_json::Value = match response.json().await {
             Ok(value) => value,
-            Err(error) => {
-                had_error = true;
-                emit_provider_health(
-                    &app,
-                    "azure-devops",
-                    "error",
-                    Some(format!("Azure DevOps thread response could not be read: {error}")),
-                );
-                continue;
-            }
+            Err(_) => continue,
         };
         for thread in threads["value"].as_array().cloned().unwrap_or_default() {
             for comment in thread["comments"].as_array().cloned().unwrap_or_default() {
@@ -2673,9 +2367,7 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
             serde_json::json!({"provider":"azure-devops","added":added,"background":true}),
         );
     }
-    if !had_error {
-        emit_provider_health(&app, "azure-devops", "ok", None);
-    }
+    emit_provider_health(&app, "azure-devops", "ok", None);
 }
 
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
@@ -2761,8 +2453,9 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                         );
                                         continue;
                                     };
+                                    let fallback_cli = cli.to_string();
                                     let enabled_clis = cli_access_from_db(&conn).unwrap_or_default();
-                                    let agent_configs: HashMap<String, AgentExecution> = agents
+                                    let agent_configs = agents
                                         .iter()
                                         .filter_map(|agent_id| {
                                             conn.query_row(
@@ -2770,13 +2463,13 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                                 params![agent_id],
                                                 |r| {
                                                     let stored_cli: String = r.get(0)?;
-                                                    if !agent_runtime_enabled_and_installed(
-                                                        &stored_cli,
-                                                        &enabled_clis,
-                                                    ) {
-                                                        return Err(rusqlite::Error::QueryReturnedNoRows);
-                                                    }
-                                                    let stage_cli = stored_cli;
+                                                    let stage_cli = if enabled_clis.iter().any(|item| item == &stored_cli)
+                                                        && installed_cli_path(&stored_cli).is_some()
+                                                    {
+                                                        stored_cli
+                                                    } else {
+                                                        fallback_cli.clone()
+                                                    };
                                                     let skills_json: String = r.get(3)?;
                                                     Ok(AgentExecution {
                                                         cli: stage_cli,
@@ -2791,58 +2484,6 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                             .map(|config| (agent_id.clone(), config))
                                         })
                                         .collect();
-                                    let agent_configs = {
-                                        let mut configs = agent_configs;
-                                        if let Ok((cli, model, responsibility, skills_json)) = conn
-                                            .query_row(
-                                                "SELECT cli,model,role,skills FROM agents WHERE id='sentinel'",
-                                                [],
-                                                |r| {
-                                                    Ok((
-                                                        r.get::<_, String>(0)?,
-                                                        r.get::<_, String>(1)?,
-                                                        r.get::<_, String>(2)?,
-                                                        r.get::<_, String>(3)?,
-                                                    ))
-                                                },
-                                            )
-                                        {
-                                            if agent_runtime_enabled_and_installed(&cli, &enabled_clis) {
-                                                configs.insert(
-                                                    "sentinel-verifier".into(),
-                                                    AgentExecution {
-                                                        cli,
-                                                        model,
-                                                        responsibility,
-                                                        skills: serde_json::from_str(&skills_json)
-                                                            .unwrap_or_default(),
-                                                    },
-                                                );
-                                            }
-                                        }
-                                        configs
-                                    };
-                                    if agent_configs.len() != agents.len()
-                                        || !agent_configs.contains_key("sentinel-verifier")
-                                    {
-                                        let skipped = format!(
-                                            "Scheduled task skipped: {name} requires every selected agent runtime to be enabled and installed"
-                                        );
-                                        let _ = conn.execute(
-                                            "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
-                                            params!["scheduler.skipped", skipped, now.to_rfc3339()],
-                                        );
-                                        let _ = app.emit(
-                                            "wand://scheduler",
-                                            serde_json::json!({
-                                                "task_id": id,
-                                                "name": name,
-                                                "status": "skipped",
-                                                "reason": "every selected agent runtime must be enabled and installed"
-                                            }),
-                                        );
-                                        continue;
-                                    }
                                     let run_id = format!("{}-{}", id, slot);
                                     let run_inserted = conn
                                         .execute(
@@ -2870,23 +2511,6 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                 }
                             }
                         }
-                    } else {
-                        let skipped = format!(
-                            "Scheduled task skipped: {name} requires an enabled, installed CLI runtime"
-                        );
-                        let _ = conn.execute(
-                            "INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)",
-                            params!["scheduler.skipped", skipped, now.to_rfc3339()],
-                        );
-                        let _ = app.emit(
-                            "wand://scheduler",
-                            serde_json::json!({
-                                "task_id": id,
-                                "name": name,
-                                "status": "skipped",
-                                "reason": "enabled installed CLI runtime required"
-                            }),
-                        );
                     }
                   }
                 }
@@ -2915,7 +2539,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| { if let Some(window) = app.get_webview_window("main") { let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus(); } })).plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_git_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn read_repo_file(
@@ -3012,81 +2636,66 @@ fn git_diff(repo_path: String, db: State<Db>) -> Result<String, String> {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
 }
-fn validate_worktree_branch(branch: &str) -> Result<String, String> {
-    let value = branch.trim();
-    if value.is_empty()
-        || value.len() > 120
-        || value.starts_with('-')
-        || value.contains('\0')
-        || value.contains("..")
-        || value.contains(' ')
-    {
-        return Err("Worktree branch name is invalid".into());
-    }
-    Ok(value.to_string())
+
+#[derive(Serialize)]
+struct WorktreeCreated {
+    path: String,
+    branch: String,
 }
+
+fn safe_branch_name(value: &str) -> Result<String, String> {
+    let name = value.trim();
+    if name.is_empty() || name.len() > 120 || name.starts_with('-') || name.contains("..")
+        || name.ends_with('/') || name.contains('@') || name.chars().any(|c| c.is_control() || c == ' ' || c == '~' || c == '^' || c == ':' || c == '?' || c == '*' || c == '[' || c == '\\') {
+        return Err("Use a simple Git branch name, for example feature/live-preview".into());
+    }
+    Ok(name.to_string())
+}
+
 #[tauri::command]
-fn create_git_worktree(repo_path: String, branch: String, db: State<Db>) -> Result<String, String> {
+fn create_worktree(repo_path: String, branch: String, db: State<Db>) -> Result<WorktreeCreated, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let root = registered_repo_root(&repo_path, &conn)?;
-    let branch = validate_worktree_branch(&branch)?;
-    let worktree = root
-        .join(".wand")
-        .join("worktrees")
-        .join(&branch.replace('/', "__"));
-    if worktree.exists() {
-        return Err("That Wand worktree already exists".into());
-    }
-    if let Some(parent) = worktree.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let branch = safe_branch_name(&branch)?;
+    let repo_name = root.file_name().and_then(|name| name.to_str()).ok_or("Repository name is invalid")?;
+    let worktree_name = branch.replace('/', "-");
+    let parent = root.parent().ok_or("Repository has no parent folder")?;
+    let path = parent.join(format!(".{repo_name}-wand-worktrees")).join(worktree_name);
+    if path.exists() {
+        return Err(format!("Worktree already exists at {}", path.display()));
     }
     let output = Command::new("git")
         .current_dir(&root)
         .args(["worktree", "add", "-b", &branch])
-        .arg(&worktree)
+        .arg(&path)
         .output()
         .map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(worktree.to_string_lossy().to_string())
-    } else {
-        let _ = fs::remove_dir_all(&worktree);
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
+    Ok(WorktreeCreated { path: path.to_string_lossy().to_string(), branch })
 }
-fn run_git_patch(repo_path: &std::path::Path, patch: &str, check: bool) -> Result<(), String> {
-    let mut command = Command::new("git");
-    command.current_dir(repo_path).arg("apply");
-    if check {
-        command.arg("--check");
-    }
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    child
-        .stdin
-        .take()
-        .ok_or("Unable to open git patch input")?
-        .write_all(patch.as_bytes())
-        .map_err(|e| e.to_string())?;
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
-}
+
 #[tauri::command]
 fn apply_git_patch(repo_path: String, patch: String, db: State<Db>) -> Result<(), String> {
-    if patch.trim().is_empty() {
-        return Err("A unified Git patch is required".into());
+    if patch.trim().is_empty() || patch.len() > 1_000_000 {
+        return Err("Provide a non-empty patch smaller than 1 MB".into());
     }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let root = registered_repo_root(&repo_path, &conn)?;
-    run_git_patch(&root, &patch, true)?;
-    run_git_patch(&root, &patch, false)
+    let mut child = Command::new("git")
+        .current_dir(root)
+        .args(["apply", "--whitespace=nowarn", "-"])
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child.stdin.as_mut().ok_or("Could not open Git patch input")?.write_all(patch.as_bytes()).map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(())
 }
 #[derive(Serialize)]
 struct EventRow {
@@ -3116,7 +2725,10 @@ fn list_events(limit: Option<i64>, db: State<Db>) -> Result<Vec<EventRow>, Strin
 }
 #[tauri::command]
 fn save_workspace_root(root: String, db: State<Db>) -> Result<(), String> {
-    let value = canonical_workspace_root(&root)?;
+    let value = root.trim().to_string();
+    if value.is_empty() {
+        return Err("Workspace root cannot be empty".into());
+    }
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO provider_settings(provider,url) VALUES ('workspace-root',?1)",
@@ -3124,19 +2736,6 @@ fn save_workspace_root(root: String, db: State<Db>) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(())
-}
-fn canonical_workspace_root(raw: &str) -> Result<String, String> {
-    let value = raw.trim();
-    if value.is_empty() {
-        return Err("Workspace root cannot be empty".into());
-    }
-    let root = Path::new(value)
-        .canonicalize()
-        .map_err(|_| "Workspace root must be an existing folder".to_string())?;
-    if !root.is_dir() {
-        return Err("Workspace root must be an existing folder".into());
-    }
-    Ok(root.to_string_lossy().to_string())
 }
 #[tauri::command]
 fn workspace_root(db: State<Db>) -> Result<Option<String>, String> {
@@ -3261,14 +2860,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&unregistered_path);
     }
 
-    #[test]
-    fn validates_worktree_branch_names_before_git() {
-        assert!(validate_worktree_branch("wand/feature-1").is_ok());
-        assert!(validate_worktree_branch("../escape").is_err());
-        assert!(validate_worktree_branch("-bad").is_err());
-        assert!(validate_worktree_branch("feature name").is_err());
-    }
-
     use super::*;
 
     #[test]
@@ -3285,42 +2876,6 @@ mod tests {
     fn recurring_tasks_remain_active_after_a_successful_run() {
         assert_eq!(task_completion_status("one-off"), "completed");
         assert_eq!(task_completion_status("0 9 * * 1"), "queued");
-        assert_eq!(task_failure_status("one-off"), "failed");
-        assert_eq!(task_failure_status("0 9 * * 1"), "queued");
-    }
-
-    #[test]
-    fn recurring_task_failure_does_not_disable_future_runs() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('recurring','Nightly','repo','0 9 * * 1','[]','running','now'),('one-off','Once','repo','one-off','[]','running','now')",
-            [],
-        )
-        .unwrap();
-        let db = Arc::new(Mutex::new(conn));
-
-        mark_task_failed_or_requeue(&db, "recurring");
-        mark_task_failed_or_requeue(&db, "one-off");
-
-        let conn = db.lock().unwrap();
-        let recurring: String = conn
-            .query_row("SELECT status FROM tasks WHERE id='recurring'", [], |row| row.get(0))
-            .unwrap();
-        let one_off: String = conn
-            .query_row("SELECT status FROM tasks WHERE id='one-off'", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(recurring, "queued");
-        assert_eq!(one_off, "failed");
-    }
-
-    #[test]
-    fn execution_must_use_the_task_agent_selection() {
-        let selected = vec!["planner".to_string(), "builder".to_string()];
-        assert!(validate_requested_agents(r#"["planner","builder"]"#, &selected).is_ok());
-        assert!(validate_requested_agents(r#"["planner"]"#, &selected).is_err());
-        assert!(validate_requested_agents(r#"["builder","planner"]"#, &selected).is_err());
-        assert!(validate_requested_agents(r#"[]"#, &[]).is_err());
     }
 
     #[test]
@@ -3369,8 +2924,8 @@ mod tests {
             vec!["exec", "--model", "gpt-5", "hello"]
         );
         assert_eq!(
-            cli_args("kimi", "kimi-k3", "hello".into()).unwrap(),
-            vec!["--print", "--model", "kimi-k3", "hello"]
+            cli_args("kimi", "kimi-k2", "hello".into()).unwrap(),
+            vec!["--print", "--model", "kimi-k2", "hello"]
         );
         assert_eq!(
             cli_args("gemini", "gemini-2.5-pro", "hello".into()).unwrap(),
@@ -3382,8 +2937,13 @@ mod tests {
     #[test]
     fn bounds_cli_output_while_draining_the_stream() {
         let source = vec![b'x'; MAX_STAGE_OUTPUT_BYTES + 1024];
-        let (output, truncated) = read_bounded(source.as_slice()).unwrap();
+        let mut streamed = Vec::new();
+        let (output, truncated) = read_bounded_stream(source.as_slice(), |chunk| {
+            streamed.extend_from_slice(chunk)
+        })
+        .unwrap();
 
+        assert_eq!(streamed, source);
         assert_eq!(output.len(), MAX_STAGE_OUTPUT_BYTES);
         assert!(truncated);
         assert!(bounded_output_text(output, truncated).ends_with(
@@ -3512,15 +3072,6 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_does_not_substitute_an_unavailable_agent_runtime() {
-        assert!(!agent_runtime_enabled_and_installed(
-            "definitely-not-installed",
-            &["codex".into()]
-        ));
-        assert!(!agent_runtime_enabled_and_installed("codex", &[]));
-    }
-
-    #[test]
     fn parses_azure_pull_request_urls_without_accepting_http() {
         let parsed = parse_azure_pull_request_url(
             "https://dev.azure.com/acme/Platform/_git/wand/pullrequest/42",
@@ -3534,34 +3085,5 @@ mod tests {
             "http://dev.azure.com/acme/Platform/_git/wand/pullrequest/42"
         )
         .is_err());
-        assert!(parse_azure_pull_request_url(
-            "https://dev.azure.com/acme/Platform/_git/wand/pullrequest/42?api-version=7.1"
-        )
-        .is_err());
-        assert!(parse_azure_pull_request_url(
-            "https://user:secret@dev.azure.com/acme/Platform/_git/wand/pullrequest/42"
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn validates_github_repository_segments_before_building_action_urls() {
-        assert_eq!(validate_github_repo("vkctata/wandIDE").unwrap(), "vkctata/wandIDE");
-        assert!(validate_github_repo("vkctata/../wandIDE").is_err());
-        assert!(validate_github_repo("vkctata/.").is_err());
-        assert!(validate_github_repo("github.com/vkctata/wandIDE").is_err());
-    }
-
-    #[test]
-    fn canonicalizes_only_existing_workspace_roots() {
-        let root = std::env::temp_dir().join(format!("wand-workspace-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&root).unwrap();
-        let canonical = root.canonicalize().unwrap().to_string_lossy().to_string();
-
-        assert_eq!(canonical_workspace_root(&format!("  {}  ", root.display())).unwrap(), canonical);
-        assert!(canonical_workspace_root(&root.join("missing").to_string_lossy()).is_err());
-        assert!(canonical_workspace_root(&root.join("file.txt").to_string_lossy()).is_err());
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

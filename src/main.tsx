@@ -67,6 +67,21 @@ const isTauriRuntime = () =>
   Boolean(
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
   );
+type RuntimePlatform = "macos" | "windows" | "linux";
+type ThemeName = "obsidian" | "graphite" | "daylight" | "porcelain";
+const normalizeTheme = (value: string | null | undefined): ThemeName => {
+  if (value === "graphite" || value === "porcelain") return value;
+  if (["daylight", "paper", "mint", "lavender"].includes(value || ""))
+    return "daylight";
+  return "obsidian";
+};
+const runtimePlatform = (): RuntimePlatform => {
+  if (typeof navigator === "undefined") return "linux";
+  const identity = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
+  if (identity.includes("mac")) return "macos";
+  if (identity.includes("win")) return "windows";
+  return "linux";
+};
 const invoke = <T = unknown,>(
   command: string,
   args?: Record<string, unknown>,
@@ -240,9 +255,6 @@ const publishNotice = (category: string, title: string, body = title) => {
 function App() {
   const [notificationCount, setNotificationCount] = useState(0);
   useEffect(() => {
-    void ensureDesktopNotificationPermission();
-  }, []);
-  useEffect(() => {
     const onNotice = (event: Event) => {
       setNotice((event as CustomEvent<string>).detail);
     };
@@ -265,6 +277,7 @@ function App() {
     };
   }, []);
   const [view, setView] = useState<View>("home");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [repos, setRepos] = useState(() =>
     isTauriRuntime() ? defaultRepos : load("wand.repos", defaultRepos),
   );
@@ -619,10 +632,6 @@ function App() {
     setView("tasks");
   };
   const runTask = async (t: Task) => {
-    if (t.status === "cancelled") {
-      setNotice(`Cannot run cancelled task ${t.name}. Create a new task or retry a failed run.`);
-      return;
-    }
     const selected = t.agents
       .map((id) => agentCatalog.find((a) => a.id === id))
       .filter(Boolean) as Agent[];
@@ -757,12 +766,17 @@ function App() {
             <button
               className="iconbtn"
               onClick={() => setView("notifications")}
-              title="Notifications"
+              title={notificationCount ? `${notificationCount} unread notifications` : "Notifications"}
+              aria-label={notificationCount ? `${notificationCount} unread notifications` : "Notifications"}
             >
               <Bell size={17} />
-              <i />
+              {notificationCount > 0 && (
+                <span className="notification-badge" aria-hidden="true">
+                  {notificationCount > 99 ? "99+" : notificationCount}
+                </span>
+              )}
             </button>
-            <AccountMenu onSettings={() => setView("settings")} />
+            <AccountMenu onSettings={() => setSettingsOpen(true)} />
           </div>
         </header>
         {query.trim() && (
@@ -801,7 +815,7 @@ function App() {
           </button>
         )}
         {view === "home" ? (
-          <Home setView={setView} userName={userName} agents={agentCatalog} />
+          <Home setView={setView} userName={userName} />
         ) : view === "code" ? (
           <CodeWorkspace repo={repo} />
         ) : view === "threads" ? (
@@ -814,17 +828,22 @@ function App() {
           <SettingsView repos={repos} setRepos={setRepos} />
         )}
       </main>
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          repos={repos}
+          setRepos={setRepos}
+        />
+      )}
     </div>
   );
 }
 function Home({
   setView,
   userName,
-  agents,
 }: {
   setView: (v: View) => void;
   userName: string;
-  agents: Agent[];
 }) {
   type Event = {
     id: number;
@@ -948,30 +967,24 @@ function Home({
         </button>
       </div>
       <div className="agentgrid">
-        {agents.length === 0 ? (
-          <div className="emptyhint">
-            <Bot size={20} />
-            <h3>No agents configured</h3>
-            <p>Open Settings to add a coding specialist.</p>
-          </div>
-        ) : (
-          agents.map((agent) => {
-            const AgentIcon = agent.name.toLowerCase().includes("sentinel")
-              ? TerminalSquare
-              : agent.name.toLowerCase().includes("review")
-                ? Bot
-                : Code2;
-            return (
-              <Agent
-                key={agent.id}
-                icon={AgentIcon}
-                name={agent.name}
-                desc={agent.role}
-                status={`${agent.cli || "CLI"} · ${agent.model || "default"}`}
-              />
-            );
-          })
-        )}
+        <Agent
+          icon={Bot}
+          name="Code reviewer"
+          desc="Reviews new pull requests"
+          status="Watching your repos"
+        />
+        <Agent
+          icon={TerminalSquare}
+          name="Sentinel"
+          desc="Dependency & security audits"
+          status="Schedule available"
+        />
+        <Agent
+          icon={Code2}
+          name="Pair programmer"
+          desc="Your on-demand coding partner"
+          status="Ready when you are"
+        />
       </div>
     </section>
   );
@@ -1024,11 +1037,7 @@ function Agent({
 }
 function CodeWorkspace({ repo }: { repo: Repo }) {
   const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">(() =>
-    ["daylight", "paper", "mint", "lavender"].includes(
-      document.body.dataset.theme || "mint",
-    )
-      ? "vs"
-      : "vs-dark",
+    normalizeTheme(document.body.dataset.theme) === "daylight" ? "vs" : "vs-dark",
   );
   const [path, setPath] = useState("README.md");
   const [draftPath, setDraftPath] = useState("README.md");
@@ -1037,13 +1046,11 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
   const [mode, setMode] = useState<"file" | "diff">("file");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [worktreeStatus, setWorktreeStatus] = useState("");
   useEffect(() => {
-    const lightThemes = new Set(["daylight", "paper", "mint", "lavender"]);
     const sync = () =>
       setEditorTheme(
-        lightThemes.has(document.body.dataset.theme || "mint")
-          ? "vs"
-          : "vs-dark",
+        normalizeTheme(document.body.dataset.theme) === "daylight" ? "vs" : "vs-dark",
       );
     sync();
     const observer = new MutationObserver(sync);
@@ -1064,16 +1071,6 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
       setError(String(e));
     }
   };
-  const createWorktree = async () => {
-    const values = await askModal("Create a repository worktree", [{ id: "branch", label: "Branch name", placeholder: "wand/feature-name", value: "wand/" }], "Wand creates an isolated worktree under .wand/worktrees.");
-    if (!values?.branch) return;
-    try { const path = await invoke<string>("create_git_worktree", { repoPath: repo.path, branch: values.branch }); setError(`Worktree ready: ${path}`); } catch (e) { setError(String(e)); }
-  };
-  const applyPatch = async () => {
-    const values = await askModal("Apply a Git patch", [{ id: "patch", label: "Unified diff", placeholder: "diff --git …", multiline: true, maxLength: 200000 }], "Wand validates the patch with git apply --check before applying it to the selected repository.");
-    if (!values?.patch) return;
-    try { await invoke("apply_git_patch", { repoPath: repo.path, patch: values.patch }); await load(); setError("Patch applied successfully."); } catch (e) { setError(String(e)); }
-  };
   const save = async () => {
     try {
       setSaving(true);
@@ -1088,6 +1085,34 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
       setError(String(e));
     } finally {
       setSaving(false);
+    }
+  };
+  const createWorktree = async () => {
+    const values = await askModal("Create worktree", [
+      { id: "branch", label: "New branch", placeholder: "feature/my-change" },
+    ], "Creates an isolated sibling checkout for this repository.");
+    if (!values?.branch) return;
+    try {
+      const created = await invoke<{ path: string; branch: string }>("create_worktree", {
+        repoPath: repo.path,
+        branch: values.branch,
+      });
+      setWorktreeStatus(`Created ${created.branch} at ${created.path}`);
+    } catch (cause) {
+      setWorktreeStatus(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const applyPatch = async () => {
+    const values = await askModal("Apply Git patch", [
+      { id: "patch", label: "Unified diff patch", multiline: true, placeholder: "diff --git a/... b/..." },
+    ], "Applies this patch to the selected repository. Review it before continuing.");
+    if (!values?.patch) return;
+    try {
+      await invoke("apply_git_patch", { repoPath: repo.path, patch: values.patch });
+      setWorktreeStatus("Patch applied. Refresh the file or Git diff to review it.");
+      await load();
+    } catch (cause) {
+      setWorktreeStatus(cause instanceof Error ? cause.message : String(cause));
     }
   };
   useEffect(() => {
@@ -1138,13 +1163,18 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
           >
             {saving ? "Saving…" : "Save"}
           </button>
-          <button className="outline" onClick={createWorktree}>Worktree</button>
-          <button className="outline" onClick={applyPatch}>Apply patch</button>
+          <button className="outline" disabled={!repo.path} onClick={createWorktree}>
+            New worktree
+          </button>
+          <button className="outline" disabled={!repo.path} onClick={applyPatch}>
+            Apply patch
+          </button>
           <button className="primary" onClick={load}>
             Open
           </button>
         </div>
       </div>
+      {worktreeStatus && <p className="code-operation-status" role="status">{worktreeStatus}</p>}
       {error ? (
         <div className="emptyhint">
           <h3>Unable to open file</h3>
@@ -1347,8 +1377,20 @@ function Tasks({
     id: number; run_id: string; task_id: string; repo: string; agent: string;
     stage: number; status: string; content: string; created_at: string;
   };
+  type AgentEvent = {
+    run_id?: string; task_id?: string; agent?: string; stage?: number; status?: string;
+  };
+  type AgentOutput = {
+    run_id: string; task_id: string; agent: string; stage: number;
+    stream: "stdout" | "stderr"; chunk: string;
+  };
+  type LiveOutput = {
+    agent: string; stage: number; content: string; truncated: boolean;
+  };
+  const liveOutputLimit = 128_000;
   const [runs, setRuns] = useState<Run[]>([]);
   const [transcripts, setTranscripts] = useState<Record<string, Transcript[]>>({});
+  const [liveOutputs, setLiveOutputs] = useState<Record<string, LiveOutput>>({});
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const load = () =>
     invoke<Run[]>("list_task_runs", { limit: 30 })
@@ -1356,8 +1398,60 @@ function Tasks({
       .catch(() => setRuns([]));
   useEffect(() => {
     load();
-    const names = ["wand://agent", "wand://scheduler"];
-    const stops = names.map((name) => listen(name, load));
+    const stops = [
+      listen("wand://scheduler", load),
+      listen<AgentEvent>("wand://agent", (event) => {
+        load();
+        const payload = event.payload;
+        if (!payload.run_id || !payload.stage || !payload.agent) return;
+        if (payload.status === "running") {
+          setLiveOutputs((current) => {
+            const previous = current[payload.run_id!];
+            return {
+              ...current,
+              [payload.run_id!]: previous?.stage === payload.stage
+                ? previous
+                : { agent: payload.agent!, stage: payload.stage!, content: "", truncated: false },
+            };
+          });
+          return;
+        }
+        if (["completed", "verified", "failed", "cancelled"].includes(payload.status || "")) {
+          if (payload.task_id) {
+            invoke<Transcript[]>("list_agent_transcripts", { taskId: payload.task_id })
+              .then((rows) => setTranscripts((current) => ({
+                ...current,
+                [payload.run_id!]: rows.filter((row) => row.run_id === payload.run_id),
+              })))
+              .catch(() => {});
+          }
+          setLiveOutputs((current) => {
+            if (current[payload.run_id!]?.stage !== payload.stage) return current;
+            const next = { ...current };
+            delete next[payload.run_id!];
+            return next;
+          });
+        }
+      }),
+      listen<AgentOutput>("wand://agent-output", (event) => {
+        const payload = event.payload;
+        if (!payload.run_id || !payload.chunk) return;
+        setLiveOutputs((current) => {
+          const previous = current[payload.run_id];
+          const combined = `${previous?.stage === payload.stage ? previous.content : ""}${payload.chunk}`;
+          const truncated = combined.length > liveOutputLimit || previous?.truncated === true;
+          return {
+            ...current,
+            [payload.run_id]: {
+              agent: payload.agent,
+              stage: payload.stage,
+              content: combined.slice(-liveOutputLimit),
+              truncated,
+            },
+          };
+        });
+      }),
+    ];
     return () => {
       stops.forEach((stop) => stop.then((fn) => fn()));
     };
@@ -1423,8 +1517,8 @@ function Tasks({
                     ? "Active"
                     : "Paused"}
           </span>
-          <button className="run" onClick={() => runTask(t)} disabled={t.status === "cancelled"}>
-            <Play size={14} /> {t.status === "failed" ? "Retry" : "Run now"}
+          <button className="run" onClick={() => runTask(t)}>
+            <Play size={14} /> Run now
           </button>
           {t.active && (
             <button className="run" onClick={() => cancelTask(t)}>
@@ -1466,8 +1560,9 @@ function Tasks({
             </p>
           </div>
         ) : (
-          runs.map((run) => (
-            <React.Fragment key={run.id}>
+          runs.map((run) => {
+            const live = liveOutputs[run.id];
+            return <React.Fragment key={run.id}>
             <div className="run-row">
               <div>
                 <b>
@@ -1490,8 +1585,9 @@ function Tasks({
               >
                 {run.status}
               </span>
+              {live && <span className="tag purple live-output-tag"><i /> Streaming</span>}
               <button className="retry-run" onClick={() => toggleTranscript(run)}>
-                <ChevronDown size={13} /> {expandedRun === run.id ? "Hide transcript" : "View transcript"}
+                <ChevronDown size={13} /> {expandedRun === run.id ? "Hide output" : live ? "View live output" : "View transcript"}
               </button>
               {run.status === "failed" ? (
                 <button
@@ -1511,7 +1607,13 @@ function Tasks({
             </div>
             {expandedRun === run.id && (
               <div className="transcript-panel">
-                {(transcripts[run.id] || []).length === 0 ? <p className="sub">No persisted stage output for this run yet.</p> : transcripts[run.id].map((stage) => (
+                {live && (
+                  <article className="transcript-stage transcript-stage-live">
+                    <div><b>Stage {live.stage} · {live.agent}</b><span className="tag purple"><i /> streaming</span></div>
+                    <pre role="log" aria-live="polite">{live.truncated ? "[Earlier live output hidden]\n" : ""}{live.content || "Waiting for agent output…"}</pre>
+                  </article>
+                )}
+                {!live && (transcripts[run.id] || []).length === 0 ? <p className="sub">No persisted stage output for this run yet.</p> : (transcripts[run.id] || []).map((stage) => (
                   <article className="transcript-stage" key={stage.id}>
                     <div><b>Stage {stage.stage} · {stage.agent}</b><span className={"tag " + (stage.status === "failed" ? "red" : stage.status === "verified" ? "green" : "blue")}>{stage.status}</span></div>
                     <pre>{stage.content}</pre>
@@ -1520,7 +1622,7 @@ function Tasks({
               </div>
             )}
             </React.Fragment>
-          ))
+          })
         )}
       </div>
     </section>
@@ -1673,15 +1775,6 @@ function SettingsView({
   repos: Repo[];
   setRepos: React.Dispatch<React.SetStateAction<Repo[]>>;
 }) {
-  type SettingsSection =
-    | "workspace"
-    | "appearance"
-    | "providers"
-    | "clis"
-    | "agents"
-    | "notifications"
-    | "whats-new";
-  const [section, setSection] = useState<SettingsSection>("workspace");
   const [root, setRoot] = useState("");
   const [scanError, setScanError] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -1721,15 +1814,6 @@ function SettingsView({
       setScanning(false);
     }
   };
-  const sections = [
-    { id: "workspace", label: "Workspace", hint: "Repositories", icon: FolderGit2 },
-    { id: "appearance", label: "Appearance", hint: "Themes", icon: Sun },
-    { id: "providers", label: "Providers", hint: "GitHub & Azure", icon: Zap },
-    { id: "clis", label: "CLI Access", hint: "Local runtimes", icon: TerminalSquare },
-    { id: "agents", label: "Agent Team", hint: "Responsibilities", icon: Bot },
-    { id: "notifications", label: "Notifications", hint: "Delivery rules", icon: Bell },
-    { id: "whats-new", label: "What’s New", hint: "Release notes", icon: Sparkles },
-  ] as const;
   return (
     <section className="content settings-page">
       <div className="hero compact">
@@ -1744,59 +1828,94 @@ function SettingsView({
           </p>
         </div>
       </div>
-      <div className="settings-layout">
-        <nav className="settings-section-nav" aria-label="Settings sections">
-          {sections.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                className={"settings-section-nav-item " + (section === item.id ? "active" : "")}
-                aria-current={section === item.id ? "page" : undefined}
-                onClick={() => setSection(item.id)}
-              >
-                <Icon size={16} />
-                <span>
-                  <b>{item.label}</b>
-                  <small>{item.hint}</small>
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-        <div className="settings-section-content">
-          {section === "workspace" && (
-            <div className="settingscard">
-              <h2>Repository workspace</h2>
-              <p>
-                {root ||
-                  "Choose one folder and Wand will scan its immediate Git repositories."}
-              </p>
-              <div className="folder">
-                <FolderGit2 size={18} />
-                <span>{repos.length} repositories in this local workspace</span>
-                <button className="outline" onClick={scan} disabled={scanning}>
-                  {scanning ? "Scanning…" : "Choose folder & scan"}
-                </button>
-              </div>
-              {scanError && <p className="provider-message" role="alert">{scanError}</p>}
-            </div>
-          )}
-          {section === "appearance" && <ThemeSection />}
-          {section === "providers" && <ProviderAccess />}
-          {section === "clis" && <CliManager />}
-          {section === "agents" && <AgentManager repos={repos} />}
-          {section === "notifications" && <NotificationPreferencesSection />}
-          {section === "whats-new" && <WhatsNewSection />}
+      <SettingsGroup
+        number="01"
+        title="Workspace"
+        description="Your local repositories and project context."
+      >
+        <div className="settingscard">
+          <h2>Repository workspace</h2>
+          <p>
+            {root ||
+              "Choose one folder and Wand will scan its immediate Git repositories."}
+          </p>
+          <div className="folder">
+            <FolderGit2 size={18} />
+            <span>{repos.length} repositories in this local workspace</span>
+            <button className="outline" onClick={scan} disabled={scanning}>
+              {scanning ? "Scanning…" : "Choose folder & scan"}
+            </button>
+          </div>
+          {scanError && <p className="provider-message" role="alert">{scanError}</p>}
         </div>
-      </div>
+      </SettingsGroup>
+      <SettingsGroup
+        number="02"
+        title="Appearance"
+        description="The way Wand looks in your workspace."
+      >
+        <ThemeSection />
+      </SettingsGroup>
+      <SettingsGroup
+        number="03"
+        title="Connections"
+        description="Services and local tools that Wand can use."
+      >
+        <ProviderAccess />
+        <CliManager />
+      </SettingsGroup>
+      <SettingsGroup
+        number="04"
+        title="Agent team"
+        description="The specialists available in this workspace."
+      >
+        <AgentManager repos={repos} />
+      </SettingsGroup>
+      <SettingsGroup
+        number="05"
+        title="Notifications"
+        description="Choose which work deserves your attention."
+      >
+        <NotificationPreferencesSection />
+      </SettingsGroup>
+      <SettingsGroup
+        number="06"
+        title="About Wand"
+        description="Release notes and product updates."
+      >
+        <WhatsNewSection />
+      </SettingsGroup>
     </section>
   );
 }
-function Onboarding({ done }: { done: (name: string) => Promise<void> }) {
+function SettingsGroup({
+  number,
+  title,
+  description,
+  children,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  const id = `settings-${title.toLowerCase().replace(/\s+/g, "-")}`;
+  return (
+    <section className="settings-group" aria-labelledby={id}>
+      <div className="settings-group-heading">
+        <span>{number}</span>
+        <div>
+          <h2 id={id}>{title}</h2>
+          <p>{description}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+function Onboarding({ done }: { done: (name: string) => void }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
-  const [error, setError] = useState("");
   const slides = [
     [
       "Welcome to Wand",
@@ -1823,7 +1942,6 @@ function Onboarding({ done }: { done: (name: string) => Promise<void> }) {
         <p className="eyebrow">WAND / GETTING STARTED</p>
         <h1>{current[0]}</h1>
         <p>{current[1]}</p>
-        {error && <p className="provider-message" role="alert">{error}</p>}
         {step === 0 && (
           <label className="onboard-field">
             <span>What should Wand call you?</span>
@@ -1854,18 +1972,9 @@ function Onboarding({ done }: { done: (name: string) => Promise<void> }) {
           <button
             className="primary"
             disabled={step === 0 && !name.trim()}
-            onClick={async () => {
-              if (step < slides.length - 1) {
-                setStep(step + 1);
-                return;
-              }
-              setError("");
-              try {
-                await done(name.trim());
-              } catch (cause) {
-                setError(`Unable to save your name: ${String(cause)}`);
-              }
-            }}
+            onClick={() =>
+              step < slides.length - 1 ? setStep(step + 1) : done(name.trim())
+            }
           >
             {step < slides.length - 1 ? "Continue" : "Enter Wand"}
           </button>
@@ -2156,8 +2265,6 @@ function AgentManager({ repos }: { repos: Repo[] }) {
   const [items, setItems] = useState<StoredAgent[]>([]);
   const [enabledClis, setEnabledClis] = useState<string[]>([]);
   const [workflowMessage, setWorkflowMessage] = useState("");
-  const [saveMessage, setSaveMessage] = useState("");
-  const [saveError, setSaveError] = useState("");
   const load = () =>
     invoke<any[]>("list_agents")
       .then((rows) =>
@@ -2165,7 +2272,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) })),
         ),
       )
-      .catch((error) => setSaveError(`Unable to load agents: ${String(error)}`));
+      .catch(() => {});
   useEffect(() => {
     load();
     invoke<string[]>("cli_access").then(setEnabledClis).catch(() => {});
@@ -2192,8 +2299,6 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     }
   };
   const edit = async (agent?: StoredAgent) => {
-    setSaveError("");
-    setSaveMessage("");
     const cliOptions = (enabledClis.length ? enabledClis : ["codex"]).filter(
       (cli) => cli !== "kimi" || enabledClis.includes("kimi"),
     );
@@ -2201,7 +2306,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
       claude: ["default", "sonnet", "opus"],
       codex: ["default", "gpt-5-codex"],
       gemini: ["default", "gemini-2.5-pro"],
-      kimi: ["default", "kimi-k3"],
+      kimi: ["default", "kimi-k2"],
     };
     const selectedCli = cliOptions.includes(agent?.cli || "")
       ? agent?.cli || cliOptions[0]
@@ -2252,27 +2357,22 @@ function AgentManager({ repos }: { repos: Repo[] }) {
       "Give each agent one clear responsibility. This text is used as its execution instruction.",
     );
     if (!values?.name) return;
-    try {
-      await invoke("save_agent", {
-        agent: {
-          id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-          name: values.name.trim(),
-          role: (values.role || "").slice(0, 1000),
-          skills: (values.skills || "")
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean),
-          color: agent?.color || "#a98cff",
-          cli: values.cli || "codex",
-          model: values.model || "default",
-          scope: values.scope || "workspace",
-        },
-      });
-      setSaveMessage(`${agent ? "Agent updated" : "Agent created"} successfully.`);
-      load();
-    } catch (error) {
-      setSaveError(`Unable to save agent: ${String(error)}`);
-    }
+    await invoke("save_agent", {
+      agent: {
+        id: agent?.id || values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name: values.name.trim(),
+        role: (values.role || "").slice(0, 1000),
+        skills: (values.skills || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+        color: agent?.color || "#a98cff",
+        cli: values.cli || "codex",
+        model: values.model || "default",
+        scope: values.scope || "workspace",
+      },
+    }).catch(() => {});
+    load();
   };
   return (
     <div className="agent-management">
@@ -2291,8 +2391,6 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           Import workflow
         </button>
       </div>
-      {saveError && <p className="provider-message" role="alert">{saveError}</p>}
-      {saveMessage && <p className="provider-message">{saveMessage}</p>}
       {workflowMessage && <p className="provider-message">{workflowMessage}</p>}
       <div className="agent-config-grid">
         {items.map((agent) => (
@@ -2451,17 +2549,8 @@ function NotificationPreferencesSection() {
   };
   const [prefs, setPrefs] = useState<Prefs>(defaults);
   const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const [desktopAllowed, setDesktopAllowed] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!isTauriRuntime()) {
-      try {
-        const value = localStorage.getItem("wand.notification-prefs");
-        if (value) setPrefs({ ...defaults, ...JSON.parse(value) });
-      } catch {
-        // Keep safe defaults when browser preview state is malformed.
-      }
-      return;
-    }
     invoke<string | null>("workspace_setting", { key: "notification-prefs" })
       .then((value) => {
         if (!value) return;
@@ -2472,28 +2561,20 @@ function NotificationPreferencesSection() {
         }
       })
       .catch(() => {});
+    isPermissionGranted().then(setDesktopAllowed).catch(() => setDesktopAllowed(false));
   }, []);
   const toggle = async (key: keyof Prefs) => {
-    const previous = prefs;
     const next = { ...prefs, [key]: !prefs[key] };
-    setPrefs(next);
-    setSaved(false);
-    setSaveError("");
-    try {
-      if (!isTauriRuntime()) {
-        localStorage.setItem("wand.notification-prefs", JSON.stringify(next));
-      } else {
-        await invoke("save_workspace_setting", {
-          key: "notification-prefs",
-          value: JSON.stringify(next),
-        });
-      }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1800);
-    } catch (error) {
-      setPrefs(previous);
-      setSaveError(`Unable to save notification preferences: ${String(error)}`);
+    if (next[key] && desktopAllowed !== true) {
+      setDesktopAllowed(await ensureDesktopNotificationPermission());
     }
+    setPrefs(next);
+    void invoke("save_workspace_setting", {
+      key: "notification-prefs",
+      value: JSON.stringify(next),
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
   };
   return (
     <div className="settings-section notification-preferences-section">
@@ -2508,9 +2589,8 @@ function NotificationPreferencesSection() {
             notifications.
           </p>
         </div>
-        {saved && <span className="tag green">Saved</span>}
+        {saved ? <span className="tag green">Saved</span> : desktopAllowed === false ? <span className="tag yellow">Desktop alerts off</span> : null}
       </div>
-      {saveError && <p className="provider-message" role="alert">{saveError}</p>}
       <div className="notification-preferences-list">
         {[
           [
@@ -2542,7 +2622,7 @@ function NotificationPreferencesSection() {
             <input
               type="checkbox"
               checked={prefs[key as keyof Prefs]}
-              onChange={() => toggle(key as keyof Prefs)}
+              onChange={() => void toggle(key as keyof Prefs)}
             />
           </label>
         ))}
@@ -2643,55 +2723,43 @@ function WhatsNewSection() {
 
 function ThemeSection() {
   const [theme, setTheme] = useState(() =>
-    isTauriRuntime() ? "mint" : localStorage.getItem("wand.theme") || "mint",
+    isTauriRuntime() ? "obsidian" : normalizeTheme(localStorage.getItem("wand.theme")),
   );
-  const [saveError, setSaveError] = useState("");
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "theme" })
       .then((value) => {
         if (!value) return;
-        setTheme(value);
-        document.body.dataset.theme = value;
-        if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
+        const nextTheme = normalizeTheme(value);
+        setTheme(nextTheme);
+        document.body.dataset.theme = nextTheme;
+        if (!isTauriRuntime()) localStorage.setItem("wand.theme", nextTheme);
       })
       .catch(() => {});
   }, []);
-  const isLight = ["daylight", "paper", "mint", "lavender"].includes(theme);
-  const choose = async (name: string) => {
-    const previous = theme;
+  const isLight = theme === "daylight" || theme === "porcelain";
+  const choose = (name: ThemeName) => {
     setTheme(name);
-    setSaveError("");
     document.body.dataset.theme = name;
-    try {
-      if (!isTauriRuntime()) {
-        localStorage.setItem("wand.theme", name);
-      } else {
-        await invoke("save_workspace_setting", { key: "theme", value: name });
-      }
-    } catch (error) {
-      setTheme(previous);
-      document.body.dataset.theme = previous;
-      setSaveError(`Unable to save theme: ${String(error)}`);
-    }
+    if (!isTauriRuntime()) localStorage.setItem("wand.theme", name);
+    void invoke("save_workspace_setting", {
+      key: "theme",
+      value: name,
+    }).catch(() => {});
   };
   const setMode = (mode: "dark" | "light") => {
-    const defaultTheme = mode === "light" ? "daylight" : "obsidian";
-    choose(defaultTheme);
+    choose(mode === "light" ? "daylight" : "obsidian");
   };
   return (
     <div className="settings-section appearance-section">
       <div className="settings-section-head">
         <div>
-          <p className="eyebrow">APPEARANCE</p>
-          <h2>Theme & Color Mode</h2>
+          <h2>Appearance</h2>
           <p>
-            Switch between Dark Mode and Light Mode or choose a custom accent
-            palette.
+            Four closely related themes, all built around a restrained Wand violet accent.
           </p>
         </div>
         <span className="theme-current">{theme}</span>
       </div>
-      {saveError && <p className="provider-message" role="alert">{saveError}</p>}
       <div className="mode-toggle-group">
         <button
           className={"mode-btn " + (!isLight ? "active" : "")}
@@ -2709,23 +2777,21 @@ function ThemeSection() {
         </button>
       </div>
       <div className="theme-grid-container">
-        <label className="theme-group-label">
-          {isLight ? "Light Accent Palettes" : "Dark Accent Palettes"}
-        </label>
+        <span className="theme-group-label">
+          {isLight ? "Light themes" : "Dark themes"}
+        </span>
         <div className="theme-grid">
           {(isLight
-            ? ["daylight", "paper", "mint", "lavender"]
-            : ["obsidian", "aurora", "amethyst", "ember"]
+            ? (["daylight", "porcelain"] as ThemeName[])
+            : (["obsidian", "graphite"] as ThemeName[])
           ).map((name) => (
             <button
-              aria-label={name + " theme"}
-              className={
-                "theme-choice " + name + (theme === name ? " active" : "")
-              }
+              aria-label={`${name} theme`}
+              className={`theme-choice ${name}${theme === name ? " active" : ""}`}
               onClick={() => choose(name)}
               key={name}
             >
-              <span />
+              <span aria-hidden="true" />
               {name}
             </button>
           ))}
@@ -2735,55 +2801,180 @@ function ThemeSection() {
   );
 }
 
+function SettingsModal({
+  onClose,
+  repos,
+  setRepos,
+  initialTab,
+}: {
+  onClose: () => void;
+  repos: Repo[];
+  setRepos: React.Dispatch<React.SetStateAction<Repo[]>>;
+  initialTab?: string;
+}) {
+  const [tab, setTab] = useState<
+    | "appearance"
+    | "workspace"
+    | "providers"
+    | "clis"
+    | "agents"
+    | "notifications"
+    | "whats-new"
+  >((initialTab as any) || "appearance");
+  const [root, setRoot] = useState("");
+
+  useEffect(() => {
+    invoke<string | null>("workspace_root")
+      .then((value) => {
+        if (value) setRoot(value);
+      })
+      .catch(() => {});
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+
+  const scan = async () => {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose your repositories folder",
+    });
+    if (typeof selected !== "string") return;
+    const rows = await invoke<any[]>("scan_repositories", {
+      rootPath: selected,
+    }).catch(() => []);
+    await invoke("save_workspace_root", { root: selected }).catch(() => {});
+    setRoot(selected);
+    if (rows.length)
+      setRepos(
+        rows.map((r) => ({
+          name: r.name,
+          path: r.path,
+          color: "#89b4fa",
+          count: 0,
+        })),
+      );
+  };
+
+  const tabs = [
+    { id: "appearance", label: "Appearance", icon: Sun },
+    { id: "workspace", label: "Workspace", icon: FolderGit2 },
+    { id: "providers", label: "Providers", icon: Zap },
+    { id: "clis", label: "CLI Access", icon: TerminalSquare },
+    { id: "agents", label: "Agent Team", icon: Bot },
+    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "whats-new", label: "What’s New", icon: Sparkles },
+  ] as const;
+
+  return (
+    <div
+      className="settings-modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Wand Settings"
+      >
+        <header className="settings-modal-header">
+          <div>
+            <p className="eyebrow">
+              <Settings size={13} /> WAND PREFERENCES
+            </p>
+            <h2>Settings</h2>
+          </div>
+          <button
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Close settings"
+          >
+            ×
+          </button>
+        </header>
+        <div className="settings-modal-body">
+          <nav className="settings-modal-nav">
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              return (
+                <React.Fragment key={t.id}>
+                  {t.id === "whats-new" && (
+                    <hr className="settings-nav-divider" />
+                  )}
+                  <button
+                    className={
+                      "settings-nav-item " +
+                      (tab === t.id ? "active" : "") +
+                      " " +
+                      (t.id === "whats-new" ? "whats-new-nav" : "")
+                    }
+                    onClick={() => setTab(t.id)}
+                  >
+                    <Icon size={16} />
+                    <span>{t.label}</span>
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </nav>
+          <main className="settings-modal-content">
+            {tab === "appearance" && <ThemeSection />}
+            {tab === "workspace" && (
+              <div className="settingscard modal-card">
+                <div className="sectionhead">
+                  <div>
+                    <h2>Repository workspace</h2>
+                    <p>Local folder scanned for Git repositories.</p>
+                  </div>
+                </div>
+                <p>
+                  {root ||
+                    "Choose one folder and Wand will scan its immediate Git repositories."}
+                </p>
+                <div className="folder">
+                  <FolderGit2 size={18} />
+                  <span>
+                    {repos.length} repositories in this local workspace
+                  </span>
+                  <button className="outline" onClick={scan}>
+                    Choose folder & scan
+                  </button>
+                </div>
+              </div>
+            )}
+            {tab === "providers" && <ProviderAccess />}
+            {tab === "clis" && <CliManager />}
+            {tab === "agents" && <AgentManager repos={repos} />}
+            {tab === "notifications" && <NotificationPreferencesSection />}
+            {tab === "whats-new" && <WhatsNewSection />}
+          </main>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function AccountMenu({
   onSettings,
 }: {
   onSettings: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const close = (event: MouseEvent) => {
-      if (!(event.target as HTMLElement).closest(".account-menu"))
-        setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", escape);
-    };
-  }, []);
-  const goToSettings = () => {
-    setOpen(false);
-    onSettings();
-  };
   return (
     <div className="account-menu">
       <button
-        className={"account-trigger " + (open ? "open" : "")}
-        aria-label="Settings menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        className="account-trigger"
+        aria-label="Open settings"
+        title="Settings"
+        onClick={onSettings}
       >
         <Settings size={16} />
       </button>
-      {open && (
-        <div className="account-dropdown" role="menu">
-          <div className="account-heading">
-            <strong>Settings</strong>
-            <small>Wand workspace</small>
-          </div>
-          <button role="menuitem" onClick={goToSettings}>
-            <Settings size={14} /> Open settings
-          </button>
-          <button role="menuitem" onClick={goToSettings}>
-            <Sparkles size={14} /> Updates & release notes
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -2944,15 +3135,19 @@ function ModalHost() {
 function WindowChrome() {
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
     return null;
-  const isMac = navigator.platform.toLowerCase().includes("mac");
+  const platform = runtimePlatform();
   const appWindow = getCurrentWindow();
   const runWindowCommand = (name: string, command: () => Promise<void>) => {
     command().catch((error) =>
       console.error(`Unable to ${name} the Wand window`, error),
     );
   };
+  const toggleMacFullscreen = async () => {
+    const fullscreen = await appWindow.isFullscreen();
+    await appWindow.setFullscreen(!fullscreen);
+  };
   return (
-    <div className={"window-chrome" + (isMac ? " mac" : "")}>
+    <div className={`window-chrome ${platform}${platform === "macos" ? " mac" : ""}`}>
       <div className="window-drag" data-tauri-drag-region />
       <div className="window-controls">
         <button
@@ -2966,9 +3161,18 @@ function WindowChrome() {
         </button>
         <button
           className="window-maximize"
-          aria-label="Maximize Wand"
+          aria-label={
+            platform === "macos" ? "Enter or exit full screen" : "Maximize Wand"
+          }
+          title={platform === "macos" ? "Enter Full Screen" : "Maximize Wand"}
           onClick={() =>
-            runWindowCommand("maximize", () => appWindow.toggleMaximize())
+            runWindowCommand(
+              platform === "macos" ? "toggle full screen" : "maximize",
+              () =>
+                platform === "macos"
+                  ? toggleMacFullscreen()
+                  : appWindow.toggleMaximize(),
+            )
           }
         >
           <Square size={12} />
@@ -3170,9 +3374,9 @@ function OnboardingGate() {
       );
   }, []);
   const finish = async (name: string) => {
-    await invoke("save_user_name", { name });
+    await invoke("save_user_name", { name }).catch(() => {});
     window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
-    if (!isTauriRuntime()) localStorage.setItem("wand.onboarding.complete", "true");
+    localStorage.setItem("wand.onboarding.complete", "true");
     setShow(false);
   };
   return (
@@ -3183,11 +3387,18 @@ function OnboardingGate() {
       <ProviderHealth />
       <UpdateBanner />
       <RuntimeIdentity />
+      <PlatformBootstrap />
       <ThemeBootstrap />
       <ModalHost />
       {show === true && <Onboarding done={finish} />}
     </>
   );
+}
+function PlatformBootstrap() {
+  useEffect(() => {
+    document.body.dataset.platform = runtimePlatform();
+  }, []);
+  return null;
 }
 createRoot(document.getElementById("root")!).render(<OnboardingGate />);
 function ThemeBootstrap() {
@@ -3197,12 +3408,12 @@ function ThemeBootstrap() {
       if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
     };
     if (!isTauriRuntime()) {
-      apply(localStorage.getItem("wand.theme") || "mint");
+      apply(normalizeTheme(localStorage.getItem("wand.theme")));
       return;
     }
     invoke<string | null>("workspace_setting", { key: "theme" })
-      .then((value) => apply(value || "mint"))
-      .catch(() => apply("mint"));
+      .then((value) => apply(normalizeTheme(value)))
+      .catch(() => apply("obsidian"));
   }, []);
   return null;
 }

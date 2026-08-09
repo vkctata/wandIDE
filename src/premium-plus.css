@@ -1125,6 +1125,56 @@ body[data-theme="lavender"] .settings-nav-item.active {
 }
 .retry-run svg { color: var(--wand-accent, #9678ff); }
 .run-row { gap: 10px; }
+.live-output-tag { gap: 6px; }
+.live-output-tag i,
+.transcript-stage-live .tag i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+  animation: live-output-pulse 1.5s ease-in-out infinite;
+}
+.transcript-panel {
+  margin: -2px 0 8px;
+  padding: 10px;
+  border: 1px solid var(--wand-border, rgba(255,255,255,.1));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wand-surface, #151823) 88%, transparent);
+}
+.transcript-stage {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--wand-border, rgba(255,255,255,.08));
+  border-radius: 10px;
+  background: var(--wand-surface-2, rgba(255,255,255,.03));
+}
+.transcript-stage + .transcript-stage { margin-top: 8px; }
+.transcript-stage > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--wand-border, rgba(255,255,255,.08));
+}
+.transcript-stage pre {
+  max-height: 360px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-muted, #aeb3c5);
+  font: 11px/1.65 'DM Mono', 'SF Mono', 'Cascadia Mono', ui-monospace, monospace;
+}
+.transcript-stage-live {
+  border-color: color-mix(in srgb, var(--wand-accent, #9678ff) 42%, var(--wand-border, #292d3e));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--wand-accent, #9678ff) 72%, transparent);
+}
+@keyframes live-output-pulse {
+  50% { opacity: .35; transform: scale(.8); }
+}
 
 @media (max-width: 640px) {
   .run-summary { justify-content: flex-start; }
@@ -1140,6 +1190,7 @@ body[data-theme="lavender"] .settings-nav-item.active {
     animation: none !important;
   }
   .stat, .event, .taskcard, .agent-config, .primary, .thread:hover { transform: none !important; }
+  .live-output-tag i, .transcript-stage-live .tag i { animation: none !important; }
 }
 
 .mention-composer { position: relative; flex: 1; min-width: 0; }
