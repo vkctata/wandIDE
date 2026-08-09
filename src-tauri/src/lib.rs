@@ -2025,6 +2025,10 @@ fn validate_github_repo(raw: &str) -> Result<String, String> {
     if parts.next().is_some()
         || owner.is_empty()
         || repo.is_empty()
+        || owner == "."
+        || owner == ".."
+        || repo == "."
+        || repo == ".."
         || owner.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
         || repo.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_' && c != '.')
     {
@@ -2058,6 +2062,9 @@ async fn github_pull_request_action(
         let text = body.unwrap_or_default();
         if text.trim().is_empty() {
             return Err("A comment cannot be empty".into());
+        }
+        if text.chars().count() > 4000 {
+            return Err("A comment cannot exceed 4000 characters".into());
         }
         serde_json::json!({"body":text})
     };
