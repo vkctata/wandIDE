@@ -788,3 +788,70 @@ body[data-theme] header,
 body[data-theme] .app > main > header {
   background: #0d0d12 !important;
 }
+
+/* Daylight is a soft, misted glass material. The dark app chrome above stays
+   fixed so navigation remains calm and consistent while content feels light. */
+body[data-theme="daylight"] .app {
+  background-color: #e9edef !important;
+  background-image:
+    radial-gradient(780px 480px at 8% -10%, rgba(255, 255, 255, .94), transparent 70%),
+    radial-gradient(680px 460px at 96% 4%, rgba(190, 209, 216, .54), transparent 72%),
+    linear-gradient(rgba(71, 87, 96, .10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 87, 96, .10) 1px, transparent 1px) !important;
+  background-size: auto, auto, 32px 32px, 32px 32px !important;
+}
+body[data-theme="daylight"] .stat,
+body[data-theme="daylight"] .agent,
+body[data-theme="daylight"] .taskcard,
+body[data-theme="daylight"] .settingscard,
+body[data-theme="daylight"] .settings-section,
+body[data-theme="daylight"] .event {
+  background: rgba(255, 255, 255, .56) !important;
+  border-color: rgba(60, 76, 86, .17) !important;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .82),
+    0 18px 42px rgba(68, 84, 94, .13),
+    0 0 28px rgba(201, 255, 79, .08) !important;
+  backdrop-filter: saturate(132%) blur(22px) !important;
+}
+body[data-theme="daylight"] .settings-modal {
+  background: rgba(244, 248, 249, .78) !important;
+  border-color: rgba(46, 61, 70, .22) !important;
+  box-shadow: 0 28px 80px rgba(24, 36, 42, .27) !important;
+  backdrop-filter: saturate(142%) blur(28px) !important;
+}
+body[data-theme="daylight"] .settings-modal-header,
+body[data-theme="daylight"] .settings-modal-nav {
+  background: rgba(255, 255, 255, .42) !important;
+  border-color: rgba(46, 61, 70, .16) !important;
+  backdrop-filter: blur(20px) !important;
+}
+body[data-theme="daylight"] .content > .hero h1,
+body[data-theme="daylight"] .content > .sectionhead h2,
+body[data-theme="daylight"] .content > .code-toolbar h1,
+body[data-theme="daylight"] .content > .emptyhint h3 {
+  color: #162127 !important;
+}
+body[data-theme="daylight"] .content > .hero .sub,
+body[data-theme="daylight"] .content > .sectionhead p,
+body[data-theme="daylight"] .content > .emptyhint p {
+  color: #53636c !important;
+}
+body[data-theme="daylight"] .content .emptyhint h3 {
+  color: #162127 !important;
+}
+body[data-theme="daylight"] .content .emptyhint p {
+  color: #53636c !important;
+}
+/* The chrome remains dark in light mode, so restore its navigation contrast. */
+body[data-theme="daylight"] aside .nav,
+body[data-theme="daylight"] aside .repo,
+body[data-theme="daylight"] aside .status,
+body[data-theme="daylight"] aside .navgroup label {
+  color: #b9bec7 !important;
+}
+body[data-theme="daylight"] aside .nav.active,
+body[data-theme="daylight"] aside .repo.selected {
+  color: #fffdf8 !important;
+  background: rgba(201, 255, 79, .15) !important;
+}
