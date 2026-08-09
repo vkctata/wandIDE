@@ -678,3 +678,31 @@ aside .navgroup label { font-weight: 600; }
   .settings-modal-header { padding: 14px 48px 14px 18px; }
   .settings-modal-content { padding: 18px; }
 }
+
+/* One familiar canvas across themes: the porcelain paper grid stays constant
+   while controls and chrome retain the chosen theme's material. */
+body[data-theme] .app {
+  background-color: #e8e4da !important;
+  background-image:
+    linear-gradient(rgba(17, 19, 24, .10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 19, 24, .10) 1px, transparent 1px) !important;
+}
+body[data-theme="obsidian"] .hero h1,
+body[data-theme="obsidian"] .sectionhead h2,
+body[data-theme="obsidian"] .emptyhint h3,
+body[data-theme="graphite"] .hero h1,
+body[data-theme="graphite"] .sectionhead h2,
+body[data-theme="graphite"] .emptyhint h3 {
+  background: none !important;
+  color: #111318 !important;
+}
+body[data-theme="obsidian"] .sub,
+body[data-theme="obsidian"] .sectionhead p,
+body[data-theme="obsidian"] .emptyhint p,
+body[data-theme="graphite"] .sub,
+body[data-theme="graphite"] .sectionhead p,
+body[data-theme="graphite"] .emptyhint p {
+  color: #4e5159 !important;
+}
+body[data-theme="obsidian"] .hero .eyebrow,
+body[data-theme="graphite"] .hero .eyebrow { color: #485c16 !important; }
