@@ -69,10 +69,33 @@ const isTauriRuntime = () =>
   );
 type RuntimePlatform = "macos" | "windows" | "linux";
 type ThemeName = "obsidian" | "daylight";
+type FontName = "system" | "fira-code" | "jetbrains-mono" | "avenir";
 const normalizeTheme = (value: string | null | undefined): ThemeName => {
   if (["daylight", "porcelain", "paper", "mint", "lavender"].includes(value || ""))
     return "daylight";
   return "obsidian";
+};
+const normalizeFont = (value: string | null | undefined): FontName => {
+  if (["system", "fira-code", "jetbrains-mono", "avenir"].includes(value || "")) {
+    return value as FontName;
+  }
+  return "system";
+};
+const fontOptions: Array<{ id: FontName; name: string; description: string }> = [
+  { id: "system", name: "System UI", description: "Native and polished" },
+  { id: "fira-code", name: "Fira Code", description: "Technical and expressive" },
+  { id: "jetbrains-mono", name: "JetBrains Mono", description: "Calm developer focus" },
+  { id: "avenir", name: "Avenir Next", description: "Warm and editorial" },
+];
+const formatWorkspaceTime = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 };
 const runtimePlatform = (): RuntimePlatform => {
   if (typeof navigator === "undefined") return "linux";
@@ -979,7 +1002,7 @@ function Home({
               <div className="eventtop">
                 <span className="kind">{event.kind}</span>
                 <span className="tag blue">local</span>
-                <span className="time">{event.created_at}</span>
+                <span className="time">{formatWorkspaceTime(event.created_at)}</span>
               </div>
               <h3>{event.message}</h3>
               <p>
@@ -1176,34 +1199,38 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
             onKeyDown={(e) => e.key === "Enter" && load()}
             placeholder="relative path, e.g. src/main.tsx"
           />
-          <button
-            className={"outline" + (mode === "file" ? " active" : "")}
-            onClick={() => setMode("file")}
-          >
-            File
-          </button>
-          <button
-            className={"outline" + (mode === "diff" ? " active" : "")}
-            onClick={() => setMode("diff")}
-          >
-            Git diff
-          </button>
-          <button
-            className="outline"
-            disabled={mode !== "file" || saving || !path}
-            onClick={save}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button className="outline" disabled={!repo.path} onClick={createWorktree}>
-            New worktree
-          </button>
-          <button className="outline" disabled={!repo.path} onClick={applyPatch}>
-            Apply patch
-          </button>
-          <button className="primary" onClick={load}>
-            Open
-          </button>
+          <div className="code-mode-controls" aria-label="Editor mode">
+            <button
+              className={"outline" + (mode === "file" ? " active" : "")}
+              onClick={() => setMode("file")}
+            >
+              File
+            </button>
+            <button
+              className={"outline" + (mode === "diff" ? " active" : "")}
+              onClick={() => setMode("diff")}
+            >
+              Git diff
+            </button>
+          </div>
+          <div className="code-action-controls" aria-label="Repository actions">
+            <button
+              className="outline"
+              disabled={mode !== "file" || saving || !path}
+              onClick={save}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button className="outline" disabled={!repo.path} onClick={createWorktree}>
+              New worktree
+            </button>
+            <button className="outline" disabled={!repo.path} onClick={applyPatch}>
+              Apply patch
+            </button>
+            <button className="primary" onClick={load}>
+              Open
+            </button>
+          </div>
         </div>
       </div>
       {worktreeStatus && <p className="code-operation-status" role="status">{worktreeStatus}</p>}
@@ -1317,7 +1344,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
           <h1>{hasRepo ? repo.name : "Repository threads"}</h1>
           <p className="sub">
             {hasRepo
-              ? `Threads and agent context for ${repo.path}`
+              ? "Threads and agent context for this local repository."
               : "Select a repository to start a local conversation with your agents."}
           </p>
         </div>
@@ -1372,7 +1399,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                   <div>
                     <h3>{message.body}</h3>
                     <p>
-                      {message.author} · {message.created_at}
+                      {message.author} · {formatWorkspaceTime(message.created_at)}
                     </p>
                   </div>
                   {message.agent_ids?.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
@@ -1572,7 +1599,7 @@ function Tasks({
       <div className="sectionhead">
         <div>
           <h2>Run history</h2>
-          <p>Durable scheduler records from the local SQLite database.</p>
+          <p>Durable run history for this local workspace.</p>
         </div>
         {runs.length > 0 && (
           <div className="run-summary">
@@ -1611,7 +1638,7 @@ function Tasks({
                   {tasks.find((t) => t.id === run.task_id)?.name || run.task_id}
                 </b>
                 <small>
-                  {run.scheduled_at}
+                  {formatWorkspaceTime(run.scheduled_at)}
                   {run.error ? " · " + run.error : ""}
                 </small>
               </div>
@@ -1698,11 +1725,73 @@ function Notifications() {
   }, []);
   const sync = async () => {
     setLoading(true);
+    setActionMessage("");
     try {
-      await invoke("sync_github_activity");
-      await invoke("sync_linear_activity");
+      const [repositories, statuses] = await Promise.all([
+        invoke<Repo[]>("list_repositories"),
+        Promise.all(
+          ["github", "azure-devops"].map(async (provider) => [
+            provider,
+            await invoke<boolean>("provider_status", { provider }).catch(() => false),
+          ] as const),
+        ),
+      ]);
+      const connected = new Set(
+        statuses.filter(([, isConnected]) => isConnected).map(([provider]) => provider),
+      );
+      const repositoryProviders = Array.from(
+        new Set(
+          repositories
+            .map((repo) => repo.provider)
+            .filter((provider): provider is string =>
+              provider === "github" || provider === "azure-devops",
+            ),
+        ),
+      );
+      const providers = repositoryProviders.filter((provider) => connected.has(provider));
+      const syncTargets = providers.length > 0 ? providers : Array.from(connected);
+
+      if (syncTargets.length === 0) {
+        setActionMessage("Connect GitHub or Azure DevOps in Settings before syncing review activity.");
+        return;
+      }
+
+      const outcomes = await Promise.allSettled(
+        syncTargets.map(async (provider) => {
+          if (provider === "github") {
+            return ["GitHub", await invoke<number>("sync_github_activity")] as const;
+          }
+          const providerUrl = await invoke<string | null>("provider_url", { provider });
+          if (!providerUrl) {
+            throw new Error("Add your Azure DevOps organization URL in Settings before syncing.");
+          }
+          return ["Azure DevOps", await invoke<number>("sync_azure_activity", { providerUrl })] as const;
+        }),
+      );
+      const completed: Array<readonly [string, number]> = [];
+      const failures: string[] = [];
+      for (const outcome of outcomes) {
+        if (outcome.status === "fulfilled") completed.push(outcome.value);
+        else failures.push(String(outcome.reason));
+      }
+
+      if (completed.length > 0) {
+        const summary = completed
+          .map(([provider, added]) => `${provider}${added > 0 ? ` (${added} new)` : ""}`)
+          .join(" and ");
+        setActionMessage(`Synced ${summary}.`);
+      }
+      if (failures.length > 0) {
+        setActionMessage(
+          completed.length > 0
+            ? `Synced ${completed.map(([provider]) => provider).join(" and ")}. ${failures[0]}`
+            : failures[0],
+        );
+      }
+      await invoke("sync_linear_activity").catch(() => 0);
       await load();
-    } catch {
+    } catch (error) {
+      setActionMessage(String(error));
     } finally {
       setLoading(false);
     }
@@ -1766,7 +1855,7 @@ function Notifications() {
         </div>
         <div className="notice-actions">
           <button className="outline" onClick={sync}>
-            {loading ? "Syncing…" : "Sync GitHub"}
+            {loading ? "Syncing…" : "Sync"}
           </button>
           <button className="textbtn" onClick={mark}>
             Mark all read
@@ -1956,28 +2045,113 @@ function SettingsGroup({
     </section>
   );
 }
+type DetectedCli = {
+  id: string;
+  name: string;
+  command: string;
+  installed: boolean;
+  version?: string;
+};
+
+const onboardingProviders = [
+  { id: "github", name: "GitHub", description: "Pull requests, repositories, and activity" },
+  { id: "azure-devops", name: "Azure DevOps", description: "Repos and pull-request reporting" },
+  { id: "linear", name: "Linear", description: "Issues and project signals" },
+] as const;
+
+const cliInstallGuides: Record<string, string> = {
+  claude: "https://docs.anthropic.com/en/docs/claude-code/overview",
+  codex: "https://developers.openai.com/codex/cli/",
+  gemini: "https://github.com/google-gemini/gemini-cli",
+  kimi: "https://www.kimi.com/code",
+};
+
+const localCliFallback: DetectedCli[] = [
+  { id: "claude", name: "Claude", command: "claude", installed: false },
+  { id: "codex", name: "Codex", command: "codex", installed: false },
+  { id: "kimi", name: "Kimi", command: "kimi", installed: false },
+  { id: "gemini", name: "Gemini CLI", command: "gemini", installed: false },
+];
+
 function Onboarding({ done }: { done: (name: string) => void }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  const [providers, setProviders] = useState<Record<string, boolean>>({});
+  const [providerMessage, setProviderMessage] = useState("");
+  const [clis, setClis] = useState<DetectedCli[]>([]);
+  const [enabledClis, setEnabledClis] = useState<string[]>([]);
+  const [checkingClis, setCheckingClis] = useState(false);
+  const [cliMessage, setCliMessage] = useState("");
   const slides = [
-    [
-      "Welcome to Wand",
-      "Your local-first AI engineering workspace. Plan, build, review, and verify without losing the thread.",
-    ],
-    [
-      "Connect your workspace",
-      "Choose a repository folder, then connect GitHub or Azure DevOps with a PAT when you are ready.",
-    ],
-    [
-      "Meet your agent team",
-      "Tag Planner, Builder, Reviewer, Docs, and Sentinel on any task. Each agent hands work to the next.",
-    ],
-    [
-      "You stay in control",
-      "Wand keeps work local, shows every handoff, and runs a final background verification before calling work done.",
-    ],
+    ["Welcome to Wand", "Your local-first AI engineering workspace. Plan, build, review, and verify without losing the thread."],
+    ["Connect your reports", "Choose where Wand can read repository and project activity. Credentials are encrypted in Wand's local app store."],
+    ["Prepare your local tools", "Wand found the coding CLIs available on this machine. Enable only the runtimes you want your agents to use."],
+    ["You're ready", "Your workspace remains local, every handoff is visible, and you can change providers or tools anytime in Settings."],
   ];
   const current = slides[step];
+
+  const refreshProviders = async () => {
+    const rows = await Promise.all(
+      onboardingProviders.map(async ({ id }) => [
+        id,
+        await invoke<boolean>("provider_status", { provider: id }).catch(() => false),
+      ] as const),
+    );
+    setProviders(Object.fromEntries(rows));
+  };
+
+  const refreshClis = async () => {
+    setCheckingClis(true);
+    setCliMessage("");
+    try {
+      const [detected, access] = await Promise.all([
+        invoke<DetectedCli[]>("detect_clis"),
+        invoke<string[]>("cli_access"),
+      ]);
+      setClis(detected);
+      setEnabledClis(access);
+    } catch (cause) {
+      setClis(localCliFallback);
+      setCliMessage(isTauriRuntime() ? `Could not check local tools: ${String(cause)}` : "Open Wand Desktop to scan and enable local tools.");
+    } finally {
+      setCheckingClis(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshProviders();
+    void refreshClis();
+  }, []);
+
+  const connectProvider = async (provider: string) => {
+    const providerName = onboardingProviders.find((item) => item.id === provider)?.name || provider;
+    const values = await askModal(
+      `Connect ${providerName}`,
+      [{ id: "token", label: "Personal access token", placeholder: "Paste your token", secret: true }],
+      "Wand encrypts this token in its local app store. It does not use macOS Keychain.",
+    );
+    if (!values?.token) return;
+    try {
+      await invoke("save_provider_token", { provider, token: values.token });
+      await refreshProviders();
+      setProviderMessage(`${providerName} is connected securely.`);
+    } catch (cause) {
+      setProviderMessage(`Could not connect ${providerName}: ${String(cause)}`);
+    }
+  };
+
+  const toggleCli = async (id: string) => {
+    const previous = enabledClis;
+    const next = previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id];
+    setEnabledClis(next);
+    try {
+      await invoke("save_cli_access", { clis: next });
+    } catch (cause) {
+      setEnabledClis(previous);
+      setCliMessage(`Could not save local tool access: ${String(cause)}`);
+    }
+  };
+
   return (
     <div className="onboarding">
       <div className="onboard-card">
@@ -1998,6 +2172,55 @@ function Onboarding({ done }: { done: (name: string) => void }) {
               }}
             />
           </label>
+        )}
+        {step === 1 && (
+          <div className="onboard-setup" aria-label="Report providers">
+            {onboardingProviders.map((provider) => (
+              <div className="onboard-setup-row" key={provider.id}>
+                <span className={providers[provider.id] ? "onboard-state connected" : "onboard-state"} aria-hidden="true" />
+                <div>
+                  <strong>{provider.name}</strong>
+                  <small>{providers[provider.id] ? "Connected securely" : provider.description}</small>
+                </div>
+                <button
+                  className={providers[provider.id] ? "outline enabled" : "outline"}
+                  onClick={() => void connectProvider(provider.id)}
+                >
+                  {providers[provider.id] ? "Connected" : "Connect"}
+                </button>
+              </div>
+            ))}
+            <p className="onboard-hint">You can skip this for now and connect or replace providers later in Settings.</p>
+            {providerMessage && <p className="onboard-message">{providerMessage}</p>}
+          </div>
+        )}
+        {step === 2 && (
+          <div className="onboard-setup" aria-label="Local coding tools">
+            <div className="onboard-setup-heading">
+              <span>{checkingClis ? "Scanning local tools…" : "Local coding tools"}</span>
+              <button className="textbtn" onClick={() => void refreshClis()} disabled={checkingClis}>
+                <RotateCcw size={12} className={checkingClis ? "spin" : ""} /> Refresh
+              </button>
+            </div>
+            {clis.map((cli) => (
+              <div className="onboard-setup-row" key={cli.id}>
+                <span className={cli.installed ? "onboard-state connected" : "onboard-state"} aria-hidden="true" />
+                <div>
+                  <strong>{cli.name}</strong>
+                  <small>{cli.installed ? cli.version || "Installed on this machine" : `Command: ${cli.command}`}</small>
+                </div>
+                {cli.installed ? (
+                  <button className={enabledClis.includes(cli.id) ? "outline enabled" : "outline"} onClick={() => void toggleCli(cli.id)}>
+                    {enabledClis.includes(cli.id) ? "Enabled" : "Enable"}
+                  </button>
+                ) : (
+                  <a className="outline onboard-install" href={cliInstallGuides[cli.id]} target="_blank" rel="noreferrer">Install ↗</a>
+                )}
+              </div>
+            ))}
+            <p className="onboard-hint">Installation always opens the provider's official guide; Wand never runs installers without your explicit action.</p>
+            {cliMessage && <p className="onboard-message">{cliMessage}</p>}
+          </div>
         )}
         <div className="onboard-dots">
           {slides.map((_, i) => (
@@ -2149,7 +2372,7 @@ function ProviderAccess() {
           secret: true,
         },
       ],
-      "The token is stored only in the native OS credential manager.",
+      "The token is encrypted in Wand's local app store. It does not use macOS Keychain.",
     );
     if (!values?.token) return;
     try {
@@ -2263,7 +2486,7 @@ function ProviderAccess() {
             <b>{name}</b>
             <small>
               {status[id]
-                ? "Connected in OS credential store"
+                ? "Connected in Wand's encrypted local store"
                 : "Not connected"}
             </small>
           </div>
@@ -2733,8 +2956,8 @@ function WhatsNewSection() {
           icon: Bot,
         },
         {
-          title: "Local-First Privacy & OS Keychains",
-          desc: "All repository activity stays on your machine with PAT tokens secured directly in native OS keychains.",
+          title: "Local-First Privacy",
+          desc: "Repository locations and provider tokens are encrypted locally in Wand's app store without Keychain prompts.",
           icon: Zap,
         },
       ],
@@ -2793,6 +3016,9 @@ function ThemeSection() {
   const [theme, setTheme] = useState(() =>
     isTauriRuntime() ? "obsidian" : normalizeTheme(localStorage.getItem("wand.theme")),
   );
+  const [font, setFont] = useState<FontName>(() =>
+    isTauriRuntime() ? "system" : normalizeFont(localStorage.getItem("wand.font")),
+  );
   useEffect(() => {
     invoke<string | null>("workspace_setting", { key: "theme" })
       .then((value) => {
@@ -2801,6 +3027,14 @@ function ThemeSection() {
         setTheme(nextTheme);
         document.body.dataset.theme = nextTheme;
         if (!isTauriRuntime()) localStorage.setItem("wand.theme", nextTheme);
+      })
+      .catch(() => {});
+    invoke<string | null>("workspace_setting", { key: "font" })
+      .then((value) => {
+        const nextFont = normalizeFont(value);
+        setFont(nextFont);
+        document.body.dataset.font = nextFont;
+        if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
       })
       .catch(() => {});
   }, []);
@@ -2816,6 +3050,15 @@ function ThemeSection() {
   };
   const setMode = (mode: "dark" | "light") => {
     choose(mode === "light" ? "daylight" : "obsidian");
+  };
+  const chooseFont = (name: FontName) => {
+    setFont(name);
+    document.body.dataset.font = name;
+    if (!isTauriRuntime()) localStorage.setItem("wand.font", name);
+    void invoke("save_workspace_setting", {
+      key: "font",
+      value: name,
+    }).catch(() => {});
   };
   return (
     <div className="settings-section appearance-section">
@@ -2840,6 +3083,29 @@ function ThemeSection() {
           <Sun size={16} />
           <span>Light Mode</span>
         </button>
+      </div>
+      <div className="font-picker">
+        <div className="font-picker-head">
+          <div>
+            <h3>Typography</h3>
+            <p>Try a typeface across the whole workspace.</p>
+          </div>
+          <span className="font-picker-current">{fontOptions.find((option) => option.id === font)?.name}</span>
+        </div>
+        <div className="font-option-grid" role="group" aria-label="Interface font">
+          {fontOptions.map((option) => (
+            <button
+              key={option.id}
+              className={"font-option font-option-" + option.id + (font === option.id ? " active" : "")}
+              onClick={() => chooseFont(option.id)}
+              aria-pressed={font === option.id}
+            >
+              <strong>{option.name}</strong>
+              <span>{option.description}</span>
+              <em aria-hidden="true">Ag</em>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -3215,6 +3481,10 @@ function ModalHost() {
 function WindowChrome() {
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
     return null;
+  // Native title bars provide the real platform corner geometry and window
+  // controls. Keeping a second HTML title bar made macOS look like a square
+  // web surface and duplicated the traffic lights.
+  return null;
   const platform = runtimePlatform();
   const appWindow = getCurrentWindow();
   const runWindowCommand = (name: string, command: () => Promise<void>) => {
@@ -3469,6 +3739,7 @@ function OnboardingGate() {
       <RuntimeIdentity />
       <PlatformBootstrap />
       <ThemeBootstrap />
+      <FontBootstrap />
       <ModalHost />
       {show === true && <Onboarding done={finish} />}
     </>
@@ -3494,6 +3765,23 @@ function ThemeBootstrap() {
     invoke<string | null>("workspace_setting", { key: "theme" })
       .then((value) => apply(normalizeTheme(value)))
       .catch(() => apply("obsidian"));
+  }, []);
+  return null;
+}
+function FontBootstrap() {
+  useEffect(() => {
+    const apply = (value: string | null | undefined) => {
+      const nextFont = normalizeFont(value);
+      document.body.dataset.font = nextFont;
+      if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
+    };
+    if (!isTauriRuntime()) {
+      apply(localStorage.getItem("wand.font"));
+      return;
+    }
+    invoke<string | null>("workspace_setting", { key: "font" })
+      .then(apply)
+      .catch(() => apply("system"));
   }, []);
   return null;
 }
