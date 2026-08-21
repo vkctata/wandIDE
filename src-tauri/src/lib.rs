@@ -1183,8 +1183,7 @@ fn save_provider_token(provider: String, token: String, db: State<Db>, app: AppH
         return Err("Token cannot be empty".into());
     }
     let service = provider_service(&provider)?;
-    let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
-    entry.set_password(&token).map_err(|e| e.to_string())?;
+    local_secret_set(&service, &token)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     ensure_provider_agent(&conn, &provider)?;
     let _ = app.emit("wand://agents", serde_json::json!({"provider": provider, "connected": true}));
