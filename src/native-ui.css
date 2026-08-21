@@ -57,15 +57,39 @@ body[data-platform="linux"] {
 }
 
 html, body { background: var(--wand-surface-2, #11131b); }
+body[data-platform="macos"] { background: transparent; padding: 6px; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
 button, input, textarea, select { font-family: inherit; }
 button { -webkit-app-region: no-drag; }
 
 .app {
   min-height: 100vh;
-  border-radius: 0;
+  border-radius: var(--native-radius-lg);
+  overflow: hidden;
   background: var(--wand-surface-2, #11131b);
   box-shadow: none;
+}
+.thread-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 18px; align-items: start; }
+.thread-card { width: 100%; text-align: left; background: var(--wand-surface, #151823); border: 1px solid var(--wand-border, #292d3e); border-radius: 12px; margin: 10px 0; padding: 15px; cursor: pointer; transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.thread-card:hover, .thread-card.selected { border-color: color-mix(in srgb, var(--wand-accent) 60%, var(--wand-border)); transform: translateY(-1px); box-shadow: 0 10px 24px rgba(0,0,0,.12); }
+.thread-card h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+.thread-card .threadicon { margin-right: 2px; }
+.agent-mention { display: inline-flex; align-items: center; margin-left: auto; padding: 4px 8px; border-radius: 999px; color: #10251e; background: #8fe3b4; font: 600 10px ui-monospace, monospace; box-shadow: 0 0 0 2px color-mix(in srgb, #8fe3b4 22%, transparent); }
+.thread-detail-pane { position: sticky; top: 18px; min-height: 360px; border: 1px solid var(--wand-border, #292d3e); border-radius: 14px; background: var(--wand-surface, #151823); padding: 20px; }
+.thread-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.thread-detail-head h2 { margin: 6px 0 0; font-size: 17px; }
+.thread-detail-time { color: var(--wand-muted, #7c8399); font: 10px ui-monospace, monospace; }
+.thread-detail-body { margin: 22px 0; white-space: pre-wrap; line-height: 1.6; color: var(--wand-text, #e0e3ed); }
+.thread-detail-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.thread-comments { margin-top: 32px; border-top: 1px solid var(--wand-border, #292d3e); padding-top: 18px; }
+.thread-comments h3 { margin: 0 0 6px; }
+.thread-comments p { color: var(--wand-muted, #7c8399); font-size: 12px; }
+.thread-comments textarea { width: 100%; min-height: 74px; resize: vertical; background: transparent; color: inherit; border: 1px solid var(--wand-border, #292d3e); border-radius: 9px; padding: 10px; }
+@media (max-width: 900px) { .thread-layout { grid-template-columns: 1fr; } .thread-detail-pane { position: relative; top: 0; } }
+body[data-platform="macos"] .app {
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .16);
+  min-height: calc(100vh - 12px);
 }
 
 aside {
