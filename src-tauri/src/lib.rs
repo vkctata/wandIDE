@@ -2,6 +2,9 @@ use chrono::{Timelike, Utc};
 use cron::Schedule;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use sha2::{Digest, Sha256};
 use std::process::{Command, Stdio};
 use std::{
     collections::HashMap,
@@ -11,11 +14,110 @@ use std::{
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc, Mutex, OnceLock,
     },
     thread,
     time::{Duration, Instant},
 };
+const LOCAL_CIPHER_PREFIX: &str = "wand-local:v1:";
+static LOCAL_STORE: OnceLock<Mutex<LocalSecretStore>> = OnceLock::new();
+
+#[derive(Default, Serialize, Deserialize)]
+struct LocalSecretStore {
+    salt: String,
+    values: HashMap<String, String>,
+    #[serde(skip)]
+    path: PathBuf,
+}
+
+fn local_store_error() -> String {
+    "Wand's encrypted local store is not ready".to_string()
+}
+
+fn local_cipher_key(salt: &str) -> [u8; 32] {
+    // This binds the local store to the current user and app data location. It
+    // avoids Keychain access entirely while preventing the database or store
+    // from being readable as plain text when copied elsewhere.
+    let mut hasher = Sha256::new();
+    hasher.update(b"wand-local-store-v1");
+    hasher.update(std::env::var("HOME").unwrap_or_default().as_bytes());
+    hasher.update(std::env::var("USER").unwrap_or_default().as_bytes());
+    hasher.update(salt.as_bytes());
+    hasher.finalize().into()
+}
+
+fn encrypt_local_value(value: &str) -> Result<String, String> {
+    let store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
+    let key = local_cipher_key(&store.salt);
+    let id = uuid::Uuid::new_v4();
+    let nonce_bytes = &id.as_bytes()[..12];
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
+    let ciphertext = cipher.encrypt(Nonce::from_slice(nonce_bytes), value.as_bytes()).map_err(|_| "Could not encrypt local data".to_string())?;
+    Ok(format!("{LOCAL_CIPHER_PREFIX}{}:{}", BASE64.encode(nonce_bytes), BASE64.encode(ciphertext)))
+}
+
+fn decrypt_local_value(value: &str) -> Result<String, String> {
+    if !value.starts_with(LOCAL_CIPHER_PREFIX) {
+        return Ok(value.to_string());
+    }
+    let payload = value.trim_start_matches(LOCAL_CIPHER_PREFIX);
+    let (nonce, ciphertext) = payload.split_once(':').ok_or_else(|| "Encrypted local data is malformed".to_string())?;
+    let nonce = BASE64.decode(nonce).map_err(|_| "Encrypted local data is malformed".to_string())?;
+    let ciphertext = BASE64.decode(ciphertext).map_err(|_| "Encrypted local data is malformed".to_string())?;
+    if nonce.len() != 12 { return Err("Encrypted local data is malformed".into()); }
+    let store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
+    let cipher = Aes256Gcm::new_from_slice(&local_cipher_key(&store.salt)).map_err(|e| e.to_string())?;
+    let plaintext = cipher.decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref()).map_err(|_| "Could not decrypt local data for this user".to_string())?;
+    String::from_utf8(plaintext).map_err(|_| "Encrypted local data is malformed".to_string())
+}
+
+fn persist_local_store(store: &LocalSecretStore) -> Result<(), String> {
+    let serialized = serde_json::to_vec_pretty(store).map_err(|e| e.to_string())?;
+    let temporary = store.path.with_extension("tmp");
+    fs::write(&temporary, serialized).map_err(|e| e.to_string())?;
+    #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?; }
+    fs::rename(temporary, &store.path).map_err(|e| e.to_string())
+}
+
+fn initialise_local_store(dir: &Path) -> Result<(), String> {
+    let path = dir.join("local-secrets.json");
+    let mut store = fs::read(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_slice::<LocalSecretStore>(&raw).ok())
+        .unwrap_or_default();
+    store.path = path;
+    if store.salt.is_empty() {
+        store.salt = uuid::Uuid::new_v4().to_string();
+        persist_local_store(&store)?;
+    }
+    let _ = LOCAL_STORE.set(Mutex::new(store));
+    Ok(())
+}
+
+fn local_secret_get(key: &str) -> Result<Option<String>, String> {
+    let value = LOCAL_STORE
+        .get()
+        .ok_or_else(local_store_error)?
+        .lock()
+        .map_err(|e| e.to_string())?
+        .values
+        .get(key)
+        .cloned();
+    value.map(|value| decrypt_local_value(&value)).transpose()
+}
+
+fn local_secret_set(key: &str, value: &str) -> Result<(), String> {
+    let encrypted = encrypt_local_value(value)?;
+    let mut store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
+    store.values.insert(key.to_string(), encrypted);
+    persist_local_store(&store)
+}
+
+fn local_secret_remove(key: &str) -> Result<(), String> {
+    let mut store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
+    store.values.remove(key);
+    persist_local_store(&store)
+}
 use tauri::{AppHandle, Emitter, Manager, State};
 struct Db(Arc<Mutex<Connection>>);
 #[derive(Serialize)]
@@ -70,6 +172,26 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",
         [],
     );
+    Ok(())
+}
+
+fn encrypt_existing_repository_paths(conn: &Connection) -> Result<(), String> {
+    let mut statement = conn
+        .prepare("SELECT name,path FROM repos")
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    let rows = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    for (name, path) in rows {
+        if !path.starts_with(LOCAL_CIPHER_PREFIX) {
+            conn.execute(
+                "UPDATE repos SET path=?1 WHERE name=?2",
+                params![encrypt_local_value(&path)?, name],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
     Ok(())
 }
 
@@ -158,9 +280,10 @@ fn scan_repositories(root_path: String, db: State<Db>) -> Result<Vec<ScannedRepo
             continue;
         }
         let path_string = path.to_string_lossy().to_string();
+        let protected_path = encrypt_local_value(&path_string)?;
         conn.execute(
             "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'local')",
-            params![name, path_string],
+            params![name, protected_path],
         )
         .map_err(|e| e.to_string())?;
         let agent_id = format!("repo:{}:engineer", name);
@@ -188,10 +311,11 @@ fn save_repository(name: String, path: String, db: State<Db>) -> Result<ScannedR
         return Err("The selected folder is not a Git repository".into());
     }
     let path_string = root.to_string_lossy().to_string();
+    let protected_path = encrypt_local_value(&path_string)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'local')",
-        params![name, path_string],
+        params![name, protected_path],
     )
     .map_err(|e| e.to_string())?;
     let agent_id = format!("repo:{}:engineer", name);
@@ -794,6 +918,7 @@ fn create_thread_message(
                     |row| row.get(0),
                 )
                 .map_err(|_| "Tagged agent tasks require a local repository".to_string())?;
+            let repo_path = decrypt_local_value(&repo_path)?;
             let repo_path = std::path::Path::new(&repo_path)
                 .canonicalize()
                 .map_err(|_| "The tagged repository folder is no longer available".to_string())?;
@@ -1021,12 +1146,11 @@ fn legacy_provider_service(provider: &str) -> Result<&'static str, String> {
     }
 }
 fn installation_id() -> Result<String, String> {
-    let entry = keyring::Entry::new("wand-installation", "id").map_err(|e| e.to_string())?;
-    match entry.get_password() {
-        Ok(value) if !value.trim().is_empty() => Ok(value),
+    match local_secret_get("installation-id")? {
+        Some(value) if !value.trim().is_empty() => Ok(value),
         _ => {
             let value = uuid::Uuid::new_v4().to_string();
-            entry.set_password(&value).map_err(|e| e.to_string())?;
+            local_secret_set("installation-id", &value)?;
             Ok(value)
         }
     }
@@ -1045,19 +1169,12 @@ fn save_provider_token(provider: String, token: String) -> Result<(), String> {
         return Err("Token cannot be empty".into());
     }
     let service = provider_service(&provider)?;
-    let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
-    entry.set_password(&token).map_err(|e| e.to_string())
+    local_secret_set(&service, &token)
 }
 #[tauri::command]
 fn disconnect_provider(provider: String, db: State<Db>) -> Result<(), String> {
     let scoped = provider_service(&provider)?;
-    if let Ok(entry) = keyring::Entry::new(&scoped, "default") {
-        let _ = entry.delete_credential();
-    }
-    let legacy = legacy_provider_service(&provider)?;
-    if let Ok(entry) = keyring::Entry::new(legacy, "default") {
-        let _ = entry.delete_credential();
-    }
+    local_secret_remove(&scoped)?;
     if provider == "azure-devops" {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -1071,15 +1188,7 @@ fn disconnect_provider(provider: String, db: State<Db>) -> Result<(), String> {
 #[tauri::command]
 fn provider_status(provider: String) -> Result<bool, String> {
     let service = provider_service(&provider)?;
-    let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
-    if entry.get_password().is_ok() {
-        return Ok(true);
-    }
-    let legacy = legacy_provider_service(&provider)?;
-    Ok(keyring::Entry::new(legacy, "default")
-        .ok()
-        .and_then(|item| item.get_password().ok())
-        .is_some())
+    Ok(local_secret_get(&service)?.is_some())
 }
 
 #[tauri::command]
@@ -1399,6 +1508,7 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|_| "Task or repository does not exist".to_string())?;
+        let stored_path = decrypt_local_value(&stored_path)?;
         if std::path::Path::new(&stored_path).canonicalize().ok()
             != std::path::Path::new(&req.repo_path).canonicalize().ok()
         {
@@ -1743,17 +1853,7 @@ struct ProviderRepo {
 }
 async fn provider_token(provider: &str) -> Result<String, String> {
     let service = provider_service(provider)?;
-    let entry = keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?;
-    match entry.get_password() {
-        Ok(value) => Ok(value),
-        Err(_) => {
-            let legacy = legacy_provider_service(provider)?;
-            let old = keyring::Entry::new(legacy, "default").map_err(|e| e.to_string())?;
-            let value = old.get_password().map_err(|e| e.to_string())?;
-            entry.set_password(&value).map_err(|e| e.to_string())?;
-            Ok(value)
-        }
-    }
+    local_secret_get(&service)?.ok_or_else(|| format!("No {provider} credential is connected"))
 }
 fn validate_azure_org_url(raw: &str) -> Result<String, String> {
     let value = raw.trim().trim_end_matches('/');
@@ -1980,7 +2080,7 @@ async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
         }
         conn.execute(
             "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'github')",
-            params![name, path],
+            params![name, encrypt_local_value(&path)?],
         )
         .map_err(|e| e.to_string())?;
         out.push(ProviderRepo {
@@ -2024,7 +2124,7 @@ async fn sync_linear(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
         if id.is_empty() || key.is_empty() || name.is_empty() { continue; }
         let display = format!("{key} · {name}");
         let path = format!("linear://team/{id}");
-        conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'linear')", params![display, path]).map_err(|e| e.to_string())?;
+        conn.execute("INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'linear')", params![display, encrypt_local_value(&path)?]).map_err(|e| e.to_string())?;
         out.push(ProviderRepo { name: display, path, provider: "linear".into(), url: format!("https://linear.app/team/{key}") });
     }
     let _ = app.emit("wand://provider", serde_json::json!({"provider":"linear","count":out.len()}));
@@ -2117,7 +2217,7 @@ async fn sync_azure_devops(
         }
         conn.execute(
             "INSERT OR REPLACE INTO repos(name,path,provider) VALUES (?1,?2,'azure-devops')",
-            params![name, path],
+            params![name, encrypt_local_value(&path)?],
         )
         .map_err(|e| e.to_string())?;
         out.push(ProviderRepo {
@@ -2499,6 +2599,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                     params![repo_name],
                                     |r| r.get::<_, String>(0),
                                 ) {
+                                    let Ok(repo_path) = decrypt_local_value(&repo_path) else { continue; };
                                     let Some(repo_path) = Path::new(&repo_path)
                                         .canonicalize()
                                         .ok()
@@ -2603,7 +2704,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); initialise_local_store(&dir).expect("initialise encrypted local store"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); encrypt_existing_repository_paths(&conn).expect("encrypt repository paths"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn read_repo_file(
@@ -2672,13 +2773,15 @@ fn registered_repo_root(repo_path: &str, conn: &Connection) -> Result<PathBuf, S
         return Err("The selected repository folder does not exist".into());
     }
     let path = root.to_string_lossy().to_string();
-    let registered: bool = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM repos WHERE path=?1 AND provider='local')",
-            params![path],
-            |row| row.get(0),
-        )
+    let mut statement = conn
+        .prepare("SELECT path FROM repos WHERE provider='local' OR provider='' ")
         .map_err(|e| e.to_string())?;
+    let registered = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .filter_map(|stored| decrypt_local_value(&stored).ok())
+        .any(|stored| stored == path);
     if !registered {
         return Err("The selected folder is not a registered local repository".into());
     }
@@ -2887,16 +2990,12 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
         .prepare("SELECT name,path,provider FROM repos ORDER BY name")
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([], |r| {
-            Ok(ScannedRepo {
-                name: r.get(0)?,
-                path: r.get(1)?,
-                provider: r.get(2)?,
-                url: String::new(),
-            })
-        })
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
         .map_err(|e| e.to_string())?;
-    rows.map(|r| r.map_err(|e| e.to_string())).collect()
+    rows.map(|row| {
+        let (name, path, provider) = row.map_err(|e| e.to_string())?;
+        Ok(ScannedRepo { name, path: decrypt_local_value(&path)?, provider, url: String::new() })
+    }).collect()
 }
 
 #[cfg(test)]
