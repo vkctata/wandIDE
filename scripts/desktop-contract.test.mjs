@@ -2,7 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
+import { persistOnboardingName, previewOnboardingComplete } from '../src/onboarding-persistence.ts';
 import { isRepositorySync, updateProviderHealth } from '../src/provider-events.ts';
+
+test('onboarding does not complete after failed native persistence', async () => {
+  const writes = [];
+  const storage = () => ({ getItem: () => null, setItem: (...args) => writes.push(args) });
+  const error = new Error('database unavailable');
+  await assert.rejects(persistOnboardingName(' Ven ', true, async () => { throw error; }, storage), error);
+  assert.deepEqual(writes, []);
+  let saved;
+  assert.equal(await persistOnboardingName(' Ven ', true, async name => { saved = name; }, () => { throw Error('blocked storage'); }), 'Ven');
+  assert.equal(saved, 'Ven');
+  await assert.rejects(persistOnboardingName(' ', true, async () => assert.fail('empty name saved'), storage));
+});
+
+test('preview onboarding tolerates blocked reads and reports failed writes', async () => {
+  const blocked = () => { throw Error('storage blocked'); };
+  assert.equal(previewOnboardingComplete(blocked), false);
+  const values = new Map();
+  const storage = () => ({ getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) });
+  assert.equal(previewOnboardingComplete(storage), false);
+  assert.equal(await persistOnboardingName(' Ven ', false, async () => assert.fail('native preview call'), storage), 'Ven');
+  assert.equal(values.get('wand.user-name'), 'Ven');
+  assert.equal(previewOnboardingComplete(storage), true);
+  await assert.rejects(persistOnboardingName('Ven', false, async () => {}, blocked), /storage blocked/);
+});
 
 test('provider recovery only clears its own failure and retains other provider warnings', () => {
   const azure = { provider: 'azure-devops', status: 'error', error: 'Expired credential' };
