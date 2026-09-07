@@ -5,7 +5,7 @@ import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-p
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
 import { messagePreview } from "./message-blocks";
-import { activityMessage } from "./activity-labels";
+import { activityMessage, agentDisplayName } from "./activity-labels";
 import { latestRequest } from "./latest-request";
 import { readSearchSources } from "./search-sources";
 import { searchFocusIndex } from "./search-navigation";
@@ -1476,7 +1476,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                   <div>
                     <h3>{messagePreview(message.body)}</h3>
                     <p>
-                      {message.author} · {formatWorkspaceTime(message.created_at)}
+                      {agentDisplayName(message.author, agents)} · {formatWorkspaceTime(message.created_at)}
                     </p>
                   </div>
                   {message.agent_ids?.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
@@ -1487,7 +1487,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
             )}
           </div>
           {selected && <section className="thread-detail-pane" aria-label="Post details">
-            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" aria-label="Close post details" onClick={() => setSelected(null)}>×</button></div>
+            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{agentDisplayName(selected.author, agents)}</h2></div><button className="iconbtn" aria-label="Close post details" onClick={() => setSelected(null)}>×</button></div>
             <p className="thread-detail-time">{formatWorkspaceTime(selected.created_at)}</p>
             <MessageContent content={selected.body} />
             {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
@@ -1495,7 +1495,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               <h3>Comments</h3>
               {messages.filter((message) => message.parent_id === selected.id).map((message) => (
                 <article key={message.id} className="post-comment">
-                  <strong>{agents.find((agent) => agent.id === message.author)?.name || message.author}</strong>
+                  <strong>{agentDisplayName(message.author, agents)}</strong>
                   <time>{formatWorkspaceTime(message.created_at)}</time>
                   <MessageContent content={message.body} />
                 </article>

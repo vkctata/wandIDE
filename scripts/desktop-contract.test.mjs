@@ -2,7 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
-import { activityMessage } from '../src/activity-labels.ts';
+import { activityMessage, agentDisplayName } from '../src/activity-labels.ts';
+
+test('verification stage displays the persisted Sentinel name without changing human authors', () => {
+  const agents = [{ id: 'sentinel', name: 'Independent reviewer' }];
+  assert.equal(agentDisplayName('sentinel-verifier', agents), 'Independent reviewer');
+  assert.equal(activityMessage('agent.verified', 'sentinel-verifier completed stage 2', agents), 'Independent reviewer completed stage 2');
+  assert.equal(agentDisplayName('You', agents), 'You');
+  assert.equal(agentDisplayName('sentinel-verifier', []), 'sentinel-verifier');
+});
 import { latestRequest } from '../src/latest-request.ts';
 import { readSearchSources } from '../src/search-sources.ts';
 import { searchFocusIndex } from '../src/search-navigation.ts';

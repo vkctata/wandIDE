@@ -44,6 +44,7 @@ The current build provides the desktop-ready product foundation:
 - Tagging an agent in a repository thread creates a persisted one-off task and starts the ordered handoff plus final Sentinel verification chain; tagged work appears immediately in Tasks
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
 - Activity stage summaries display configured agent names while preserving original event history and output.
+- Verification stage authors resolve to the configured Sentinel name in activity and post comments.
 - Home distinguishes loading, unavailable, and empty history; stale refresh responses cannot replace newer activity.
 - Search shows local matches while history loads, identifies unavailable categories, and supports native keyboard activation of result buttons.
 - Search supports Up/Down result navigation, Home/End within results, and Escape to dismiss results and return focus to the input.
