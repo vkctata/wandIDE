@@ -1,6 +1,5 @@
 {
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Wand",
@@ -8,10 +7,10 @@
         "height": 820,
         "minWidth": 720,
         "minHeight": 480,
-        "decorations": false,
-        "transparent": true,
+        "decorations": true,
+        "transparent": false,
         "shadow": true,
-        "titleBarStyle": "Overlay",
+        "titleBarStyle": "Visible",
         "hiddenTitle": true
       }
     ]

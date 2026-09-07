@@ -1417,6 +1417,20 @@ fn bounded_output_text(output: Vec<u8>, truncated: bool) -> String {
     text
 }
 
+fn terminate_stage_processes(child: &mut std::process::Child) {
+    #[cfg(unix)] {
+        // Each stage is spawned in a new group whose id equals the child pid.
+        unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL); }
+    }
+    #[cfg(windows)] {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     command: &str,
@@ -1448,9 +1462,14 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     let args = cli_args(command, model, prompt)?;
     let binary = installed_cli_path(command)
         .ok_or_else(|| format!("CLI runtime '{command}' is no longer installed"))?;
-    let mut child = Command::new(binary)
-        .current_dir(repo_path)
+    let mut command_builder = Command::new(binary);
+    #[cfg(unix)] {
+        use std::os::unix::process::CommandExt;
+        command_builder.process_group(0);
+    }
+    let mut child = command_builder.current_dir(repo_path)
         .args(args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -1472,9 +1491,14 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
     let deadline = Instant::now() + STAGE_TIMEOUT;
     let mut status = None;
-    let mut timed_out = false;
     let mut output_open = true;
     loop {
+        if Instant::now() >= deadline {
+            terminate_stage_processes(&mut child);
+            // Do not join readers here: an inherited pipe may remain open even
+            // after the CLI exits. Dropping the receiver releases blocked sends.
+            return Err(format!("CLI stage timed out after {} minutes", STAGE_TIMEOUT.as_secs() / 60));
+        }
         if output_open {
             match output_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok((stream, chunk)) => on_output(stream, &String::from_utf8_lossy(&chunk)),
@@ -1488,11 +1512,6 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
         }
         if status.is_none() {
             status = child.try_wait().map_err(|e| e.to_string())?;
-            if status.is_none() && Instant::now() >= deadline {
-                timed_out = true;
-                let _ = child.kill();
-                status = Some(child.wait().map_err(|e| e.to_string())?);
-            }
         }
         if status.is_some() && !output_open {
             break;
@@ -1504,12 +1523,6 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     let (stderr, stderr_truncated) = stderr_reader
         .join()
         .map_err(|_| "CLI error reader failed".to_string())??;
-    if timed_out {
-        return Err(format!(
-            "CLI stage timed out after {} minutes",
-            STAGE_TIMEOUT.as_secs() / 60
-        ));
-    }
     let status = status.ok_or_else(|| "CLI stage exited without a status".to_string())?;
     if status.success() {
         Ok(bounded_output_text(stdout, stdout_truncated))
@@ -3100,6 +3113,25 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn stage_cleanup_closes_pipes_inherited_by_descendants() {
+        use std::os::unix::process::CommandExt;
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "sleep 30 & exit 0"])
+            .process_group(0).stdout(Stdio::piped()).spawn().unwrap();
+        let mut pipe = child.stdout.take().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let reader = thread::spawn(move || {
+            let mut output = Vec::new();
+            let _ = tx.send(pipe.read_to_end(&mut output));
+        });
+        child.wait().unwrap();
+        terminate_stage_processes(&mut child);
+        assert!(rx.recv_timeout(Duration::from_secs(3)).unwrap().is_ok());
+        reader.join().unwrap();
+    }
+
     #[test]
     fn provider_agents_are_created_idempotently() {
         let conn = Connection::open_in_memory().unwrap();
