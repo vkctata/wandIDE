@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
+import { isRepositorySync } from '../src/provider-events.ts';
+
+test('provider health and credential failures cannot announce successful repository sync', () => {
+  for (const provider of ['github', 'azure-devops', 'linear']) {
+    assert.equal(isRepositorySync({ provider, count: 0 }), true);
+    assert.equal(isRepositorySync({ provider, count: 4 }), true);
+    assert.equal(isRepositorySync({ provider, status: 'ok' }), false);
+    assert.equal(isRepositorySync({ provider, status: 'error', error: 'No credential connected' }), false);
+    assert.equal(isRepositorySync({ provider, count: 4, status: 'error' }), false);
+    assert.equal(isRepositorySync({ provider, count: 4, error: 'failed' }), false);
+    for (const count of [-1, NaN, Infinity, 1.5, '4', null]) assert.equal(isRepositorySync({ provider, count }), false);
+  }
+  assert.equal(isRepositorySync(null), false);
+  assert.equal(isRepositorySync({ count: 4 }), false);
+  const source = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(source, /if \(!isRepositorySync\(event.payload\)\) return;\s+refreshRepos\(\)/);
+});
 
 test('deleted and partial mentions cannot leave an agent selected', () => {
   assert.equal(hasAgentMention('', 'Builder'), false);
