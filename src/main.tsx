@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { hasAgentMention } from "./mentions";
 import { MessageContent } from "./message-content";
 import { createRoot } from "react-dom/client";
@@ -859,7 +859,7 @@ function App() {
             userName={userName}
           />
         ) : view === "code" ? (
-          <CodeWorkspace repo={repo} />
+          <CodeWorkspace key={`${repo.name}:${repo.path}`} repo={repo} />
         ) : view === "threads" ? (
           <Threads key={repo.name} repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
@@ -1066,13 +1066,16 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
   const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">(() =>
     normalizeTheme(document.body.dataset.theme) === "daylight" ? "vs" : "vs-dark",
   );
-  const [path, setPath] = useState("README.md");
+  const [path, setPath] = useState("");
   const [draftPath, setDraftPath] = useState("README.md");
   const [content, setContent] = useState("");
   const [original, setOriginal] = useState("");
   const [mode, setMode] = useState<"file" | "diff">("file");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState("");
+  const loadRequest = useRef(0);
   const [worktreeStatus, setWorktreeStatus] = useState("");
   useEffect(() => {
     const sync = () =>
@@ -1085,20 +1088,30 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
     return () => observer.disconnect();
   }, []);
   const load = async () => {
+    if (saving) return;
+    const request = ++loadRequest.current;
+    const requestedPath = draftPath;
+    setLoading(true);
+    setPath("");
+    setSaveStatus("");
     try {
       setError("");
       const versions = await invoke<{ original: string; modified: string }>(
         "git_file_versions",
-        { repoPath: repo.path, relativePath: draftPath },
+        { repoPath: repo.path, relativePath: requestedPath },
       );
-      setPath(draftPath);
+      if (request !== loadRequest.current) return;
+      setPath(requestedPath);
       setOriginal(versions.original);
       setContent(versions.modified);
     } catch (e) {
-      setError(String(e));
+      if (request === loadRequest.current) setError(String(e));
+    } finally {
+      if (request === loadRequest.current) setLoading(false);
     }
   };
   const save = async () => {
+    if (saving || loading || !path) return;
     try {
       setSaving(true);
       setError("");
@@ -1107,7 +1120,8 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
         relativePath: path,
         content,
       });
-      setOriginal(content);
+      // Saving the working tree must not replace the HEAD comparison baseline.
+      setSaveStatus(`Saved ${path}. Git diff still compares against HEAD.`);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1188,7 +1202,7 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
           <div className="code-action-controls" aria-label="Repository actions">
             <button
               className="outline"
-              disabled={mode !== "file" || saving || !path}
+              disabled={mode !== "file" || saving || loading || !path}
               onClick={save}
             >
               {saving ? "Saving…" : "Save"}
@@ -1199,14 +1213,15 @@ function CodeWorkspace({ repo }: { repo: Repo }) {
             <button className="outline" disabled={!repo.path} onClick={applyPatch}>
               Apply patch
             </button>
-            <button className="primary" onClick={load}>
+            <button className="primary" disabled={saving || loading} onClick={load}>
               Open
             </button>
           </div>
         </div>
       </div>
       {worktreeStatus && <p className="code-operation-status" role="status">{worktreeStatus}</p>}
-      {error ? (
+      {saveStatus && <p className="code-operation-status" role="status">{saveStatus}</p>}
+      {loading ? <div className="editor-loading" role="status">Loading file…</div> : error ? (
         <div className="emptyhint">
           <h3>Unable to open file</h3>
           <p>{error}</p>

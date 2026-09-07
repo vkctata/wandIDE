@@ -111,6 +111,10 @@ GitHub Actions builds these installers for tagged releases and attaches them to 
 
 ## Agent code output
 
+The file editor keeps Git HEAD as its diff baseline after saving. Save is disabled
+until a file has loaded successfully, and stale file-load responses are ignored.
+Switching repositories resets the editor to that repository's file context.
+
 Fenced code in post details, comments, and saved agent transcripts uses lazy,
 read-only Monaco snippets that follow the desktop appearance. Large snippets
 and additional blocks offer an explicit “Format code” action to limit editor
