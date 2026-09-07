@@ -8,6 +8,7 @@ import { messagePreview } from "./message-blocks";
 import { activityMessage } from "./activity-labels";
 import { latestRequest } from "./latest-request";
 import { readSearchSources } from "./search-sources";
+import { searchFocusIndex } from "./search-navigation";
 import { submitOnce } from "./submission";
 import { readThreadSnapshot, mergeThreadSnapshot } from "./thread-refresh";
 import { persistAppearance, readPreviewAppearance, type AppearanceSetting } from "./appearance-persistence";
@@ -468,9 +469,21 @@ function App() {
           document.querySelector(".search input") as HTMLInputElement | null
         )?.focus();
       }
+      const input = document.querySelector<HTMLInputElement>(".search input");
+      const palette = document.querySelector(".search-palette");
+      const inSearch = document.activeElement === input || Boolean(palette?.contains(document.activeElement));
+      if (!inSearch || event.isComposing) return;
       if (event.key === "Escape") {
+        event.preventDefault();
         setQuery("");
-        (document.activeElement as HTMLElement | null)?.blur();
+        input?.focus();
+        return;
+      }
+      const buttons = Array.from(palette?.querySelectorAll<HTMLButtonElement>("button") || []);
+      const next = searchFocusIndex(event.key, buttons.indexOf(document.activeElement as HTMLButtonElement), buttons.length);
+      if (next !== null) {
+        event.preventDefault();
+        buttons[next]?.focus();
       }
     };
     document.addEventListener("keydown", onKey);
@@ -829,6 +842,7 @@ function App() {
               <Search size={15} />
               <input
                 value={query}
+                aria-label="Search repositories, tasks, agents, activity and notifications"
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search anything"
               />
@@ -851,7 +865,7 @@ function App() {
           </div>
         </header>
         {query.trim() && (
-          <div className="search-palette" aria-busy={searchLoading}>
+          <div className="search-palette" aria-label="Search results" role="region" aria-busy={searchLoading}>
             {searchLoading && <div className="search-empty" role="status">Searching activity and notifications…</div>}
             {searchWarning && <div className="search-empty" role="status">{searchWarning}</div>}
             {searchResults.map((result) => (

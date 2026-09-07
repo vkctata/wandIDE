@@ -46,6 +46,7 @@ The current build provides the desktop-ready product foundation:
 - Activity stage summaries display configured agent names while preserving original event history and output.
 - Home distinguishes loading, unavailable, and empty history; stale refresh responses cannot replace newer activity.
 - Search shows local matches while history loads, identifies unavailable categories, and supports native keyboard activation of result buttons.
+- Search supports Up/Down result navigation, Home/End within results, and Escape to dismiss results and return focus to the input.
 - Monaco file editor with guarded repository saves and Git original-versus-modified diff viewer
 - Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
 - Tauri icon and desktop configuration for macOS and Windows

@@ -5,6 +5,20 @@ import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/men
 import { activityMessage } from '../src/activity-labels.ts';
 import { latestRequest } from '../src/latest-request.ts';
 import { readSearchSources } from '../src/search-sources.ts';
+import { searchFocusIndex } from '../src/search-navigation.ts';
+
+test('search arrows wrap while text-editing Home and End remain available in input', () => {
+  assert.equal(searchFocusIndex('ArrowDown', -1, 3), 0);
+  assert.equal(searchFocusIndex('ArrowUp', -1, 3), 2);
+  assert.equal(searchFocusIndex('ArrowDown', 2, 3), 0);
+  assert.equal(searchFocusIndex('ArrowUp', 0, 3), 2);
+  assert.equal(searchFocusIndex('Home', 2, 3), 0);
+  assert.equal(searchFocusIndex('End', 0, 3), 2);
+  assert.equal(searchFocusIndex('Home', -1, 3), null);
+  assert.equal(searchFocusIndex('End', -1, 3), null);
+  assert.equal(searchFocusIndex('ArrowDown', -1, 0), null);
+  assert.equal(searchFocusIndex('Enter', 0, 3), null);
+});
 
 test('search preserves successful sources and identifies unavailable categories', async () => {
   const result = await readSearchSources([

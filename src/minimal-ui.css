@@ -49,6 +49,11 @@ body[data-theme] .hero { margin-bottom: 24px; }
 body[data-theme] .hero h1 { font-size: clamp(23px, 2.5vw, 30px); letter-spacing: -.025em; }
 body[data-theme] :is(.eyebrow, .navgroup label) { letter-spacing: .08em; font-size: 10px; }
 body[data-theme] .stats { margin-bottom: 28px; }
+body[data-theme] .search-palette button:focus-visible {
+  outline: 2px solid var(--wand-accent);
+  outline-offset: -2px;
+  background: var(--wand-surface);
+}
 body[data-theme] :is(.stat, .agent, .taskcard, .settingscard,
   .settings-section, .thread-card, .thread-detail-pane, .emptyhint,
   .onboard-card, .search-palette, .wand-modal, .toast) {
