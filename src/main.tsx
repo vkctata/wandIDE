@@ -6,6 +6,7 @@ import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./
 import { MessageContent } from "./message-content";
 import { messagePreview } from "./message-blocks";
 import { activityMessage } from "./activity-labels";
+import { latestRequest } from "./latest-request";
 import { submitOnce } from "./submission";
 import { readThreadSnapshot, mergeThreadSnapshot } from "./thread-refresh";
 import { persistAppearance, readPreviewAppearance, type AppearanceSetting } from "./appearance-persistence";
@@ -909,21 +910,29 @@ function Home({
   const [events, setEvents] = useState<Event[]>([]);
   const [homeAgents, setHomeAgents] = useState<Array<{ id: string; name: string; role: string; cli: string; model: string }>>([]);
   const [loadError, setLoadError] = useState("");
+  const [loadingActivity, setLoadingActivity] = useState(true);
+  const activityRequests = useRef(latestRequest());
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [localHour, setLocalHour] = useState<number | null>(null);
   const refresh = () => {
+    const isCurrent = activityRequests.current.begin();
+    setLoadingActivity(true);
     Promise.all([
       invoke<Event[]>("list_events", { limit: 12 }),
       invoke<typeof homeAgents>("list_agents"),
     ]).then(([nextEvents, agents]) => {
+      if (!isCurrent()) return;
       setEvents(nextEvents); setHomeAgents(agents); setLoadError("");
-    }).catch(() => setLoadError("Could not refresh your activity. Try again."));
+    }).catch(() => {
+      if (isCurrent()) setLoadError("Could not refresh your activity. Try again.");
+    }).finally(() => { if (isCurrent()) setLoadingActivity(false); });
   };
   useEffect(() => {
     refresh();
     const names = ["wand://agent", "wand://agents", "wand://scheduler", "wand://notifications"];
     const stops = names.map((name) => listen(name, refresh));
     return () => {
+      activityRequests.current.invalidate();
       stops.forEach((stop) => stop.then((fn) => fn()).catch(() => {}));
     };
   }, [settingsOpen]);
@@ -983,14 +992,13 @@ function Home({
           <p>Events synced to this local workspace.</p>
         </div>
       </div>
-      <div className="timeline">
+      <div className="timeline" aria-busy={loadingActivity}>
         {events.length === 0 && (
           <div className="emptyhint">
             <Sparkles size={20} />
-            <h3>No activity yet</h3>
+            <h3>{loadingActivity ? "Loading activity…" : loadError ? "Activity unavailable" : "No activity yet"}</h3>
             <p>
-              Run a task or sync a provider to start your local activity
-              history.
+              {loadingActivity ? "Reading your recent workspace history." : loadError ? "Retry to load your activity. Your saved history has not been removed." : "Run a task or sync a provider to start your local activity history."}
             </p>
           </div>
         )}
@@ -1021,7 +1029,7 @@ function Home({
       </div>
       <div className="agentgrid">
         {homeAgents.slice(0, 3).map((agent) => <Agent key={agent.id} icon={Bot} name={agent.name} desc={agent.role} status={`${agent.cli} · ${agent.model === "default" ? "CLI default model" : agent.model}`} />)}
-        {!homeAgents.length && <p className="sub">Configure your first agent in Settings.</p>}
+        {!homeAgents.length && <p className="sub">{loadingActivity ? "Loading agents…" : loadError ? "Agent list could not be refreshed." : "Configure your first agent in Settings."}</p>}
       </div>
     </section>
   );

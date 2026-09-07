@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
 import { activityMessage } from '../src/activity-labels.ts';
+import { latestRequest } from '../src/latest-request.ts';
+
+test('refresh responses cannot overwrite a newer request or an unmounted view', () => {
+  const requests = latestRequest();
+  const first = requests.begin();
+  assert.equal(first(), true);
+  const second = requests.begin();
+  assert.equal(first(), false);
+  assert.equal(second(), true);
+  requests.invalidate();
+  assert.equal(second(), false);
+  assert.equal(requests.begin()(), true);
+});
 
 test('activity summaries resolve exact agent IDs without rewriting user output', () => {
   const agents = [{ id: 'repo:Moon Cheese:engineer', name: 'Moon Cheese engineer' }];
