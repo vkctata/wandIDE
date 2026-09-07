@@ -20,7 +20,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-process": "^2.2.0",
-    "@tauri-apps/plugin-updater": "^2.3.0",
+    "@tauri-apps/plugin-updater": "^2.11.0",
     "lucide-react": "^1.39.0",
     "monaco-editor": "^0.56.0",
     "react": "^18.3.1",
@@ -31,7 +31,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "typescript": "^5.5.4",
+    "typescript": "^7.0.2",
     "vite": "^8.2.2"
   }
 }
