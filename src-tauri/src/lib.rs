@@ -81,10 +81,12 @@ fn persist_local_store(store: &LocalSecretStore) -> Result<(), String> {
 
 fn initialise_local_store(dir: &Path) -> Result<(), String> {
     let path = dir.join("local-secrets.json");
-    let mut store = fs::read(&path)
-        .ok()
-        .and_then(|raw| serde_json::from_slice::<LocalSecretStore>(&raw).ok())
-        .unwrap_or_default();
+    let mut store = match fs::read(&path) {
+        Ok(raw) => serde_json::from_slice::<LocalSecretStore>(&raw)
+            .map_err(|_| "Wand's local store is damaged; restore it from a backup".to_string())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => LocalSecretStore::default(),
+        Err(error) => return Err(error.to_string()),
+    };
     store.path = path;
     if store.salt.is_empty() {
         store.salt = uuid::Uuid::new_v4().to_string();
@@ -115,7 +117,9 @@ fn local_secret_set(key: &str, value: &str) -> Result<(), String> {
 
 fn local_secret_remove(key: &str) -> Result<(), String> {
     let mut store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
-    store.values.remove(key);
+    if store.values.remove(key).is_none() {
+        return Ok(());
+    }
     persist_local_store(&store)
 }
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -143,6 +147,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE thread_messages ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'",
         [],
     );
+    let _ = conn.execute("ALTER TABLE thread_messages ADD COLUMN parent_id INTEGER", []);
     let _ = conn.execute(
         "ALTER TABLE agents ADD COLUMN cli TEXT NOT NULL DEFAULT 'codex'",
         [],
@@ -172,6 +177,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",
         [],
     );
+    let _ = conn.execute("ALTER TABLE thread_messages ADD COLUMN parent_id INTEGER", []);
+    let _ = conn.execute("ALTER TABLE tasks ADD COLUMN thread_message_id INTEGER", []);
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_thread_parent ON thread_messages(parent_id)", [])?;
     Ok(())
 }
 
@@ -825,6 +833,17 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
     })
 }
 
+fn validate_comment_parent(conn: &Connection, repo: &str, parent_id: Option<i64>) -> Result<(), String> {
+    if let Some(parent_id) = parent_id {
+        let valid: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM thread_messages WHERE id=?1 AND repo=?2 AND parent_id IS NULL)",
+            params![parent_id, repo], |row| row.get(0),
+        ).map_err(|e| e.to_string())?;
+        if !valid { return Err("Comments must belong to a post in this repository".into()); }
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 struct ThreadMessage {
     id: i64,
@@ -833,11 +852,12 @@ struct ThreadMessage {
     body: String,
     created_at: String,
     agent_ids: Vec<String>,
+    parent_id: Option<i64>,
 }
 #[tauri::command]
 fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at,agent_ids FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?;
+    let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at,agent_ids,parent_id FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?;
     let rows = stmt
         .query_map(params![repo], |r| {
             Ok(ThreadMessage {
@@ -848,6 +868,7 @@ fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage
                 created_at: r.get(4)?,
                 agent_ids: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(5)?)
                     .unwrap_or_default(),
+                parent_id: r.get(6)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -859,6 +880,7 @@ fn create_thread_message(
     author: String,
     body: String,
     agent_ids: Option<Vec<String>>,
+    parent_id: Option<i64>,
     db: State<Db>,
     app: AppHandle,
 ) -> Result<ThreadMessage, String> {
@@ -873,6 +895,7 @@ fn create_thread_message(
     {
         let mut conn = db.0.lock().map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
+        validate_comment_parent(&tx, &repo, parent_id)?;
         for agent_id in &agent_ids {
             let scope: String = tx
                 .query_row(
@@ -888,13 +911,14 @@ fn create_thread_message(
             }
         }
         tx.execute(
-            "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
+            "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids,parent_id) VALUES (?1,?2,?3,?4,?5,?6)",
             params![
                 repo,
                 author,
                 body,
                 created_at,
-                serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?
+                serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?,
+                parent_id
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -906,6 +930,7 @@ fn create_thread_message(
             body: body.clone(),
             created_at: created_at.clone(),
             agent_ids: agent_ids.clone(),
+            parent_id,
         };
 
         if !agent_ids.is_empty() {
@@ -963,6 +988,8 @@ fn create_thread_message(
                 params![task_id, task_name, repo, agents_json, created_at],
             )
             .map_err(|e| e.to_string())?;
+            tx.execute("UPDATE tasks SET thread_message_id=?1 WHERE id=?2", params![parent_id.unwrap_or(id), task_id])
+                .map_err(|e| e.to_string())?;
             let run_id = uuid::Uuid::new_v4().to_string();
             tx.execute(
                 "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",
@@ -1045,22 +1072,25 @@ struct CliStatus {
     version: String,
 }
 fn installed_cli_path(command: &str) -> Option<String> {
-    let lookup = if cfg!(windows) {
-        Command::new("where").arg(command).output().ok()
-    } else {
-        Command::new("which").arg(command).output().ok()
-    }?;
-    if !lookup.status.success() {
-        return None;
+    let mut candidates = Vec::new();
+    if let Ok(path) = std::env::var("PATH") {
+        candidates.extend(std::env::split_paths(&path).map(|dir| dir.join(command)));
     }
-    String::from_utf8_lossy(&lookup.stdout)
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| Path::new(value).canonicalize().ok())
-        .filter(|value| value.is_file())
-        .map(|value| value.to_string_lossy().into_owned())
+    if cfg!(target_os = "macos") {
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            candidates.push(home.join(".local/bin").join(command));
+            candidates.push(home.join(".npm-global/bin").join(command));
+            candidates.push(home.join(".cargo/bin").join(command));
+        }
+        candidates.extend([
+            PathBuf::from("/opt/homebrew/bin").join(command),
+            PathBuf::from("/usr/local/bin").join(command),
+            PathBuf::from("/usr/bin").join(command),
+        ]);
+    }
+    candidates.into_iter().find_map(|candidate| {
+        candidate.canonicalize().ok().filter(|path| path.is_file()).map(|path| path.to_string_lossy().into_owned())
+    })
 }
 #[tauri::command]
 fn detect_clis() -> Vec<CliStatus> {
@@ -1163,18 +1193,62 @@ fn provider_service(provider: &str) -> Result<String, String> {
     let install = installation_id()?;
     Ok(scoped_provider_service(base, &install))
 }
+fn ensure_provider_agent(conn: &Connection, provider: &str) -> Result<(), String> {
+    let (name, role, skills, color) = match provider {
+        "github" => ("GitHub", "Reads repositories, issues, pull requests, and review context", "[\"repositories\",\"issues\",\"pull requests\",\"reviews\"]", "#8ab4f8"),
+        "azure-devops" => ("Azure DevOps", "Reads Azure repositories, work items, pull requests, and comments", "[\"repositories\",\"work items\",\"pull requests\",\"comments\"]", "#63b3ed"),
+        "linear" => ("Linear", "Reads teams and issues, surfaces updates, and helps plan work", "[\"teams\",\"issues\",\"planning\",\"project context\"]", "#a78bfa"),
+        _ => return Err("Unsupported provider".into()),
+    };
+    conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,?3,?4,?5,0,'codex','default','workspace')", params![format!("provider:{provider}"), name, role, skills, color]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// Migrate legacy credentials only after the native credential store accepts
+// the value. An unavailable/locked store must never downgrade to file storage.
+fn native_provider_secret(service: &str) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(service, "default").map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(value) => {
+            local_secret_remove(service)?;
+            Ok(Some(value))
+        }
+        Err(keyring::Error::NoEntry) => {
+            if let Some(value) = local_secret_get(service)? {
+                entry.set_password(&value).map_err(|e| e.to_string())?;
+                local_secret_remove(service)?;
+                Ok(Some(value))
+            } else {
+                Ok(None)
+            }
+        }
+        Err(error) => Err(format!("Unlock your system credential store: {error}")),
+    }
+}
+
 #[tauri::command]
-fn save_provider_token(provider: String, token: String) -> Result<(), String> {
+fn save_provider_token(provider: String, token: String, db: State<Db>, app: AppHandle) -> Result<(), String> {
     if token.trim().is_empty() {
         return Err("Token cannot be empty".into());
     }
     let service = provider_service(&provider)?;
-    local_secret_set(&service, &token)
+    keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?
+        .set_password(&token).map_err(|e| e.to_string())?;
+    local_secret_remove(&service)?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, &provider)?;
+    let _ = app.emit("wand://agents", serde_json::json!({"provider": provider, "connected": true}));
+    Ok(())
 }
 #[tauri::command]
-fn disconnect_provider(provider: String, db: State<Db>) -> Result<(), String> {
+fn disconnect_provider(provider: String, db: State<Db>, app: AppHandle) -> Result<(), String> {
     let scoped = provider_service(&provider)?;
+    // Remove the legacy copy first so it cannot be re-imported on reconnect.
     local_secret_remove(&scoped)?;
+    match keyring::Entry::new(&scoped, "default").map_err(|e| e.to_string())?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => (),
+        Err(error) => return Err(error.to_string()),
+    }
     if provider == "azure-devops" {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -1183,12 +1257,16 @@ fn disconnect_provider(provider: String, db: State<Db>) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    if let Ok(conn) = db.0.lock() {
+        let _ = conn.execute("DELETE FROM agents WHERE id=?1", params![format!("provider:{provider}")]);
+    }
+    let _ = app.emit("wand://agents", serde_json::json!({"provider": provider, "connected": false}));
     Ok(())
 }
 #[tauri::command]
 fn provider_status(provider: String) -> Result<bool, String> {
     let service = provider_service(&provider)?;
-    Ok(local_secret_get(&service)?.is_some())
+    Ok(native_provider_secret(&service)?.is_some())
 }
 
 #[tauri::command]
@@ -1361,6 +1439,20 @@ fn bounded_output_text(output: Vec<u8>, truncated: bool) -> String {
     text
 }
 
+fn terminate_stage_processes(child: &mut std::process::Child) {
+    #[cfg(unix)] {
+        // Each stage is spawned in a new group whose id equals the child pid.
+        unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL); }
+    }
+    #[cfg(windows)] {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     command: &str,
@@ -1392,9 +1484,14 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     let args = cli_args(command, model, prompt)?;
     let binary = installed_cli_path(command)
         .ok_or_else(|| format!("CLI runtime '{command}' is no longer installed"))?;
-    let mut child = Command::new(binary)
-        .current_dir(repo_path)
+    let mut command_builder = Command::new(binary);
+    #[cfg(unix)] {
+        use std::os::unix::process::CommandExt;
+        command_builder.process_group(0);
+    }
+    let mut child = command_builder.current_dir(repo_path)
         .args(args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -1416,9 +1513,14 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
     let deadline = Instant::now() + STAGE_TIMEOUT;
     let mut status = None;
-    let mut timed_out = false;
     let mut output_open = true;
     loop {
+        if Instant::now() >= deadline {
+            terminate_stage_processes(&mut child);
+            // Do not join readers here: an inherited pipe may remain open even
+            // after the CLI exits. Dropping the receiver releases blocked sends.
+            return Err(format!("CLI stage timed out after {} minutes", STAGE_TIMEOUT.as_secs() / 60));
+        }
         if output_open {
             match output_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok((stream, chunk)) => on_output(stream, &String::from_utf8_lossy(&chunk)),
@@ -1432,11 +1534,6 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
         }
         if status.is_none() {
             status = child.try_wait().map_err(|e| e.to_string())?;
-            if status.is_none() && Instant::now() >= deadline {
-                timed_out = true;
-                let _ = child.kill();
-                status = Some(child.wait().map_err(|e| e.to_string())?);
-            }
         }
         if status.is_some() && !output_open {
             break;
@@ -1448,12 +1545,6 @@ fn execute_stage_with_progress<F: FnMut(&str, &str)>(
     let (stderr, stderr_truncated) = stderr_reader
         .join()
         .map_err(|_| "CLI error reader failed".to_string())??;
-    if timed_out {
-        return Err(format!(
-            "CLI stage timed out after {} minutes",
-            STAGE_TIMEOUT.as_secs() / 60
-        ));
-    }
     let status = status.ok_or_else(|| "CLI stage exited without a status".to_string())?;
     if status.success() {
         Ok(bounded_output_text(stdout, stdout_truncated))
@@ -1737,14 +1828,18 @@ fn launch_chain_worker(
                             ],
                         );
                         if let Some(repo) = repo {
+                            let parent_id: Option<i64> = conn.query_row(
+                                "SELECT thread_message_id FROM tasks WHERE id=?1",
+                                params![req.task_id], |row| row.get(0),
+                            ).ok().flatten();
                             let created_at = Utc::now().to_rfc3339();
                             let body = format!("Stage {} handoff\n\n{}", index + 1, handoff);
                             let agent_ids =
                                 serde_json::to_string(&vec![agent]).unwrap_or_else(|_| "[]".into());
-                            if conn
+                            if parent_id.is_some() && conn
                                 .execute(
-                                    "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
-                                    params![repo, agent, body, created_at, agent_ids],
+                                    "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids,parent_id) VALUES (?1,?2,?3,?4,?5,?6)",
+                                    params![repo, agent, body, created_at, agent_ids,parent_id],
                                 )
                                 .is_ok()
                             {
@@ -1757,7 +1852,8 @@ fn launch_chain_worker(
                                         "author": agent,
                                         "body": body,
                                         "created_at": created_at,
-                                        "agent_ids": [agent]
+                                        "agent_ids": [agent],
+                                        "parent_id": parent_id
                                     }),
                                 );
                             }
@@ -1853,7 +1949,7 @@ struct ProviderRepo {
 }
 async fn provider_token(provider: &str) -> Result<String, String> {
     let service = provider_service(provider)?;
-    local_secret_get(&service)?.ok_or_else(|| format!("No {provider} credential is connected"))
+    native_provider_secret(&service)?.ok_or_else(|| format!("No {provider} credential is connected"))
 }
 fn validate_azure_org_url(raw: &str) -> Result<String, String> {
     let value = raw.trim().trim_end_matches('/');
@@ -2071,6 +2167,7 @@ async fn sync_github(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
     let repos: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, "github")?;
     for repo in repos {
         let name = repo["full_name"].as_str().unwrap_or_default().to_string();
         let url = repo["html_url"].as_str().unwrap_or_default().to_string();
@@ -2116,6 +2213,7 @@ async fn sync_linear(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
     }
     let teams = payload["data"]["teams"]["nodes"].as_array().ok_or_else(|| "Linear returned no teams".to_string())?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, "linear")?;
     let mut out = Vec::new();
     for team in teams {
         let id = team["id"].as_str().unwrap_or_default();
@@ -2129,6 +2227,40 @@ async fn sync_linear(db: State<'_, Db>, app: AppHandle) -> Result<Vec<ProviderRe
     }
     let _ = app.emit("wand://provider", serde_json::json!({"provider":"linear","count":out.len()}));
     Ok(out)
+}
+
+async fn sync_linear_activity_impl(db: &Db, app: AppHandle) -> Result<u32, String> {
+    let token = provider_token("linear").await?;
+    let response = provider_http_client()?
+        .post("https://api.linear.app/graphql")
+        .header("Content-Type", "application/json")
+        .header("Authorization", &token)
+        .json(&serde_json::json!({"query":"query TeamIssues { teams(first: 100) { nodes { id key name issues(first: 50, orderBy: updatedAt) { nodes { id identifier title url updatedAt creator { name } } } } } }"}))
+        .send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() { return Err(format!("Linear returned {}", response.status())); }
+    let payload: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    if payload.get("errors").and_then(|v| v.as_array()).is_some_and(|v| !v.is_empty()) {
+        return Err("Linear returned a GraphQL error while loading issues".into());
+    }
+    let teams = payload["data"]["teams"]["nodes"].as_array().ok_or_else(|| "Linear returned no teams".to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut added = 0;
+    for team in teams {
+        let repo = format!("{} · {}", team["key"].as_str().unwrap_or("Linear"), team["name"].as_str().unwrap_or("team"));
+        for issue in team["issues"]["nodes"].as_array().into_iter().flatten() {
+            let id = format!("linear:{}", issue["id"].as_str().unwrap_or_default());
+            if id == "linear:" { continue; }
+            let changed = conn.execute("INSERT OR IGNORE INTO notifications(id,provider,repo,title,body,url,author,unread,created_at) VALUES (?1,'linear',?2,?3,?4,?5,?6,1,?7)", params![id, repo, issue["title"].as_str().unwrap_or("Linear issue"), issue["identifier"].as_str().unwrap_or_default(), issue["url"].as_str().unwrap_or_default(), issue["creator"]["name"].as_str().unwrap_or("Linear"), issue["updatedAt"].as_str().unwrap_or_default()]).map_err(|e| e.to_string())?;
+            added += changed as u32;
+        }
+    }
+    let _ = app.emit("wand://notifications", serde_json::json!({"provider":"linear","added":added}));
+    Ok(added)
+}
+
+#[tauri::command]
+async fn sync_linear_activity(db: State<'_, Db>, app: AppHandle) -> Result<u32, String> {
+    sync_linear_activity_impl(&db, app).await
 }
 
 #[tauri::command]
@@ -2208,6 +2340,7 @@ async fn sync_azure_devops(
     let payload: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    ensure_provider_agent(&conn, "azure-devops")?;
     for repo in payload["value"].as_array().cloned().unwrap_or_default() {
         let name = repo["name"].as_str().unwrap_or_default().to_string();
         let url = repo["webUrl"].as_str().unwrap_or_default().to_string();
@@ -2382,7 +2515,7 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     emit_provider_health(&app, "github", "ok", None);
 }
 async fn report_provider_credentials(app: AppHandle) {
-    for provider in ["github", "azure-devops"] {
+    for provider in ["github", "azure-devops", "linear"] {
         if let Err(error) = provider_token(provider).await {
             let _=app.emit("wand://provider",serde_json::json!({"provider":provider,"status":"error","error":format!("Credential check failed: {error}")}));
         }
@@ -2534,6 +2667,12 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
     emit_provider_health(&app, "azure-devops", "ok", None);
 }
 
+async fn background_linear_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
+    if provider_token("linear").await.is_err() { return; }
+    let db_state = Db(db);
+    let _ = sync_linear_activity_impl(&db_state, app).await;
+}
+
 fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
     thread::spawn(move || {
         let mut last_due: HashMap<String, String> = HashMap::new();
@@ -2569,7 +2708,8 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 tauri::async_runtime::spawn(async move {
                     report_provider_credentials(poll_app.clone()).await;
                     background_github_activity(poll_db.clone(), poll_app.clone()).await;
-                    background_azure_activity(poll_db, poll_app).await;
+                    background_azure_activity(poll_db.clone(), poll_app.clone()).await;
+                    background_linear_activity(poll_db, poll_app).await;
                     poll_running.store(false, Ordering::Release);
                 });
             }
@@ -2704,7 +2844,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); initialise_local_store(&dir).expect("initialise encrypted local store"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); encrypt_existing_repository_paths(&conn).expect("encrypt repository paths"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); initialise_local_store(&dir).expect("initialise encrypted local store"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); encrypt_existing_repository_paths(&conn).expect("encrypt repository paths"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear,sync_linear_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn read_repo_file(
@@ -3000,6 +3140,53 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn comments_are_scoped_to_root_posts_in_the_same_repo() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        conn.execute("INSERT INTO thread_messages(id,repo,author,body,created_at,parent_id) VALUES (1,'alpha','You','post','now',NULL),(2,'alpha','You','comment','now',1)", []).unwrap();
+        assert!(validate_comment_parent(&conn, "alpha", Some(1)).is_ok());
+        assert!(validate_comment_parent(&conn, "beta", Some(1)).is_err());
+        assert!(validate_comment_parent(&conn, "alpha", Some(2)).is_err());
+        assert!(validate_comment_parent(&conn, "alpha", Some(999)).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stage_cleanup_closes_pipes_inherited_by_descendants() {
+        use std::os::unix::process::CommandExt;
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "sleep 30 & exit 0"])
+            .process_group(0).stdout(Stdio::piped()).spawn().unwrap();
+        let mut pipe = child.stdout.take().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let reader = thread::spawn(move || {
+            let mut output = Vec::new();
+            let _ = tx.send(pipe.read_to_end(&mut output));
+        });
+        child.wait().unwrap();
+        terminate_stage_processes(&mut child);
+        assert!(rx.recv_timeout(Duration::from_secs(3)).unwrap().is_ok());
+        reader.join().unwrap();
+    }
+
+    #[test]
+    fn provider_agents_are_created_idempotently() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        for provider in ["github", "azure-devops", "linear"] {
+            ensure_provider_agent(&conn, provider).unwrap();
+            ensure_provider_agent(&conn, provider).unwrap();
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM agents WHERE id=?1 AND scope='workspace' AND color LIKE '#%'",
+                params![format!("provider:{provider}")], |row| row.get(0),
+            ).unwrap();
+            assert_eq!(count, 1);
+        }
+        assert!(ensure_provider_agent(&conn, "unsupported").is_err());
+    }
+
     #[test]
     fn registered_repo_root_rejects_unregistered_paths() {
         let registered_path = std::env::temp_dir().join(format!("wand-registered-{}", uuid::Uuid::new_v4()));
