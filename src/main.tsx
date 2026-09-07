@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { hasAgentMention } from "./mentions";
+import { accumulateDownload, installApprovedUpdate, type DownloadState } from "./update-installation";
 import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-persistence";
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -3604,8 +3605,12 @@ function ProviderHealth() {
   );
 }
 function UpdateBanner() {
-  const [update, setUpdate] = useState<any>(null);
+  const [update, setUpdate] = useState<Update | null>(null);
   const [busy, setBusy] = useState(false);
+  const installing = useRef(false);
+  const installedRef = useRef(false);
+  const [installed, setInstalled] = useState(false);
+  const [progress, setProgress] = useState<DownloadState>({ bytes: 0, finished: false });
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -3613,11 +3618,13 @@ function UpdateBanner() {
   useEffect(() => {
     if (!isTauriRuntime()) return;
     let active = true;
+    let inFlight = false;
     const checkForUpdate = async () => {
-      if (!active) return;
+      if (!active || inFlight || installing.current || installedRef.current) return;
+      inFlight = true;
       setChecking(true);
       try {
-        const value = await check();
+        const value = await check({ timeout: 15000 });
         if (!active) return;
         setError("");
         setUpdate(value ?? null);
@@ -3625,6 +3632,7 @@ function UpdateBanner() {
       } catch (reason) {
         if (active) setError(String(reason));
       } finally {
+        inFlight = false;
         if (active) setChecking(false);
       }
     };
@@ -3637,14 +3645,21 @@ function UpdateBanner() {
   }, [retryToken]);
   if ((!update && !error) || dismissed) return null;
   const install = async () => {
+    if (!update || installing.current) return;
+    installing.current = true;
     try {
       setBusy(true);
       setError("");
-      await update.downloadAndInstall();
-      await relaunch();
+      setProgress({ bytes: 0, finished: false });
+      await installApprovedUpdate(installedRef.current,
+        () => update.downloadAndInstall((event) => setProgress((current) => accumulateDownload(current, event)), { timeout: 120000 }),
+        () => { installedRef.current = true; setInstalled(true); },
+        relaunch);
     } catch (value) {
-      setBusy(false);
       setError(String(value));
+    } finally {
+      installing.current = false;
+      setBusy(false);
     }
   };
   const retry = () => {
@@ -3658,12 +3673,13 @@ function UpdateBanner() {
         <Sparkles size={15} />
       </div>
       <div className="update-banner-copy">
-        <strong>{busy ? "Installing update…" : update ? "Update available" : "Update check unavailable"}</strong>
-        <span>{update ? `Wand ${update.version}` : checking ? "Checking GitHub releases…" : "Retry when you are online"}</span>
+        <strong>{installed ? "Restart to finish updating" : busy ? (progress.finished ? "Installing update…" : "Downloading update…") : update ? "Update available" : "Update check unavailable"}</strong>
+        <span>{update ? `Wand ${update.version}` : checking ? "Checking GitHub releases…" : "Try checking again"}</span>
+        {busy && !installed && !progress.finished && <span role="status">{progress.total ? `${Math.min(100, Math.floor(progress.bytes / progress.total * 100))}% downloaded` : `${(progress.bytes / 1048576).toFixed(1)} MB downloaded`}</span>}
         {error && <small>{error}</small>}
       </div>
       <button onClick={update ? install : retry} disabled={busy || checking}>
-        {busy ? "Installing…" : update ? "Approve" : "Retry"}
+        {busy ? (installed ? "Restarting…" : "Updating…") : installed ? "Restart" : update ? "Approve" : "Retry"}
       </button>
       {!busy && <button className="update-dismiss" aria-label="Dismiss update status" onClick={() => setDismissed(true)}>×</button>}
     </section>
