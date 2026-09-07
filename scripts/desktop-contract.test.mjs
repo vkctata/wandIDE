@@ -33,3 +33,13 @@ test('desktop and website share the same sparkles-only icon source', () => {
   assert.equal(read('src-tauri/icons/wand.svg'), read('website/assets/wand-logo.svg'));
   assert.doesNotMatch(read('src/main.tsx'), /className="wand-d"/);
 });
+
+test('Tauri JavaScript and Rust packages have matching major/minor versions', () => {
+  const rust = new Map([...read('src-tauri/Cargo.lock').matchAll(/\[\[package\]\]\nname = "([^"]+)"\nversion = "([^"]+)"/g)].map((match) => [match[1], match[2]]));
+  const { packages } = JSON.parse(read('package-lock.json'));
+  for (const [name, entry] of Object.entries(packages)) {
+    if (!name.startsWith('node_modules/@tauri-apps/plugin-') && name !== 'node_modules/@tauri-apps/api') continue;
+    const crate = name.endsWith('/api') ? 'tauri' : name.replace('node_modules/@tauri-apps/', 'tauri-');
+    assert.equal(entry.version.split('.').slice(0, 2).join('.'), rust.get(crate)?.split('.').slice(0, 2).join('.'), `${crate} must match its JavaScript package`);
+  }
+});
