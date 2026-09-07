@@ -8,6 +8,15 @@ import { enhanceTour } from '../website/tour.js';
 const website = new URL('../website/', import.meta.url);
 const html = readFileSync(new URL('index.html', website), 'utf8');
 
+test('mobile navigation remains visible and primary controls have touch targets', () => {
+  const css = readFileSync(new URL('styles.css', website), 'utf8');
+  const mobile = css.split('@media (max-width: 640px)')[1];
+  assert.match(mobile, /\.site-nav nav \{[^}]*flex-wrap: wrap/);
+  assert.doesNotMatch(mobile, /overflow-x: auto/);
+  assert.match(css, /\.hero-meta a \{[^}]*min-height: 44px/);
+  assert.match(css, /\.theme-toggle, \.nav-cta \{[^}]*min-height: 44px/);
+});
+
 test('app tour supports selection, keyboard wrapping, and accessible panel relationships', () => {
   const element = () => ({
     attributes: {}, children: [], events: {}, hidden: false,
