@@ -4,6 +4,7 @@
   "version": "0.1.4",
   "type": "module",
   "scripts": {
+    "test:desktop": "node --test scripts/desktop-contract.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "check:ipc": "node scripts/check-ipc-contract.mjs",

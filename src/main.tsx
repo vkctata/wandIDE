@@ -10,7 +10,6 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 const LazyEditor = React.lazy(async () => {
   const module = await import("./editor");
   return { default: module.CodeEditor };
@@ -33,7 +32,6 @@ import {
   Hash,
   LayoutDashboard,
   MessageSquare,
-  Minus,
   Moon,
   Play,
   Plus,
@@ -41,7 +39,6 @@ import {
   Search,
   Settings,
   Sparkles,
-  Square,
   Sun,
   TerminalSquare,
   TimerReset,
@@ -62,6 +59,11 @@ import "./premium-plus.css";
 import "./threads.css";
 import "./native-ui.css";
 import "./minimal-ui.css";
+import brandIcon from "../src-tauri/icons/wand.svg";
+
+function WandBrand() {
+  return <span className="product-brand"><img src={brandIcon} alt="" /><span>Wand</span><em>beta</em></span>;
+}
 
 const isTauriRuntime = () =>
   typeof window !== "undefined" &&
@@ -389,6 +391,9 @@ function App() {
         ),
       )
       .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (settingsOpen) return;
     invoke<any[]>("list_agents")
       .then((rows) =>
         setAgentCatalog(
@@ -402,6 +407,8 @@ function App() {
     invoke<string[]>("cli_access")
       .then(setEnabledClis)
       .catch(() => setEnabledClis([]));
+  }, [settingsOpen]);
+  useEffect(() => {
     invoke<string | null>("user_name")
       .then((value) => {
         if (value) setUserName(value);
@@ -766,7 +773,7 @@ function App() {
     <div className="app">
       <aside>
         <div className="brand">
-          <span className="wand-wordmark">wan<span className="wand-d">d<svg className="d-sparkle" viewBox="0 0 22 15" aria-hidden="true"><path d="M7 0 8.5 5.5 14 7 8.5 8.5 7 14 5.5 8.5 0 7 5.5 5.5Z" /><path d="M18 0 18.7 2.3 21 3 18.7 3.7 18 6 17.3 3.7 15 3 17.3 2.3Z" /><path d="M17 9 17.6 10.9 19.5 11.5 17.6 12.1 17 14 16.4 12.1 14.5 11.5 16.4 10.9Z" /></svg></span><span className="wand-dot">.</span></span>
+          <WandBrand />
         </div>
         <div className="navgroup">
           {nav("home")}
@@ -852,6 +859,7 @@ function App() {
         {view === "home" ? (
           <Home
             openSettings={openSettings}
+            settingsOpen={settingsOpen}
             openTasks={() => setView("tasks")}
             userName={userName}
           />
@@ -877,10 +885,12 @@ function App() {
   );
 }
 function Home({
+  settingsOpen,
   openSettings,
   openTasks,
   userName,
 }: {
+  settingsOpen: boolean;
   openSettings: (tab?: string) => void;
   openTasks: () => void;
   userName: string;
@@ -892,19 +902,26 @@ function Home({
     created_at: string;
   };
   const [events, setEvents] = useState<Event[]>([]);
+  const [homeAgents, setHomeAgents] = useState<Array<{ id: string; name: string; role: string; cli: string; model: string }>>([]);
+  const [loadError, setLoadError] = useState("");
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const [localHour, setLocalHour] = useState<number | null>(null);
-  const refresh = () =>
-    invoke<Event[]>("list_events", { limit: 12 })
-      .then(setEvents)
-      .catch(() => setEvents([]));
+  const refresh = () => {
+    Promise.all([
+      invoke<Event[]>("list_events", { limit: 12 }),
+      invoke<typeof homeAgents>("list_agents"),
+    ]).then(([nextEvents, agents]) => {
+      setEvents(nextEvents); setHomeAgents(agents); setLoadError("");
+    }).catch(() => setLoadError("Could not refresh your activity. Try again."));
+  };
   useEffect(() => {
     refresh();
-    const names = ["wand://agent", "wand://scheduler", "wand://notifications"];
+    const names = ["wand://agent", "wand://agents", "wand://scheduler", "wand://notifications"];
     const stops = names.map((name) => listen(name, refresh));
     return () => {
-      stops.forEach((stop) => stop.then((fn) => fn()));
+      stops.forEach((stop) => stop.then((fn) => fn()).catch(() => {}));
     };
-  }, []);
+  }, [settingsOpen]);
   useEffect(() => {
     const readLocalHour = () => {
       invoke<number>("local_hour")
@@ -934,18 +951,19 @@ function Home({
           <Plus size={16} /> New task
         </button>
       </div>
+      {loadError && <div className="inline-error" role="alert">{loadError} <button className="textbtn" onClick={refresh}>Retry</button></div>}
       <div className="stats">
         <Stat
           icon={Zap}
           value={String(runs)}
           label="Agent events"
-          hint="Persisted local activity"
+          hint="In recent activity"
         />
         <Stat
           icon={GitPullRequest}
           value={String(reviews)}
           label="Review notifications"
-          hint="From provider sync"
+          hint="In recent activity"
         />
         <Stat
           icon={TimerReset}
@@ -971,32 +989,25 @@ function Home({
             </p>
           </div>
         )}
-        {events.map((event, i) => (
+        {(showAllEvents ? events : events.slice(0, 5)).map((event) => (
           <article className="event" key={event.id}>
-            <div
-              className={
-                "eventicon " + ["purple", "green", "yellow", "blue"][i % 4]
-              }
-            >
+            <div className="eventicon">
               <Activity size={17} />
             </div>
             <div className="eventbody">
               <div className="eventtop">
                 <span className="kind">{event.kind}</span>
-                <span className="tag blue">local</span>
                 <span className="time">{formatWorkspaceTime(event.created_at)}</span>
               </div>
               <h3>{event.message}</h3>
-              <p>
-                <span className="repo-dot" /> Wand runtime
-              </p>
             </div>
           </article>
         ))}
       </div>
+      {events.length > 5 && <button className="textbtn activity-expand" onClick={() => setShowAllEvents(!showAllEvents)}>{showAllEvents ? "Show less" : `Show all ${events.length} events`}</button>}
       <div className="sectionhead agents">
         <div>
-          <h2>Active agents</h2>
+          <h2>Your agents</h2>
           <p>Configured coding specialists.</p>
         </div>
         <button className="textbtn" onClick={() => openSettings("agents")}>
@@ -1004,24 +1015,8 @@ function Home({
         </button>
       </div>
       <div className="agentgrid">
-        <Agent
-          icon={Bot}
-          name="Code reviewer"
-          desc="Reviews new pull requests"
-          status="Watching your repos"
-        />
-        <Agent
-          icon={TerminalSquare}
-          name="Sentinel"
-          desc="Dependency & security audits"
-          status="Schedule available"
-        />
-        <Agent
-          icon={Code2}
-          name="Pair programmer"
-          desc="Your on-demand coding partner"
-          status="Ready when you are"
-        />
+        {homeAgents.slice(0, 3).map((agent) => <Agent key={agent.id} icon={Bot} name={agent.name} desc={agent.role} status={`${agent.cli} · ${agent.model === "default" ? "CLI default model" : agent.model}`} />)}
+        {!homeAgents.length && <p className="sub">Configure your first agent in Settings.</p>}
       </div>
     </section>
   );
@@ -1066,7 +1061,7 @@ function Agent({
         <h3>{name}</h3>
         <p>{desc}</p>
         <small>
-          <span className="green-dot" /> {status}
+          {status}
         </small>
       </div>
     </div>
@@ -2156,7 +2151,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
   return (
     <div className="onboarding">
       <div className="onboard-card">
-        <div className="onboard-mark" aria-hidden="true"><span className="wand-wordmark wand-wordmark-lg">wan<span className="wand-d">d<svg className="d-sparkle" viewBox="0 0 22 15"><path d="M7 0 8.5 5.5 14 7 8.5 8.5 7 14 5.5 8.5 0 7 5.5 5.5Z" /><path d="M18 0 18.7 2.3 21 3 18.7 3.7 18 6 17.3 3.7 15 3 17.3 2.3Z" /><path d="M17 9 17.6 10.9 19.5 11.5 17.6 12.1 17 14 16.4 12.1 14.5 11.5 16.4 10.9Z" /></svg></span><span className="wand-dot">.</span></span></div>
+        <div className="onboard-mark"><WandBrand /></div>
         <p className="eyebrow">WAND / GETTING STARTED</p>
         <h1>{current[0]}</h1>
         <p>{current[1]}</p>
@@ -3474,66 +3469,6 @@ function ModalHost() {
     </div>
   );
 }
-function WindowChrome() {
-  if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__)
-    return null;
-  // Native title bars provide the real platform corner geometry and window
-  // controls. Keeping a second HTML title bar made macOS look like a square
-  // web surface and duplicated the traffic lights.
-  return null;
-  const platform = runtimePlatform();
-  const appWindow = getCurrentWindow();
-  const runWindowCommand = (name: string, command: () => Promise<void>) => {
-    command().catch((error) =>
-      console.error(`Unable to ${name} the Wand window`, error),
-    );
-  };
-  const toggleMacFullscreen = async () => {
-    const fullscreen = await appWindow.isFullscreen();
-    await appWindow.setFullscreen(!fullscreen);
-  };
-  return (
-    <div className={`window-chrome ${platform}${platform === "macos" ? " mac" : ""}`}>
-      <div className="window-drag" data-tauri-drag-region />
-      <div className="window-controls">
-        <button
-          className="window-minimize"
-          aria-label="Minimize Wand"
-          onClick={() =>
-            runWindowCommand("minimize", () => appWindow.minimize())
-          }
-        >
-          <Minus size={13} />
-        </button>
-        <button
-          className="window-maximize"
-          aria-label={
-            platform === "macos" ? "Enter or exit full screen" : "Maximize Wand"
-          }
-          title={platform === "macos" ? "Enter Full Screen" : "Maximize Wand"}
-          onClick={() =>
-            runWindowCommand(
-              platform === "macos" ? "toggle full screen" : "maximize",
-              () =>
-                platform === "macos"
-                  ? toggleMacFullscreen()
-                  : appWindow.toggleMaximize(),
-            )
-          }
-        >
-          <Square size={12} />
-        </button>
-        <button
-          className="window-close"
-          aria-label="Close Wand"
-          onClick={() => runWindowCommand("close", () => appWindow.close())}
-        >
-          <X size={13} />
-        </button>
-      </div>
-    </div>
-  );
-}
 function BackgroundStatus() {
   const [status, setStatus] = useState("Starting background workers…");
   const [when, setWhen] = useState("");
@@ -3674,7 +3609,7 @@ function UpdateBanner() {
     setRetryToken((token) => token + 1);
   };
   return (
-    <aside className="update-banner" aria-label={update ? "Wand update available" : "Wand update status"}>
+    <section className="update-banner" aria-label={update ? "Wand update available" : "Wand update status"}>
       <div className="update-banner-icon">
         <Sparkles size={15} />
       </div>
@@ -3687,7 +3622,7 @@ function UpdateBanner() {
         {busy ? "Installing…" : update ? "Approve" : "Retry"}
       </button>
       {!busy && <button className="update-dismiss" aria-label="Dismiss update status" onClick={() => setDismissed(true)}>×</button>}
-    </aside>
+    </section>
   );
 }
 function RuntimeIdentity() {
@@ -3728,7 +3663,6 @@ function OnboardingGate() {
   return (
     <>
       <App />
-      <WindowChrome />
       <BackgroundStatus />
       <ProviderHealth />
       <UpdateBanner />

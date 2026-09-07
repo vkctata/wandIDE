@@ -1,6 +1,9 @@
 /* Final desktop presentation contract. Keep native window geometry and user
    font/accent preferences; surfaces should never depend on decorative effects. */
 body[data-theme] {
+  --wand-accent: #a4b8ef;
+  --wand-accent-2: #a4b8ef;
+  --wand-action-ink: #182236;
   --wand-surface: #202226;
   --wand-surface-2: #191b1e;
   --wand-ink: #eceef0;
@@ -9,6 +12,9 @@ body[data-theme] {
   --wand-border: #34373d;
 }
 body[data-theme="daylight"], body[data-theme="porcelain"] {
+  --wand-accent: #4966ac;
+  --wand-accent-2: #4966ac;
+  --wand-action-ink: #ffffff;
   --wand-surface: #ffffff;
   --wand-surface-2: #f6f7f8;
   --wand-ink: #252a32;
@@ -113,4 +119,57 @@ body[data-theme] aside :is(.nav.active, .repo.selected) {
     animation: none !important; transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Native, quiet chrome: only interaction feedback moves, never decoration. */
+body[data-theme] :is(.pulse, .green-dot, .status, .d-sparkle, .brand,
+  .onboard-card, .wand-modal, .settings-modal, .thread-card, .event,
+  .agent, .stat, .primary, .mode-btn, .font-option) {
+  animation: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+body[data-theme] :is(.settings-modal-backdrop, .wand-modal-backdrop) {
+  backdrop-filter: none !important;
+  background: rgba(0, 0, 0, .28);
+  animation: none !important;
+}
+body[data-theme] .brand { justify-content: flex-start; padding: 10px 10px 24px; }
+body[data-theme] .product-brand { display: flex !important; align-items: center; gap: 9px; color: var(--wand-ink); }
+body[data-theme] .product-brand img { width: 30px; height: 30px; flex: none; }
+body[data-theme] .product-brand > span { display: inline; font: 600 20px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -.5px; }
+body[data-theme] .product-brand em { align-self: flex-start; font: italic 11px/1.4 Georgia, serif; color: var(--wand-muted); padding-top: 1px; }
+body[data-theme] .timeline { border: 1px solid var(--wand-border); border-radius: 10px; overflow: hidden; }
+body[data-theme] .timeline .event {
+  margin: 0; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--wand-border);
+  border-radius: 0; background: var(--wand-surface) !important; backdrop-filter: none !important;
+}
+body[data-theme] .timeline .event:last-child { border-bottom: 0; }
+body[data-theme] .eventicon { background: transparent !important; color: var(--wand-muted) !important; width: 24px; height: 24px; }
+body[data-theme] .eventbody { min-width: 0; }
+body[data-theme] .event h3 { margin: 5px 0 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+body[data-theme] .activity-expand { margin-top: 12px; }
+body[data-theme] .agents { margin-top: 28px; }
+body[data-theme] .agent > div:last-child { min-width: 0; }
+body[data-theme] .agent p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
+body[data-theme] :is(.stat small, .agent small, .event .kind, .event .time) { color: var(--wand-muted) !important; }
+body[data-theme] :is(.mode-btn, .font-option, .outline, .filter, .run) {
+  background: var(--wand-surface) !important; color: var(--wand-ink) !important;
+  border-color: var(--wand-border) !important; box-shadow: none !important;
+}
+body[data-theme] :is(.mode-btn.active, .font-option.active, .settings-nav-item.active) {
+  background: color-mix(in srgb, var(--wand-accent) 9%, var(--wand-surface)) !important;
+  border-color: var(--wand-accent) !important; color: var(--wand-ink) !important;
+}
+body[data-theme] :is(.font-option em, .stat > svg, .nav.active svg, .repo.active svg) { color: var(--wand-accent) !important; }
+@media (max-width: 760px) {
+  body[data-theme] .product-brand > span, body[data-theme] .product-brand em { display: none; }
+  body[data-theme] .brand { justify-content: center; padding-inline: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-theme] :is(.pulse, .green-dot, .status, .d-sparkle, .brand,
+    .onboard-card, .wand-modal, .settings-modal, .thread-card, .event,
+    .agent, .stat, .primary, .mode-btn, .font-option) { transition: none !important; }
 }
