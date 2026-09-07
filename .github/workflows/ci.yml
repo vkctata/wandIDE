@@ -28,6 +28,7 @@ jobs:
         run: cmp src-tauri/icons/wand.svg website/assets/wand-logo.svg
       - run: npm run check:ipc
       - run: npm run test:desktop
+      - run: node --test scripts/website.test.mjs
       - run: npm run build
 
   rust-check:

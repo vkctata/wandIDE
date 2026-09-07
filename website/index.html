@@ -3,32 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Wand is the local-first desktop workspace for running coding agents across repositories, tasks, reviews, and verification — with focused dark and misty glass light modes." />
+    <meta name="description" content="Wand is the local-first desktop workspace for running coding agents across repositories, tasks, reviews, and verification — with configurable agents and local task history." />
     <meta name="theme-color" content="#0d0d12" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.github.com https:; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Wand — run the whole engineering loop" />
-    <meta property="og:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification, with focused dark and misty glass light modes." />
+    <meta property="og:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification, with configurable agents and local task history." />
     <meta property="og:image" content="https://vkctata.github.io/wandIDE/assets/wand-home-obsidian.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Wand — run the whole engineering loop" />
-    <meta name="twitter:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification, with focused dark and misty glass light modes." />
+    <meta name="twitter:description" content="A local-first desktop workspace for coding agents, repositories, tasks, reviews, and verification, with configurable agents and local task history." />
     <meta name="twitter:image" content="https://vkctata.github.io/wandIDE/assets/wand-home-obsidian.jpg" />
     <title>Wand — run the whole engineering loop</title>
     <link rel="icon" type="image/svg+xml" href="./assets/wand-logo.svg" />
     <link rel="stylesheet" href="./styles.css" />
+    <script src="./theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-nav" aria-label="Primary navigation">
-      <a class="brand" href="#top" aria-label="Wand home"><span class="brand-word">wan<span class="brand-d">d<svg viewBox="0 0 22 15" aria-hidden="true"><path d="M7 0 8.5 5.5 14 7 8.5 8.5 7 14 5.5 8.5 0 7 5.5 5.5Z" /><path d="M18 0 18.7 2.3 21 3 18.7 3.7 18 6 17.3 3.7 15 3 17.3 2.3Z" /><path d="M17 9 17.6 10.9 19.5 11.5 17.6 12.1 17 14 16.4 12.1 14.5 11.5 16.4 10.9Z" /></svg></span><span class="brand-dot">.</span></span></a>
+      <a class="brand" href="#top" aria-label="Wand home"><img src="./assets/wand-logo.svg" width="32" height="32" alt="" /><span>Wand</span><i>beta</i></a>
       <nav aria-label="Site links">
         <a href="#workflow">Workflow</a>
         <a href="#product">Product</a>
-        <a href="#themes">Themes</a>
+        <a href="#screenshots">App tour</a>
         <a href="#security">Security</a>
       </nav>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark appearance" hidden>Dark mode</button>
       <a class="nav-cta" href="#download">Download <span aria-hidden="true">↗</span></a>
     </header>
 
@@ -37,27 +39,25 @@
         <div class="hero-copy">
           <p class="eyebrow"><span class="live-dot"></span> Local-first agent workspace</p>
           <h1>Run the whole<br />engineering <em>loop.</em></h1>
-          <p class="lede">Wand puts your coding agents, repositories, tasks, reviews, and background verification in one focused desktop workspace — tuned for either a calm misty canvas or a focused charcoal grid.</p>
+          <p class="lede">Give your coding agents a shared place to work. Connect local repositories, assign specialists, and follow each task from request to review.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#download">Get Wand <span aria-hidden="true">↗</span></a>
             <a class="button button-quiet" href="https://github.com/vkctata/wandIDE" target="_blank" rel="noopener noreferrer">Explore the source <span aria-hidden="true">↗</span></a>
           </div>
           <ul class="hero-meta" aria-label="Supported platforms and privacy">
-            <li>macOS</li><li>Windows</li><li>Linux</li><li>Private by default</li>
+            <li><a href="#download">macOS</a></li><li><a href="#download">Windows</a></li><li><a href="#download">Linux</a></li><li>Open source</li>
           </ul>
         </div>
         <div class="hero-product" aria-label="Wand product preview">
           <div class="window-chrome"><span></span><span></span><span></span><b>wand / workspace</b></div>
-          <img src="./assets/wand-home-obsidian.jpg" alt="Latest Wand desktop workspace in focused Dark Mode" />
-          <div class="agent-status status-builder"><span>B</span><div><small>BUILDER</small><strong>Implementing</strong></div><i></i></div>
-          <div class="agent-status status-sentinel"><span>S</span><div><small>SENTINEL</small><strong>Verification queued</strong></div><i></i></div>
+          <img src="./assets/wand-home-obsidian.jpg" alt="Wand beta desktop workspace in Dark Mode" />
         </div>
       </section>
 
       <div class="signal-strip" aria-label="Product principles">
-        <p><span>01</span> Your code stays local</p>
+        <p><span>01</span> Local repositories</p>
         <p><span>02</span> Every handoff stays visible</p>
-        <p><span>03</span> Verification keeps running</p>
+        <p><span>03</span> Explicit agent runtimes</p>
       </div>
 
       <section class="workflow section" id="workflow">
@@ -68,12 +68,12 @@
         </div>
         <ol class="workflow-grid">
           <li><span>01</span><div class="role-icon">P</div><h3>Plan</h3><p>Turn the task into an ordered approach with the right repository context.</p><small>PLANNER</small></li>
-          <li><span>02</span><div class="role-icon">B</div><h3>Build</h3><p>Run your chosen local coding CLI against a tightly scoped workspace.</p><small>BUILDER</small></li>
+          <li><span>02</span><div class="role-icon">B</div><h3>Build</h3><p>Use an enabled Claude, Codex, Kimi, or Gemini CLI with its own model and responsibility.</p><small>BUILDER</small></li>
           <li><span>03</span><div class="role-icon">R</div><h3>Review</h3><p>Inspect diffs, provider activity, and the reasoning passed between stages.</p><small>REVIEWER</small></li>
-          <li><span>04</span><div class="role-icon">S</div><h3>Verify</h3><p>Keep a final sentinel on the task until the checks and outcome line up.</p><small>SENTINEL</small></li>
+          <li><span>04</span><div class="role-icon">S</div><h3>Verify</h3><p>Let a separate verification stage check the result. Review its evidence before accepting changes.</p><small>SENTINEL</small></li>
         </ol>
         <div class="run-console" aria-label="Example Wand agent run">
-          <div class="console-bar"><span class="console-lights"><i></i><i></i><i></i></span><b>agent-run / repository:wand</b><span class="console-live"><i></i> LIVE</span></div>
+          <div class="console-bar"><span class="console-lights"><i></i><i></i><i></i></span><b>agent-run / repository:wand</b><span class="console-live">ILLUSTRATIVE RUN</span></div>
           <div class="console-body">
             <div class="console-log">
               <p><span>09:41:02</span><b>PLANNER</b> Scope confirmed · 4 files</p>
@@ -98,7 +98,7 @@
           </article>
           <article class="bento bento-tall">
             <span class="card-number">02</span><h3>One focused control center</h3><p>Settings stay in one spacious modal for appearance, workspace, providers, CLI access, agents, and notifications.</p>
-            <img src="./assets/wand-settings-daylight.jpg" alt="Latest Wand Settings modal with focused sections in Light Mode" loading="lazy" />
+            <img src="./assets/wand-settings-daylight.jpg" alt="Wand beta settings with separate configuration sections" loading="lazy" />
           </article>
           <article class="bento bento-dark">
             <span class="card-number">03</span><h3>Background work without the mystery</h3><p>Scheduled runs, sync events, notifications, and handoffs land in one readable timeline.</p>
@@ -109,54 +109,59 @@
 
       <section class="themes section" id="themes" aria-labelledby="themes-title">
         <div class="section-intro row">
-          <div><p class="eyebrow">Two considered appearances</p><h2 id="themes-title">Misty by day.<br /><em>Focused by night.</em></h2></div>
-          <p>The same unified settings structure is shown in both appearances: frosted blue-grey chrome by day and charcoal with signal-green accents by night.</p>
+          <div><p class="eyebrow">Two considered appearances</p><h2 id="themes-title">Light or dark.<br /><em>Your preference.</em></h2></div>
+          <p>Choose your appearance in Settings. The website also follows your system preference, with a switch at the top to make it your own.</p>
         </div>
         <div class="theme-preview-grid">
-          <figure class="theme-preview daylight-preview"><img src="./assets/wand-settings-daylight.jpg" alt="Wand unified settings in misty glass Light Mode" loading="lazy" /><figcaption><span>01</span><div><b>Light Mode</b><p>Misty glass, dark ink, and a quieter grid.</p></div></figcaption></figure>
+          <figure class="theme-preview daylight-preview"><img src="./assets/wand-settings-daylight.jpg" alt="Wand unified settings in Light Mode" loading="lazy" /><figcaption><span>01</span><div><b>Light Mode</b><p>Clear surfaces for a bright workspace.</p></div></figcaption></figure>
           <figure class="theme-preview obsidian-preview"><img src="./assets/wand-settings-obsidian.jpg" alt="Wand unified settings in focused Dark Mode" loading="lazy" /><figcaption><span>02</span><div><b>Dark Mode</b><p>The same settings layout in deep charcoal.</p></div></figcaption></figure>
         </div>
       </section>
 
-      <section class="screens section" aria-labelledby="screens-title">
+      <section class="screens section" id="screenshots" aria-labelledby="screens-title">
         <div class="section-intro row">
           <div><p class="eyebrow">Inside Wand</p><h2 id="screens-title">See the work.<br /><em>Keep the thread.</em></h2></div>
           <p>Tasks, activity, provider events, and agent handoffs stay close to the code instead of disappearing across tools.</p>
         </div>
+        <p class="capture-note">Screenshots from earlier beta builds. The current app is evolving; see release notes for changes.</p>
         <div class="gallery">
-          <figure class="gallery-main"><img src="./assets/wand-home-daylight.jpg" alt="Latest Wand home workspace in Light Mode" loading="lazy" /><figcaption><b>Light workspace</b><span>Readable dark ink, translucent cards, and a restrained grid for everyday work.</span></figcaption></figure>
-          <figure><img src="./assets/wand-settings-daylight.jpg" alt="Wand unified settings in Light Mode" loading="lazy" /><figcaption><b>Unified settings</b><span>Appearance, workspace, providers, agents, and notifications in one modal.</span></figcaption></figure>
-          <figure><img src="./assets/wand-settings-obsidian.jpg" alt="Wand unified settings in Dark Mode" loading="lazy" /><figcaption><b>Same structure, Dark Mode</b><span>The identical navigation and settings pane, tuned for low-light focus.</span></figcaption></figure>
+          <figure><a href="./assets/wand-tasks.jpg" target="_blank" rel="noopener"><img src="./assets/wand-tasks.jpg" alt="Scheduled tasks and run history in Wand" loading="lazy" width="1280" height="720" /></a><figcaption><b>Scheduled work</b><span>Assign recurring repository tasks with cron schedules. Wand must be running for local workers to execute them.</span></figcaption></figure>
+          <figure><a href="./assets/wand-threads.jpg" target="_blank" rel="noopener"><img src="./assets/wand-threads.jpg" alt="Repository conversation area in an earlier Wand beta" loading="lazy" width="1280" height="720" /></a><figcaption><b>Repository conversations</b><span>Tag a specialist on a post. Follow the full request and its comments in the side pane.</span></figcaption></figure>
+          <figure><a href="./assets/wand-providers.jpg" target="_blank" rel="noopener"><img src="./assets/wand-providers.jpg" alt="Provider connection settings in Wand" loading="lazy" width="1280" height="720" /></a><figcaption><b>Connected tools</b><span>Manage GitHub, Azure DevOps, and Linear connections in Settings. Credentials stay in native credential storage.</span></figcaption></figure>
+          <figure><a href="./assets/wand-notifications.jpg" target="_blank" rel="noopener"><img src="./assets/wand-notifications.jpg" alt="Wand notification inbox" loading="lazy" width="1280" height="720" /></a><figcaption><b>One place for updates</b><span>Review provider activity and agent events, with notification preferences in Settings.</span></figcaption></figure>
         </div>
       </section>
 
       <section class="security section" id="security">
-        <div class="security-copy"><p class="eyebrow">Built around the boundary</p><h2>Local-first is a<br />security decision.</h2><p>Wand keeps process execution behind the Rust boundary and provider credentials in your operating system’s credential manager—not in browser storage or the project database.</p><a href="https://github.com/vkctata/wandIDE/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Read the security policy <span aria-hidden="true">↗</span></a></div>
+        <div class="security-copy"><p class="eyebrow">Built around the boundary</p><h2>Local-first is a<br />security decision.</h2><p>Wand stores workspace history locally and provider credentials in your operating system’s credential manager. Coding CLIs may send code and prompts to their model providers; their authentication and data policies still apply.</p><a href="https://github.com/vkctata/wandIDE/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Read the security policy <span aria-hidden="true">↗</span></a></div>
         <ul class="security-list">
           <li><span>01</span><div><b>Native credential storage</b><p>Installation-scoped secrets stay in Keychain, Credential Manager, or Secret Service.</p></div></li>
           <li><span>02</span><div><b>Scoped repository access</b><p>File operations are resolved against registered local repositories.</p></div></li>
-          <li><span>03</span><div><b>Signed updates</b><p>Desktop updates are verified before installation.</p></div></li>
+          <li><span>03</span><div><b>Signed updates</b><p>The updater verifies release signatures and asks for approval before installation. Updater signing is separate from OS notarization.</p></div></li>
           <li><span>04</span><div><b>Visible execution</b><p>CLI access is explicit, allowlisted, and attached to a task history.</p></div></li>
         </ul>
       </section>
 
       <section class="download section" id="download">
-        <div class="section-intro compact"><p class="eyebrow">Start your next run</p><h2>Bring the whole crew.</h2><p>Choose your platform. Download links resolve to the matching asset from the latest GitHub Release.</p></div>
+        <div class="section-intro compact"><p class="eyebrow">Start your next run</p><h2>Bring the whole crew.</h2><p>Choose your processor and platform. Each installer links to the latest published GitHub Release, which may trail changes on main.</p></div>
+        <p id="release-status" class="release-status" role="status">Installer links open GitHub Releases if a direct download cannot be resolved.</p>
         <div class="download-grid">
           <a class="download-card" data-release-asset="aarch64.dmg" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer"><svg class="platform-icon platform-apple" viewBox="0 0 32 32" aria-hidden="true"><path d="M20.8 10.3c1.2-1.5 2-3.6 1.8-5.7-1.9.1-4.1 1.3-5.3 2.8-1.1 1.3-2.1 3.4-1.8 5.4 2 .2 4.1-1 5.3-2.5Z"/><path d="M27.3 21.5c-1 2.3-2.3 4.5-4.2 4.5-1.4 0-1.9-.9-3.6-.9s-2.3.9-3.7.9c-1.8.1-3.3-2.4-4.3-4.7-2.1-4.9-2.4-10.6.2-12.2 1.8-1.1 4 .1 5.1.1 1 0 3.6-1.3 5.8-.2.9.4 2.6 1.5 3.2 3.8-2.7 1.3-3.2 5.2-.5 6.7.4.2 1.2.7 2 .8-.1.4-.3.8-.5 1.2Z"/></svg><div><strong>macOS</strong><small>Apple Silicon · DMG</small></div><b aria-hidden="true">↗</b></a>
           <a class="download-card" data-release-asset="_x64.dmg" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer"><svg class="platform-icon platform-apple" viewBox="0 0 32 32" aria-hidden="true"><path d="M20.8 10.3c1.2-1.5 2-3.6 1.8-5.7-1.9.1-4.1 1.3-5.3 2.8-1.1 1.3-2.1 3.4-1.8 5.4 2 .2 4.1-1 5.3-2.5Z"/><path d="M27.3 21.5c-1 2.3-2.3 4.5-4.2 4.5-1.4 0-1.9-.9-3.6-.9s-2.3.9-3.7.9c-1.8.1-3.3-2.4-4.3-4.7-2.1-4.9-2.4-10.6.2-12.2 1.8-1.1 4 .1 5.1.1 1 0 3.6-1.3 5.8-.2.9.4 2.6 1.5 3.2 3.8-2.7 1.3-3.2 5.2-.5 6.7.4.2 1.2.7 2 .8-.1.4-.3.8-.5 1.2Z"/></svg><div><strong>macOS</strong><small>Intel · DMG</small></div><b aria-hidden="true">↗</b></a>
           <a class="download-card" data-release-asset="_x64_en-US.msi" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer"><svg class="platform-icon platform-windows" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 6.5 14.2 5v10.1H4V6.5Zm11.8-1.7L28 3v12.1H15.8V4.8ZM4 16.9h10.2V27L4 25.5V16.9Zm11.8 0H28V29l-12.2-1.7V16.9Z"/></svg><div><strong>Windows</strong><small>x64 · MSI</small></div><b aria-hidden="true">↗</b></a>
           <a class="download-card" data-release-asset="_amd64.AppImage" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer"><svg class="platform-icon platform-linux" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4.3c-3.5 0-5.7 3.7-5.7 8.3 0 1.5.3 2.8.8 3.9-1.8 1.8-3 4.5-3 7.1 0 1.7.7 2.8 1.8 2.8 1 0 1.8-1.1 2.7-1.1.9 0 1.7.8 3.4.8s2.5-.8 3.4-.8c.9 0 1.7 1.1 2.7 1.1 1.1 0 1.8-1.1 1.8-2.8 0-2.6-1.2-5.3-3-7.1.5-1.1.8-2.4.8-3.9 0-4.6-2.2-8.3-5.7-8.3Z"/><circle cx="13.4" cy="11.9" r="1.15" fill="var(--night)"/><circle cx="18.6" cy="11.9" r="1.15" fill="var(--night)"/><path d="M13.3 16.1c.8.7 1.8 1 2.7 1s1.9-.3 2.7-1c-.3 1.8-1.3 2.9-2.7 2.9s-2.4-1.1-2.7-2.9Z" fill="var(--night)"/></svg><div><strong>Linux</strong><small>x64 · AppImage</small></div><b aria-hidden="true">↗</b></a>
         </div>
+        <p class="download-help">Already have a coding CLI? Enable it in Wand’s Settings after installation. A supported CLI account and model are required to run agents.</p>
+        <a class="text-link" href="https://github.com/vkctata/wandIDE/releases/latest">Release notes and all package formats ↗</a>
       </section>
 
       <section class="newsletter section">
-        <div><p class="eyebrow">The Wand letter</p><h2>Release notes.<br />No noise.</h2><p>Occasional notes about releases, agent capabilities, and thoughtful engineering workflows.</p></div>
-        <form id="newsletter-form" novalidate><label for="email">Email address</label><div class="email-row"><input id="email" name="email" type="email" required maxlength="254" placeholder="you@example.com" autocomplete="email" inputmode="email" /><button class="button button-primary" type="submit">Keep me posted</button></div><p class="form-note" id="form-note" aria-live="polite">No spam. Unsubscribe whenever you like.</p></form>
+        <div><p class="eyebrow">The Wand letter</p><h2>Release notes.<br />No noise.</h2><p>Follow releases for new features and fixes. Email updates will be available when a mailing service is connected.</p><a class="text-link" href="https://github.com/vkctata/wandIDE/releases">Follow releases on GitHub ↗</a></div>
+        <form id="newsletter-form" novalidate hidden><label for="email">Email address</label><div class="email-row"><input id="email" name="email" type="email" required maxlength="254" placeholder="you@example.com" autocomplete="email" inputmode="email" /><button class="button button-primary" type="submit">Keep me posted</button></div><p class="form-note" id="form-note" aria-live="polite">Email signup is not connected yet. Follow releases on GitHub for now.</p></form>
       </section>
     </main>
 
-    <footer><a class="brand" href="#top"><span class="brand-word">wan<span class="brand-d">d<svg viewBox="0 0 22 15" aria-hidden="true"><path d="M7 0 8.5 5.5 14 7 8.5 8.5 7 14 5.5 8.5 0 7 5.5 5.5Z" /><path d="M18 0 18.7 2.3 21 3 18.7 3.7 18 6 17.3 3.7 15 3 17.3 2.3Z" /><path d="M17 9 17.6 10.9 19.5 11.5 17.6 12.1 17 14 16.4 12.1 14.5 11.5 16.4 10.9Z" /></svg></span><span class="brand-dot">.</span></span></a><p>Local-first tools for thoughtful software.</p><div><a href="https://github.com/vkctata/wandIDE" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer">Releases ↗</a></div></footer>
-    <script src="./main.js"></script>
+    <footer><a class="brand" href="#top" aria-label="Wand home"><img src="./assets/wand-logo.svg" width="32" height="32" alt="" /><span>Wand</span><i>beta</i></a><p>Local-first tools for thoughtful software.</p><div><a href="https://github.com/vkctata/wandIDE" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer">Releases ↗</a></div></footer>
+    <script src="./main.js" type="module"></script>
   </body>
 </html>
