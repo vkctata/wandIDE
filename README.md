@@ -43,6 +43,7 @@ The current build provides the desktop-ready product foundation:
 - Repository threads with live human/agent messages and persisted agent handoff comments
 - Tagging an agent in a repository thread creates a persisted one-off task and starts the ordered handoff plus final Sentinel verification chain; tagged work appears immediately in Tasks
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
+- Activity stage summaries display configured agent names while preserving original event history and output.
 - Monaco file editor with guarded repository saves and Git original-versus-modified diff viewer
 - Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
 - Tauri icon and desktop configuration for macOS and Windows

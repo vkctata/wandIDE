@@ -2,6 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
+import { activityMessage } from '../src/activity-labels.ts';
+
+test('activity summaries resolve exact agent IDs without rewriting user output', () => {
+  const agents = [{ id: 'repo:Moon Cheese:engineer', name: 'Moon Cheese engineer' }];
+  const source = 'repo:Moon Cheese:engineer completed stage 2';
+  assert.equal(activityMessage('agent.completed', source, agents), 'Moon Cheese engineer completed stage 2');
+  assert.equal(activityMessage('provider.updated', source, agents), source);
+  assert.equal(activityMessage('agent.completed', source, []), source);
+  assert.equal(activityMessage('agent.completed', 'Output mentions repo:Moon Cheese:engineer', agents), 'Output mentions repo:Moon Cheese:engineer');
+  assert.equal(activityMessage('agent.completed', 'other completed stage 2', agents), 'other completed stage 2');
+});
 
 test('agent insertion follows the cursor and preserves the rest of a draft', () => {
   const body = 'Ask @Bu to inspect the diff, then @Reviewer.';

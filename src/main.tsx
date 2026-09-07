@@ -5,6 +5,7 @@ import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-p
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
 import { messagePreview } from "./message-blocks";
+import { activityMessage } from "./activity-labels";
 import { submitOnce } from "./submission";
 import { readThreadSnapshot, mergeThreadSnapshot } from "./thread-refresh";
 import { persistAppearance, readPreviewAppearance, type AppearanceSetting } from "./appearance-persistence";
@@ -1003,7 +1004,7 @@ function Home({
                 <span className="kind">{event.kind}</span>
                 <span className="time">{formatWorkspaceTime(event.created_at)}</span>
               </div>
-              <h3>{event.message}</h3>
+              <h3>{activityMessage(event.kind, event.message, homeAgents)}</h3>
             </div>
           </article>
         ))}
