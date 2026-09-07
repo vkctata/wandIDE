@@ -1,5 +1,7 @@
 # Wand
 
+The desktop interface uses flat, neutral surfaces, system typography by default, and minimal interaction motion. A shared sparkles-only icon is generated for the platform installers. Home shows persisted agents and recent activity instead of placeholder agent cards. Native desktop permissions cover repository browsing, live events, notification consent, and restarting after an approved update.
+
 Desktop reliability: macOS uses native window controls and rounded corners. Agent stages have a 30-minute deadline covering both process execution and output draining; timed-out process trees are terminated so inherited output pipes cannot leave a run waiting indefinitely. Provider-agent creation is covered by a database regression test.
 
 Repository posts open in a detail pane with persistent comments. Findings from tagged-agent tasks are saved as replies to the originating post by the native worker, including when the frontend is closed. Comments are restricted to root posts in the same repository. Tasks without an originating post retain their output in run transcripts.
@@ -13,8 +15,8 @@ The current build provides the desktop-ready product foundation:
 - Tauri 2 desktop shell with a Rust command boundary
 - React + TypeScript frontend powered by Vite
 - Wand first-run onboarding walkthrough
-- Premium responsive workspace UI with configurable dark/light accent themes, subtle gradients, and reduced-motion support
-- Borderless themed desktop chrome with in-app minimize, maximize, and close controls
+- Minimal responsive UI with neutral dark/light surfaces, restrained accents, clear separators, and reduced-motion support
+- Native macOS window controls and rounded corners, with platform-specific desktop chrome
 - Local repository workspace and task persistence in SQLite through the Tauri boundary, including manually added repositories
 - Pre-built engineering agent catalog:
   - Planner
@@ -57,7 +59,7 @@ The background Rust worker wakes every 30 seconds. It monitors recurring cron ta
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 24+ (CI uses Node 24)
 - npm
 - Rust stable and Cargo
 - Tauri platform prerequisites for the operating system you are building on
@@ -123,12 +125,14 @@ Run the frontend build:
 
 ```bash
 npm run build
+npm run test:desktop
+npm run check:ipc
 ```
 
 Run the Rust/Tauri check:
 
 ```bash
-cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
 ```
 
 ## Desktop builds
