@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { hasAgentMention } from '../src/mentions.ts';
+
+test('deleted and partial mentions cannot leave an agent selected', () => {
+  assert.equal(hasAgentMention('', 'Builder'), false);
+  assert.equal(hasAgentMention('Write documentation', 'Builder'), false);
+  assert.equal(hasAgentMention('@Builder helper', 'Builder'), true);
+  assert.equal(hasAgentMention('@BuilderExtra helper', 'Builder'), false);
+  assert.equal(hasAgentMention('@Moon Cheese Inspector engineer inspect this', 'Moon Cheese Inspector engineer'), true);
+  assert.equal(hasAgentMention('@Moon Cheese inspect this', 'Moon Cheese Inspector engineer'), false);
+  assert.equal(hasAgentMention('(@QA [review]), inspect', 'QA [review]'), true);
+  assert.equal(hasAgentMention('email@Builder', 'Builder'), false);
+});
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 

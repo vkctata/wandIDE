@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { hasAgentMention } from "./mentions";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -2741,6 +2742,10 @@ function AgentMentionInput({
   };
   const update = (next: string) => {
     onChange(next);
+    onTagged(tagged.filter((id) => {
+      const agent = available.find((candidate) => candidate.id === id);
+      return agent ? hasAgentMention(next, agent.name) : false;
+    }));
     const at = next.lastIndexOf("@");
     const fragment = at >= 0 ? next.slice(at + 1) : "";
     setQuery(fragment);
