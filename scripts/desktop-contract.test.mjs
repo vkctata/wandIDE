@@ -16,6 +16,17 @@ test('deleted and partial mentions cannot leave an agent selected', () => {
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('Monaco permits generated styles without weakening script policy', () => {
+  const { security } = JSON.parse(read('src-tauri/tauri.conf.json')).app;
+  assert.deepEqual(security.dangerousDisableAssetCspModification, ['style-src']);
+  const script = security.csp.split(';').find((directive) => directive.trim().startsWith('script-src'));
+  assert.equal(script.trim(), "script-src 'self'");
+  assert.match(security.csp, /style-src 'self' 'unsafe-inline'/);
+  const editor = read('src/editor.tsx');
+  for (const worker of ['editor', 'json', 'css', 'html', 'ts']) assert.ok(editor.includes(`${worker}.worker.js?worker`));
+  assert.match(editor, /MonacoEnvironment/);
+});
+
 test('editor preserves HEAD on save and cannot save a pending or failed load', () => {
   const source = read('src/main.tsx');
   const editor = source.slice(source.indexOf('function CodeWorkspace('), source.indexOf('function Threads('));

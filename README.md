@@ -111,6 +111,12 @@ GitHub Actions builds these installers for tagged releases and attaches them to 
 
 ## Agent code output
 
+Monaco workers are bundled locally for diff computation and language services.
+The desktop CSP permits Monaco's generated inline styles: only Tauri's `style-src`
+nonce injection is disabled, preserving the existing style policy. Script nonce/hash
+injection and the restrictive script policy remain enabled; no remote editor code,
+inline scripts, or eval are allowed. See [Tauri's CSP guidance](https://v2.tauri.app/security/csp/).
+
 The file editor keeps Git HEAD as its diff baseline after saving. Save is disabled
 until a file has loaded successfully, and stale file-load responses are ignored.
 Switching repositories resets the editor to that repository's file context.
