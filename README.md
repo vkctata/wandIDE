@@ -130,6 +130,8 @@ is not guessed to be code, and message HTML is never executed.
 
 Provider health checks and credential errors do not produce successful-sync
 notifications; those notices require a completed repository sync with a valid count.
+Failures are tracked per provider: recovery or dismissal of one warning leaves
+other provider failures visible, with a count when multiple connections need attention.
 
 ## Wand website
 

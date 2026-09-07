@@ -2,7 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
-import { isRepositorySync } from '../src/provider-events.ts';
+import { isRepositorySync, updateProviderHealth } from '../src/provider-events.ts';
+
+test('provider recovery only clears its own failure and retains other provider warnings', () => {
+  const azure = { provider: 'azure-devops', status: 'error', error: 'Expired credential' };
+  const first = updateProviderHealth([], azure);
+  const both = updateProviderHealth(first, { provider: 'github', status: 'error', error: 'Offline' });
+  assert.equal(both.length, 2);
+  assert.deepEqual(updateProviderHealth(both, { provider: 'github', status: 'ok' }), first);
+  assert.deepEqual(updateProviderHealth(first, { provider: 'azure-devops', status: 'ok' }), []);
+  assert.equal(updateProviderHealth(first, { provider: 'linear', status: 'ok' }), first);
+  assert.equal(updateProviderHealth(first, azure), first, 'identical poll is a no-op');
+  assert.equal(first[0].message, 'Expired credential', 'state is not mutated');
+  const updated = updateProviderHealth(both, { ...azure, error: 'Network unavailable' });
+  assert.deepEqual(updated.map(x => x.provider), ['azure-devops', 'github']);
+  assert.equal(updated[0].message, 'Network unavailable');
+  for (const payload of [null, {}, {status: 'ok'}, {provider: 'github', count: 0}, {provider: ' ', status: 'ok'}]) {
+    assert.equal(updateProviderHealth(first, payload), first);
+  }
+  assert.match(updateProviderHealth([], { provider: 'github', status: 'error' })[0].message, /Settings/);
+  assert.equal(updateProviderHealth([], { provider: '__proto__', status: 'error', error: 'inert' })[0].message, 'inert');
+});
 
 test('provider health and credential failures cannot announce successful repository sync', () => {
   for (const provider of ['github', 'azure-devops', 'linear']) {
