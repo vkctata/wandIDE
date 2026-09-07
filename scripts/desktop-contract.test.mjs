@@ -2,6 +2,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
+import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
+
+test('approved update restart failure retries restart without installing twice', async () => {
+  let installed = false, downloads = 0, restarts = 0;
+  const download = async () => { downloads += 1; };
+  const mark = () => { installed = true; };
+  await assert.rejects(installApprovedUpdate(installed, download, mark, async () => { restarts++; throw Error('restart failed'); }), /restart failed/);
+  assert.equal(installed, true);
+  await installApprovedUpdate(installed, download, mark, async () => { restarts++; });
+  assert.equal(downloads, 1);
+  assert.equal(restarts, 2);
+  installed = false;
+  await assert.rejects(installApprovedUpdate(false, async () => { throw Error('signature failed'); }, mark, async () => assert.fail('restarted failed install')), /signature failed/);
+  assert.equal(installed, false);
+});
+
+test('update progress handles unknown totals and distinguishes download from install', () => {
+  let state = accumulateDownload({ bytes: 100, finished: true }, { event: 'Started', data: {} });
+  assert.deepEqual(state, { bytes: 0, total: undefined, finished: false });
+  state = accumulateDownload(state, { event: 'Progress', data: { chunkLength: 50 } });
+  assert.equal(state.bytes, 50);
+  for (const chunkLength of [-2, NaN, Infinity]) assert.equal(accumulateDownload(state, { event: 'Progress', data: { chunkLength } }), state);
+  assert.equal(accumulateDownload(state, { event: 'Finished' }).finished, true);
+  state = accumulateDownload(state, { event: 'Started', data: { contentLength: 100 } });
+  assert.equal(state.total, 100);
+  assert.equal(state.bytes, 0);
+});
 import { persistOnboardingName, previewOnboardingComplete } from '../src/onboarding-persistence.ts';
 import { isRepositorySync, updateProviderHealth } from '../src/provider-events.ts';
 

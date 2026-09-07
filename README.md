@@ -133,6 +133,11 @@ notifications; those notices require a completed repository sync with a valid co
 Failures are tracked per provider: recovery or dismissal of one warning leaves
 other provider failures visible, with a count when multiple connections need attention.
 
+Approved updates show download progress and a separate installation state.
+If installation succeeds but restarting fails, the button retries only the restart,
+not the download or installation. Network checks and downloads use timeouts;
+signature verification still belongs to Tauri's updater.
+
 Onboarding finishes only after the desktop database saves your name. A failed
 save keeps the walkthrough open with a retryable error; repeated submission is
 blocked while saving. Browser previews store their name separately and cannot
