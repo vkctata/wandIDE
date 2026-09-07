@@ -4,6 +4,7 @@ import { accumulateDownload, installApprovedUpdate, type DownloadState } from ".
 import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-persistence";
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
+import { messagePreview } from "./message-blocks";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -1416,7 +1417,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                     <Hash size={16} />
                   </div>
                   <div>
-                    <h3>{message.body}</h3>
+                    <h3>{messagePreview(message.body)}</h3>
                     <p>
                       {message.author} · {formatWorkspaceTime(message.created_at)}
                     </p>

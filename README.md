@@ -122,7 +122,9 @@ until a file has loaded successfully, and stale file-load responses are ignored.
 Switching repositories resets the editor to that repository's file context.
 
 Fenced code in post details, comments, and saved agent transcripts uses lazy,
-read-only Monaco snippets that follow the desktop appearance. Large snippets
+read-only Monaco snippets that follow the desktop appearance. Timeline cards show a short prose title (or a code
+snippet label) instead of flattening fenced source code into their one-line preview.
+The complete post remains in its detail pane. Large snippets
 and additional blocks offer an explicit “Format code” action to limit editor
 overhead. Plain text remains available during loading or if the editor fails.
 Live streaming output remains a plain-text log until persisted; unfenced output
