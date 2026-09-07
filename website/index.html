@@ -38,19 +38,20 @@
       <section class="hero" id="top">
         <div class="hero-copy">
           <p class="eyebrow"><span class="live-dot"></span> Local-first agent workspace</p>
-          <h1>Run the whole<br />engineering <em>loop.</em></h1>
+          <h1>Your code.<br />Your agents.<br /><em>One workspace.</em></h1>
           <p class="lede">Give your coding agents a shared place to work. Connect local repositories, assign specialists, and follow each task from request to review.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#download">Get Wand <span aria-hidden="true">↗</span></a>
-            <a class="button button-quiet" href="https://github.com/vkctata/wandIDE" target="_blank" rel="noopener noreferrer">Explore the source <span aria-hidden="true">↗</span></a>
+            <a class="button button-quiet" href="#screenshots">Explore the app <span aria-hidden="true">↓</span></a>
           </div>
           <ul class="hero-meta" aria-label="Supported platforms and privacy">
             <li><a href="#download">macOS</a></li><li><a href="#download">Windows</a></li><li><a href="#download">Linux</a></li><li>Open source</li>
           </ul>
         </div>
-        <div class="hero-product" aria-label="Wand product preview">
+        <div class="hero-product" aria-label="Wand product preview from an earlier beta">
           <div class="window-chrome"><span></span><span></span><span></span><b>wand / workspace</b></div>
           <img src="./assets/wand-home-obsidian.jpg" alt="Wand beta desktop workspace in Dark Mode" />
+          <p class="preview-caption">A home for your repositories, agents, and review history.<span>Earlier beta preview</span></p>
         </div>
       </section>
 
@@ -124,7 +125,7 @@
           <p>Tasks, activity, provider events, and agent handoffs stay close to the code instead of disappearing across tools.</p>
         </div>
         <p class="capture-note">Screenshots from earlier beta builds. The current app is evolving; see release notes for changes.</p>
-        <div class="gallery">
+        <div class="gallery" id="app-tour">
           <figure><a href="./assets/wand-tasks.jpg" target="_blank" rel="noopener"><img src="./assets/wand-tasks.jpg" alt="Scheduled tasks and run history in Wand" loading="lazy" width="1280" height="720" /></a><figcaption><b>Scheduled work</b><span>Assign recurring repository tasks with cron schedules. Wand must be running for local workers to execute them.</span></figcaption></figure>
           <figure><a href="./assets/wand-threads.jpg" target="_blank" rel="noopener"><img src="./assets/wand-threads.jpg" alt="Repository conversation area in an earlier Wand beta" loading="lazy" width="1280" height="720" /></a><figcaption><b>Repository conversations</b><span>Tag a specialist on a post. Follow the full request and its comments in the side pane.</span></figcaption></figure>
           <figure><a href="./assets/wand-providers.jpg" target="_blank" rel="noopener"><img src="./assets/wand-providers.jpg" alt="Provider connection settings in Wand" loading="lazy" width="1280" height="720" /></a><figcaption><b>Connected tools</b><span>Manage GitHub, Azure DevOps, and Linear connections in Settings. Credentials stay in native credential storage.</span></figcaption></figure>
@@ -152,6 +153,14 @@
           <a class="download-card" data-release-asset="_amd64.AppImage" href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer"><svg class="platform-icon platform-linux" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4.3c-3.5 0-5.7 3.7-5.7 8.3 0 1.5.3 2.8.8 3.9-1.8 1.8-3 4.5-3 7.1 0 1.7.7 2.8 1.8 2.8 1 0 1.8-1.1 2.7-1.1.9 0 1.7.8 3.4.8s2.5-.8 3.4-.8c.9 0 1.7 1.1 2.7 1.1 1.1 0 1.8-1.1 1.8-2.8 0-2.6-1.2-5.3-3-7.1.5-1.1.8-2.4.8-3.9 0-4.6-2.2-8.3-5.7-8.3Z"/><circle cx="13.4" cy="11.9" r="1.15" fill="var(--night)"/><circle cx="18.6" cy="11.9" r="1.15" fill="var(--night)"/><path d="M13.3 16.1c.8.7 1.8 1 2.7 1s1.9-.3 2.7-1c-.3 1.8-1.3 2.9-2.7 2.9s-2.4-1.1-2.7-2.9Z" fill="var(--night)"/></svg><div><strong>Linux</strong><small>x64 · AppImage</small></div><b aria-hidden="true">↗</b></a>
         </div>
         <p class="download-help">Already have a coding CLI? Enable it in Wand’s Settings after installation. A supported CLI account and model are required to run agents.</p>
+        <div class="install-guide">
+          <h3>From download to your first task</h3>
+          <ol>
+            <li><strong>Install Wand</strong><p>On macOS, open the DMG and drag Wand into Applications. On Windows, run the MSI. On Linux, make the AppImage executable and open it.</p></li>
+            <li><strong>Connect your tools</strong><p>Choose your repositories folder in Settings. Enable an installed coding CLI and select a model your account can use.</p></li>
+            <li><strong>Ask an agent</strong><p>Open a repository and write a post. Type @ to choose an agent, then follow its replies and verification on that post.</p></li>
+          </ol>
+        </div>
         <a class="text-link" href="https://github.com/vkctata/wandIDE/releases/latest">Release notes and all package formats ↗</a>
       </section>
 
@@ -163,5 +172,6 @@
 
     <footer><a class="brand" href="#top" aria-label="Wand home"><img src="./assets/wand-logo.svg" width="32" height="32" alt="" /><span>Wand</span><i>beta</i></a><p>Local-first tools for thoughtful software.</p><div><a href="https://github.com/vkctata/wandIDE" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a href="https://github.com/vkctata/wandIDE/releases/latest" target="_blank" rel="noopener noreferrer">Releases ↗</a></div></footer>
     <script src="./main.js" type="module"></script>
+    <script src="./tour.js" type="module"></script>
   </body>
 </html>

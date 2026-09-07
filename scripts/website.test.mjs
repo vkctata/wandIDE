@@ -3,9 +3,43 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import vm from 'node:vm';
 import { resolveAsset, safeReleaseUrl, releasePage } from '../website/releases.js';
+import { enhanceTour } from '../website/tour.js';
 
 const website = new URL('../website/', import.meta.url);
 const html = readFileSync(new URL('index.html', website), 'utf8');
+
+test('app tour supports selection, keyboard wrapping, and accessible panel relationships', () => {
+  const element = () => ({
+    attributes: {}, children: [], events: {}, hidden: false,
+    setAttribute(key, value) { this.attributes[key] = value; },
+    append(child) { this.children.push(child); },
+    addEventListener(key, fn) { this.events[key] = fn; },
+    focus() { this.focused = true; },
+  });
+  const panels = ['Tasks', 'Threads', 'Providers', 'Notifications'].map((title) => ({ ...element(), querySelector: () => ({ textContent: title }) }));
+  let tabs;
+  const gallery = { querySelectorAll: () => panels, before: (value) => { tabs = value; }, classList: { add() {} } };
+  enhanceTour(gallery, { createElement: element });
+  assert.equal(tabs.attributes.role, 'tablist');
+  assert.deepEqual(panels.map(p => p.hidden), [false, true, true, true]);
+  tabs.children[1].events.click();
+  assert.deepEqual(panels.map(p => p.hidden), [true, false, true, true]);
+  const press = (index, key) => tabs.children[index].events.keydown({ key, preventDefault() {} });
+  press(1, 'End');
+  assert.equal(tabs.children[3].focused, true);
+  press(3, 'ArrowRight');
+  assert.equal(panels[0].hidden, false);
+  press(0, 'ArrowLeft');
+  assert.equal(panels[3].hidden, false);
+  press(3, 'Home');
+  assert.equal(panels[0].hidden, false);
+  tabs.children.forEach((button, i) => {
+    assert.equal(button.attributes['aria-controls'], panels[i].id);
+    assert.equal(panels[i].attributes['aria-labelledby'], button.id);
+    assert.equal(button.tabIndex, i === 0 ? 0 : -1);
+  });
+  enhanceTour(null, {});
+});
 
 test('website local assets and section anchors resolve', () => {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);

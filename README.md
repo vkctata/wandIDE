@@ -130,6 +130,12 @@ is not guessed to be code, and message HTML is never executed.
 
 ## Wand website
 
+The product tour groups screenshots into keyboard-accessible tabs for tasks,
+repository conversations, providers, and notifications. Without JavaScript,
+all screenshots remain available as a gallery. Installation guidance covers
+macOS, Windows, Linux, and the first repository task. Earlier beta captures
+are labeled so they are not mistaken for the current release UI.
+
 The static product site lives in `website/` and is published through
 `.github/workflows/pages.yml` to GitHub Pages whenever the site changes on
 `main`. It uses a responsive, neutral layout and a light/dark switch that follows
