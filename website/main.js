@@ -22,6 +22,7 @@ fetch('https://api.github.com/repos/vkctata/wandIDE/releases/latest', {
       link.href = asset.href;
       // Download in this tab; fallback release notes remain a normal link.
       if (asset.available) link.removeAttribute('target');
+      if (!link.classList.contains('download-card')) return;
       const note = document.createElement('span');
       note.className = 'asset-note';
       note.textContent = asset.available ? `Download installer${asset.size ? ' · ' + asset.size : ''}` : 'Installer unavailable · view release';
