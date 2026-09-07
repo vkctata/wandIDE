@@ -29,6 +29,7 @@ jobs:
       - run: npm run check:ipc
       - run: npm run test:desktop
       - run: node --test scripts/website.test.mjs
+      - run: node --test scripts/message-blocks.test.mjs
       - run: npm run build
 
   rust-check:
