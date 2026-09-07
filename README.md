@@ -223,6 +223,18 @@ Settings detects Claude, Codex, Kimi, and Gemini CLI installations from the desk
 
 ## Credential security
 
+### Coding runtime permissions
+
+Wand allowlists supported coding CLIs and starts each stage in its registered
+repository directory. That working directory is not an operating-system sandbox.
+CLIs inherit their own configured permission and sandbox policies; Wand does not
+currently enforce one cross-provider isolation policy. Review those settings
+before enabling a runtime, especially for sensitive repositories. A CLI may read
+outside its working directory or contact its model provider when its permissions
+allow it. Native credential storage does not itself constrain CLI execution.
+
+### Provider token storage
+
 Provider PATs can be disconnected from Settings at any time; disconnect removes the installation-scoped credential and clears Azure organization settings. New tokens are saved through macOS Keychain, Windows Credential Manager, or Linux Secret Service, never SQLite, browser storage, or a repository. A random installation namespace is retained in the local settings store. Tokens saved by earlier builds in the encrypted local file migrate on first access: Wand removes the file copy only after the native credential store accepts the token. If the system store is locked or unavailable, Wand reports the error without falling back to file storage. Linux users need a running, unlocked Secret Service such as GNOME Keyring or KWallet.
 
 Wand intentionally does not create portable `.pfx` files for PATs. PFX is a certificate container and would require a separate password/key; keeping that password beside the file would be weaker than the native credential stores. No PAT value crosses into React or is written to disk by the Rust database layer.

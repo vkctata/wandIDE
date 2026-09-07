@@ -7,6 +7,13 @@ import { latestRequest } from '../src/latest-request.ts';
 import { readSearchSources } from '../src/search-sources.ts';
 import { searchFocusIndex } from '../src/search-navigation.ts';
 
+test('CLI settings disclose runtime permissions instead of claiming directory sandboxing', () => {
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(app, /Starting in a repository does not restrict all file or network access/);
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /working directory is not an operating-system sandbox/);
+});
+
 test('search arrows wrap while text-editing Home and End remain available in input', () => {
   assert.equal(searchFocusIndex('ArrowDown', -1, 3), 0);
   assert.equal(searchFocusIndex('ArrowUp', -1, 3), 2);

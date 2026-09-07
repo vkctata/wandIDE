@@ -2397,6 +2397,7 @@ function CliManager() {
         <div>
           <h2>Local CLI access</h2>
           <p>Choose which coding runtimes Wand may use.</p>
+          <p className="sub">Enabled CLIs use their own permissions and sandbox settings. Starting in a repository does not restrict all file or network access. Review your CLI configuration before running agents on sensitive code.</p>
         </div>
         <button className="outline" onClick={() => void refresh()} disabled={loading}>
           <RotateCcw size={13} className={loading ? "spin" : ""} />
