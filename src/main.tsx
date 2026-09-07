@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { hasAgentMention } from "./mentions";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -454,13 +455,7 @@ function App() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
-  useEffect(() => {
-    let stop: undefined | (() => void);
-    listen<{ message: string }>("wand://sync", (e) => {
-      publishNotice("task", e.payload.message, e.payload.message);
-    }).then((unlisten) => (stop = unlisten));
-    return () => stop?.();
-  }, []);
+  // Routine sync heartbeats belong in BackgroundStatus, not user notifications.
   useEffect(() => {
     const refreshRepos = () =>
       invoke<any[]>("list_repositories")
@@ -1268,22 +1263,31 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   const [tagged, setTagged] = useState<string[]>([]);
   const [postError, setPostError] = useState("");
   const [selected, setSelected] = useState<Message | null>(null);
-  const [comment, setComment] = useState("");
-  const [commentError, setCommentError] = useState("");
-  const [commentPending, setCommentPending] = useState(false);
+  const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
+  const [commentErrors, setCommentErrors] = useState<Record<number, string>>({});
+  const [pendingPost, setPendingPost] = useState<number | null>(null);
+  const comment = selected ? commentDrafts[selected.id] || "" : "";
+  const commentError = selected ? commentErrors[selected.id] || "" : "";
+  const commentPending = pendingPost !== null;
+  const setComment = (value: string) => {
+    if (selected) setCommentDrafts((drafts) => ({ ...drafts, [selected.id]: value }));
+  };
   const addComment = async () => {
     if (!selected || !comment.trim() || commentPending) return;
-    setCommentPending(true);
-    setCommentError("");
+    const postId = selected.id;
+    const submittedDraft = comment;
+    setPendingPost(postId);
+    setCommentErrors((errors) => ({ ...errors, [postId]: "" }));
     try {
       await invoke("create_thread_message", {
         repo: repo.name, author: "You", body: comment.trim(),
-        agentIds: [], parentId: selected.id,
+        agentIds: [], parentId: postId,
       });
-      setComment("");
+      setCommentDrafts((drafts) => drafts[postId] === submittedDraft
+        ? { ...drafts, [postId]: "" } : drafts);
       await load();
-    } catch (error) { setCommentError(String(error)); }
-    finally { setCommentPending(false); }
+    } catch (error) { setCommentErrors((errors) => ({ ...errors, [postId]: String(error) })); }
+    finally { setPendingPost(null); }
   };
   const hasRepo = repo.name !== emptyRepo.name;
   const load = () =>
@@ -1404,7 +1408,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
             )}
           </div>
           {selected && <section className="thread-detail-pane" aria-label="Post details">
-            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" onClick={() => setSelected(null)}>×</button></div>
+            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" aria-label="Close post details" onClick={() => setSelected(null)}>×</button></div>
             <p className="thread-detail-time">{formatWorkspaceTime(selected.created_at)}</p>
             <div className="thread-detail-body">{selected.body}</div>
             {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
@@ -2738,6 +2742,10 @@ function AgentMentionInput({
   };
   const update = (next: string) => {
     onChange(next);
+    onTagged(tagged.filter((id) => {
+      const agent = available.find((candidate) => candidate.id === id);
+      return agent ? hasAgentMention(next, agent.name) : false;
+    }));
     const at = next.lastIndexOf("@");
     const fragment = at >= 0 ? next.slice(at + 1) : "";
     setQuery(fragment);

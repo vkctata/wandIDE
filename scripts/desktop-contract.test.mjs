@@ -1,8 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { hasAgentMention } from '../src/mentions.ts';
+
+test('deleted and partial mentions cannot leave an agent selected', () => {
+  assert.equal(hasAgentMention('', 'Builder'), false);
+  assert.equal(hasAgentMention('Write documentation', 'Builder'), false);
+  assert.equal(hasAgentMention('@Builder helper', 'Builder'), true);
+  assert.equal(hasAgentMention('@BuilderExtra helper', 'Builder'), false);
+  assert.equal(hasAgentMention('@Moon Cheese Inspector engineer inspect this', 'Moon Cheese Inspector engineer'), true);
+  assert.equal(hasAgentMention('@Moon Cheese inspect this', 'Moon Cheese Inspector engineer'), false);
+  assert.equal(hasAgentMention('(@QA [review]), inspect', 'QA [review]'), true);
+  assert.equal(hasAgentMention('email@Builder', 'Builder'), false);
+});
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('routine heartbeat listener stays out of application notifications', () => {
+  const source = read('src/main.tsx');
+  const app = source.slice(0, source.indexOf('function BackgroundStatus()'));
+  assert.doesNotMatch(app, /listen[^;]*"wand:\/\/sync"/);
+  assert.match(source.slice(source.indexOf('function BackgroundStatus()')), /"wand:\/\/sync"/);
+});
+
+test('post comment state is keyed by originating post, including async completion', () => {
+  const source = read('src/main.tsx');
+  assert.match(source, /commentDrafts\[selected\.id\]/);
+  assert.match(source, /commentErrors\[selected\.id\]/);
+  assert.match(source, /parentId: postId/);
+  assert.match(source, /drafts\[postId\] === submittedDraft/);
+  assert.match(source, /aria-label="Close post details"/);
+});
 
 test('installed UI has native window controls, not a second HTML title bar', () => {
   const config = JSON.parse(read('src-tauri/tauri.macos.conf.json'));
