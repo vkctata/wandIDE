@@ -7,10 +7,10 @@
         "height": 820,
         "minWidth": 720,
         "minHeight": 480,
-        "decorations": false,
+        "decorations": true,
         "transparent": false,
         "shadow": true,
-        "titleBarStyle": "Overlay",
+        "titleBarStyle": "Visible",
         "hiddenTitle": true
       }
     ]

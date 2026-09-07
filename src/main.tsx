@@ -319,6 +319,7 @@ function App() {
   });
   const [userName, setUserName] = useState("there");
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ id: string; label: string; detail: string; target: View; repo?: string }>>([]);
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
   const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
@@ -352,6 +353,28 @@ function App() {
       stop.then((unsubscribe) => unsubscribe());
     };
   }, []);
+  useEffect(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) { setSearchResults([]); return; }
+    let active = true;
+    const search = async () => {
+      const results: Array<{ id: string; label: string; detail: string; target: View; repo?: string }> = [];
+      repos.forEach((item) => {
+        if (`${item.name} ${item.path} ${item.provider}`.toLowerCase().includes(term)) results.push({ id: `repo:${item.name}`, label: item.name, detail: `${item.provider} repository`, target: "threads", repo: item.name });
+      });
+      tasks.forEach((item) => { if (`${item.name} ${item.repo} ${item.status}`.toLowerCase().includes(term)) results.push({ id: `task:${item.id}`, label: item.name, detail: `Task · ${item.status}`, target: "tasks" }); });
+      agentCatalog.forEach((item) => { if (`${item.name} ${item.role} ${item.skills.join(" ")}`.toLowerCase().includes(term)) results.push({ id: `agent:${item.id}`, label: `@${item.name}`, detail: `Agent · ${item.role}`, target: "home" }); });
+      const [notifications, events] = await Promise.all([
+        invoke<any[]>("list_notifications").catch(() => []),
+        invoke<any[]>("list_events", { limit: 100 }).catch(() => []),
+      ]);
+      notifications.forEach((item) => { if (`${item.title} ${item.body} ${item.repo} ${item.author}`.toLowerCase().includes(term)) results.push({ id: `notice:${item.id}`, label: item.title, detail: `${item.provider} · ${item.repo}`, target: "notifications" }); });
+      events.forEach((item) => { if (`${item.kind} ${item.message}`.toLowerCase().includes(term)) results.push({ id: `event:${item.id}`, label: item.message, detail: `Activity · ${item.created_at}`, target: "home" }); });
+      if (active) setSearchResults(results.slice(0, 12));
+    };
+    void search();
+    return () => { active = false; };
+  }, [query, repos, tasks, agentCatalog]);
   useEffect(() => {
     invoke<any[]>("list_tasks")
       .then((rows) =>
@@ -462,6 +485,13 @@ function App() {
           `${count} repositories are available in Wand.`,
         );
       }),
+      listen<any>("wand://agents", () => {
+        invoke<any[]>("list_agents")
+          .then((rows) =>
+            setAgentCatalog(rows.map((r) => ({ ...r, skills: parseJson<string[]>(r.skills, []) }))),
+          )
+          .catch(() => {});
+      }),
       listen<any>("wand://notifications", (event) => {
         const added = event.payload?.added ?? 0;
         if (added > 0) {
@@ -506,22 +536,6 @@ function App() {
       );
     };
   }, []);
-  useEffect(() => {
-    let stop: undefined | (() => void);
-    listen<any>("wand://agent", (event) => {
-      const payload = event.payload || {};
-      if (payload.status !== "completed" && payload.status !== "verified")
-        return;
-      const task = tasks.find((item) => item.id === payload.task_id);
-      if (!task || !payload.handoff) return;
-      const author = payload.agent || "Wand agent";
-      const body = `${payload.status === "verified" ? "Verification result" : "Stage handoff"}:\n${String(payload.handoff).slice(0, 4000)}`;
-      invoke("create_thread_message", { repo: task.repo, author, body }).catch(
-        () => {},
-      );
-    }).then((unsubscribe) => (stop = unsubscribe));
-    return () => stop?.();
-  }, [tasks]);
   useEffect(() => {
     document.body.dataset.view = view;
     const go = (e: Event) => setView((e as CustomEvent<View>).detail);
@@ -813,33 +827,20 @@ function App() {
         </header>
         {query.trim() && (
           <div className="search-palette">
-            {[
-              ["home", "Overview"],
-              ["code", "Code"],
-              ["threads", repo.name + " threads"],
-              ["tasks", "Scheduled tasks"],
-              ["notifications", "Notifications"],
-              ...repos.map((r) => ["threads", r.name]),
-              ...tasks.map((t) => ["tasks", t.name]),
-              ...agentCatalog.map((a) => ["settings", a.name]),
-            ]
-              .filter((item) =>
-                item[1].toLowerCase().includes(query.toLowerCase()),
-              )
-              .slice(0, 8)
-              .map(([target, label], index) => (
+            {searchResults.map((result) => (
                 <button
-                  key={target + label + index}
+                  key={result.id}
                   onMouseDown={() => {
-                    if (target === "settings") openSettings("agents");
-                    else setView(target as View);
+                    if (result.id.startsWith("agent:")) openSettings("agents");
+                    else { if (result.repo) { const selectedRepo = repos.find((item) => item.name === result.repo); if (selectedRepo) setRepo(selectedRepo); } setView(result.target); }
                     setQuery("");
                   }}
                 >
-                  <span>{label}</span>
-                  <small>{target}</small>
+                  <span>{result.label}</span>
+                  <small>{result.detail}</small>
                 </button>
               ))}
+            {searchResults.length === 0 && <div className="search-empty">No matching repositories, tasks, agents, activity, or notifications.</div>}
           </div>
         )}
         {notice && (
@@ -856,7 +857,7 @@ function App() {
         ) : view === "code" ? (
           <CodeWorkspace repo={repo} />
         ) : view === "threads" ? (
-          <Threads repo={repo} agents={agentCatalog} />
+          <Threads key={repo.name} repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
           <Tasks tasks={tasks} addTask={addTask} runTask={runTask} cancelTask={cancelTask} />
         ) : (
@@ -1268,11 +1269,30 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
     body: string;
     created_at: string;
     agent_ids: string[];
+    parent_id?: number | null;
   };
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
   const [postError, setPostError] = useState("");
+  const [selected, setSelected] = useState<Message | null>(null);
+  const [comment, setComment] = useState("");
+  const [commentError, setCommentError] = useState("");
+  const [commentPending, setCommentPending] = useState(false);
+  const addComment = async () => {
+    if (!selected || !comment.trim() || commentPending) return;
+    setCommentPending(true);
+    setCommentError("");
+    try {
+      await invoke("create_thread_message", {
+        repo: repo.name, author: "You", body: comment.trim(),
+        agentIds: [], parentId: selected.id,
+      });
+      setComment("");
+      await load();
+    } catch (error) { setCommentError(String(error)); }
+    finally { setCommentPending(false); }
+  };
   const hasRepo = repo.name !== emptyRepo.name;
   const load = () =>
     hasRepo
@@ -1361,6 +1381,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               Could not post this thread: {postError}
             </div>
           )}
+          <div className="thread-layout">
           <div className="threadlist">
             {messages.length === 0 ? (
               <div className="emptyhint">
@@ -1372,8 +1393,8 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                 </p>
               </div>
             ) : (
-              messages.map((message) => (
-                <div className="thread" key={message.id}>
+              messages.filter((message) => !message.parent_id).map((message) => (
+                <button className={"thread thread-card " + (selected?.id === message.id ? "selected" : "")} key={message.id} onClick={() => setSelected(message)}>
                   <div className="threadicon">
                     <Hash size={16} />
                   </div>
@@ -1383,12 +1404,32 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                       {message.author} · {formatWorkspaceTime(message.created_at)}
                     </p>
                   </div>
-                  {message.agent_ids?.map((id) => <span className="tag purple" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
-                  <span className="tag blue">message</span>
+                  {message.agent_ids?.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
+                  <span className="tag blue">post</span>
                   <ChevronDown size={14} />
-                </div>
+                </button>
               ))
             )}
+          </div>
+          {selected && <section className="thread-detail-pane" aria-label="Post details">
+            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" onClick={() => setSelected(null)}>×</button></div>
+            <p className="thread-detail-time">{formatWorkspaceTime(selected.created_at)}</p>
+            <div className="thread-detail-body">{selected.body}</div>
+            {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
+            <div className="thread-comments">
+              <h3>Comments</h3>
+              {messages.filter((message) => message.parent_id === selected.id).map((message) => (
+                <article key={message.id} className="post-comment">
+                  <strong>{agents.find((agent) => agent.id === message.author)?.name || message.author}</strong>
+                  <time>{formatWorkspaceTime(message.created_at)}</time>
+                  <div className="thread-detail-body">{message.body}</div>
+                </article>
+              ))}
+              <textarea aria-label="Comment on selected post" placeholder="Write a comment…" value={comment} onChange={(event) => setComment(event.target.value)} />
+              {commentError && <p role="alert">{commentError}</p>}
+              <button className="primary" disabled={commentPending || !comment.trim()} onClick={addComment}>{commentPending ? "Posting…" : "Post comment"}</button>
+            </div>
+          </section>}
           </div>
         </>
       )}
@@ -1700,37 +1741,27 @@ function Notifications() {
     setLoading(true);
     setActionMessage("");
     try {
-      const [repositories, statuses] = await Promise.all([
-        invoke<Repo[]>("list_repositories"),
-        Promise.all(
-          ["github", "azure-devops"].map(async (provider) => [
+      const statuses = await Promise.all(
+          ["github", "azure-devops", "linear"].map(async (provider) => [
             provider,
             await invoke<boolean>("provider_status", { provider }).catch(() => false),
           ] as const),
-        ),
-      ]);
+      );
       const connected = new Set(
         statuses.filter(([, isConnected]) => isConnected).map(([provider]) => provider),
       );
-      const repositoryProviders = Array.from(
-        new Set(
-          repositories
-            .map((repo) => repo.provider)
-            .filter((provider): provider is string =>
-              provider === "github" || provider === "azure-devops",
-            ),
-        ),
-      );
-      const providers = repositoryProviders.filter((provider) => connected.has(provider));
-      const syncTargets = providers.length > 0 ? providers : Array.from(connected);
+      const syncTargets = Array.from(connected);
 
       if (syncTargets.length === 0) {
-        setActionMessage("Connect GitHub or Azure DevOps in Settings before syncing review activity.");
+        setActionMessage("Connect GitHub, Azure DevOps, or Linear in Settings before syncing activity.");
         return;
       }
 
       const outcomes = await Promise.allSettled(
         syncTargets.map(async (provider) => {
+          if (provider === "linear") {
+            return ["Linear", await invoke<number>("sync_linear_activity")] as const;
+          }
           if (provider === "github") {
             return ["GitHub", await invoke<number>("sync_github_activity")] as const;
           }
@@ -2056,7 +2087,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
   const [cliMessage, setCliMessage] = useState("");
   const slides = [
     ["Welcome to Wand", "Your local-first AI engineering workspace. Plan, build, review, and verify without losing the thread."],
-    ["Connect your reports", "Choose where Wand can read repository and project activity. Credentials are encrypted in Wand's local app store."],
+    ["Connect your reports", "Choose where Wand can read repository and project activity. Credentials are protected by your operating system's credential store."],
     ["Prepare your local tools", "Wand found the coding CLIs available on this machine. Enable only the runtimes you want your agents to use."],
     ["You're ready", "Your workspace remains local, every handoff is visible, and you can change providers or tools anytime in Settings."],
   ];
@@ -2100,7 +2131,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
     const values = await askModal(
       `Connect ${providerName}`,
       [{ id: "token", label: "Personal access token", placeholder: "Paste your token", secret: true }],
-      "Wand encrypts this token in its local app store. It does not use macOS Keychain.",
+      "Wand saves this token in your operating system's credential store.",
     );
     if (!values?.token) return;
     try {
@@ -2344,7 +2375,7 @@ function ProviderAccess() {
           secret: true,
         },
       ],
-      "The token is encrypted in Wand's local app store. It does not use macOS Keychain.",
+      "The token is saved in your operating system's credential store.",
     );
     if (!values?.token) return;
     try {
@@ -2353,7 +2384,7 @@ function ProviderAccess() {
       setMessage(`${providerLabel(provider)} connected securely.`);
     } catch (cause) {
       setMessage(
-        `Could not save ${provider === "github" ? "GitHub" : "Azure DevOps"} credentials: ${cause instanceof Error ? cause.message : String(cause)}`,
+        `Could not save ${providerLabel(provider)} credentials: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
     }
   };
@@ -2366,7 +2397,7 @@ function ProviderAccess() {
     if (!confirmed) return;
     try {
       await invoke("disconnect_provider", { provider });
-      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"} disconnected.`);
+      setMessage(`${providerLabel(provider)} disconnected and its agent was removed.`);
       await refresh();
     } catch (error) {
       setMessage(String(error));
@@ -2399,7 +2430,7 @@ function ProviderAccess() {
         args,
       );
       setMessage(
-        `${rows.length} ${provider === "github" ? "GitHub" : "Azure DevOps"} repositories synced. Background activity polling enabled.`,
+        `${rows.length} ${providerLabel(provider)} ${provider === "linear" ? "teams" : "repositories"} synced. ${providerLabel(provider)} is now available as a taggable agent.`,
       );
     } catch (e) {
       setMessage(String(e));
@@ -2433,7 +2464,7 @@ function ProviderAccess() {
         provider,
         providerUrl,
       });
-      setMessage(`${provider === "github" ? "GitHub" : "Azure DevOps"}: ${result}.`);
+      setMessage(`${providerLabel(provider)}: ${result}.`);
     } catch (e) {
       setMessage(String(e));
     } finally {
@@ -2458,7 +2489,7 @@ function ProviderAccess() {
             <b>{name}</b>
             <small>
               {status[id]
-                ? "Connected in Wand's encrypted local store"
+                ? "Connected through the system credential store"
                 : "Not connected"}
             </small>
           </div>
@@ -2539,15 +2570,11 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     }
   };
   const edit = async (agent?: StoredAgent) => {
-    const cliOptions = (enabledClis.length ? enabledClis : ["codex"]).filter(
-      (cli) => cli !== "kimi" || enabledClis.includes("kimi"),
-    );
-    const modelOptions: Record<string, string[]> = {
-      claude: ["default", "sonnet", "opus"],
-      codex: ["default", "gpt-5-codex"],
-      gemini: ["default", "gemini-2.5-pro"],
-      kimi: ["default", "kimi-k2"],
-    };
+    const cliOptions = enabledClis;
+    if (!cliOptions.length) {
+      setWorkflowMessage("Enable an installed runtime in CLI Access before configuring an agent.");
+      return;
+    }
     const selectedCli = cliOptions.includes(agent?.cli || "")
       ? agent?.cli || cliOptions[0]
       : cliOptions[0];
@@ -2584,8 +2611,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           id: "model",
           label: "Model",
           value: agent?.model || "default",
-          optionsFor: (current) =>
-            modelOptions[current.cli || selectedCli || "codex"] || ["default"],
+          placeholder: "default, or a model ID supported by your CLI and account",
         },
         {
           id: "scope",
@@ -2594,7 +2620,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           options: ["workspace", ...repos.map((repo) => `repo:${repo.name}`)],
         },
       ],
-      "Give each agent one clear responsibility. This text is used as its execution instruction.",
+      "Give each agent one clear responsibility. Use default for your CLI's configured model, or enter a model ID your runtime and account support.",
     );
     if (!values?.name) return;
     try {
@@ -2929,7 +2955,7 @@ function WhatsNewSection() {
         },
         {
           title: "Local-First Privacy",
-          desc: "Repository locations and provider tokens are encrypted locally in Wand's app store without Keychain prompts.",
+          desc: "Repository locations stay local. Provider tokens are protected by your system credential store.",
           icon: Zap,
         },
       ],
