@@ -5,6 +5,7 @@ import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-p
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
 import { messagePreview } from "./message-blocks";
+import { submitOnce } from "./submission";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -1284,6 +1285,8 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   const [draft, setDraft] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
   const [postError, setPostError] = useState("");
+  const [posting, setPosting] = useState(false);
+  const postLock = useRef(false);
   const [selected, setSelected] = useState<Message | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
   const [commentErrors, setCommentErrors] = useState<Record<number, string>>({});
@@ -1337,22 +1340,27 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   }, [repo.name, hasRepo]);
   const create = async () => {
     if (!hasRepo || !draft.trim()) return;
-    setPostError("");
-    try {
-      await invoke("create_thread_message", {
-        repo: repo.name,
-        author: "You",
-        body: draft.trim(),
-        agentIds: tagged,
-      });
-      setDraft("");
-      setTagged([]);
-      await load();
-    } catch (cause) {
-      setPostError(
-        cause instanceof Error ? cause.message : String(cause),
-      );
-    }
+    await submitOnce(postLock, async () => {
+      setPosting(true);
+      setPostError("");
+      try {
+        await invoke("create_thread_message", {
+          repo: repo.name,
+          author: "You",
+          body: draft.trim(),
+          agentIds: tagged,
+        });
+        setDraft("");
+        setTagged([]);
+        await load();
+      } catch (cause) {
+        setPostError(
+          cause instanceof Error ? cause.message : String(cause),
+        );
+      } finally {
+        setPosting(false);
+      }
+    });
   };
   return (
     <section className="content threads-page">
@@ -1380,7 +1388,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
         </div>
       ) : (
         <>
-          <div className="thread-composer">
+          <div className="thread-composer" aria-busy={posting}>
             <AgentMentionInput
               repo={repo.name}
               value={draft}
@@ -1389,9 +1397,10 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               tagged={tagged}
               onTagged={setTagged}
               placeholder="Write a repository thread… Type @ to tag an agent"
+              disabled={posting}
             />
-            <button className="primary" disabled={!draft.trim()} onClick={create}>
-              Post
+            <button className="primary" disabled={posting || !draft.trim()} onClick={create}>
+              {posting ? "Posting…" : "Post"}
             </button>
           </div>
           {postError && (
@@ -2750,6 +2759,7 @@ function AgentMentionInput({
   tagged,
   onTagged,
   placeholder,
+  disabled = false,
 }: {
   repo: string;
   value: string;
@@ -2758,6 +2768,7 @@ function AgentMentionInput({
   tagged: string[];
   onTagged: (ids: string[]) => void;
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -2769,6 +2780,7 @@ function AgentMentionInput({
       agent.scope === `repo:${repo}`,
   );
   const choose = (agent: Agent) => {
+    if (disabled) return;
     const at = value.lastIndexOf("@");
     const next =
       at >= 0
@@ -2804,6 +2816,7 @@ function AgentMentionInput({
     <div className="mention-composer">
       <textarea
         value={value}
+        disabled={disabled}
         onChange={(event) => update(event.target.value)}
         placeholder={placeholder}
         onKeyDown={(event) => {
@@ -2821,7 +2834,7 @@ function AgentMentionInput({
           }
         }}
       />
-      {open && (
+      {open && !disabled && (
         <div className="mention-menu" role="listbox" aria-label="Agents to tag">
           {matches.map((agent, index) => (
               <button

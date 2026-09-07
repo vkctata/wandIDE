@@ -6,6 +6,9 @@ Desktop reliability: macOS uses native window controls and rounded corners. Agen
 
 Repository posts use the available width until a post opens in a detail pane with persistent comments. On narrow windows the detail pane stacks above the list. Unsent comment drafts stay with their selected post while switching between posts (drafts are session-only). Findings from tagged-agent tasks are saved as replies to the originating post by the native worker, including when the frontend is closed. Comments are restricted to root posts in the same repository. Tasks without an originating post retain their output in run transcripts. Routine worker heartbeats update the sidebar quietly; actionable task and provider events retain notifications.
 
+Post submission disables the composer while saving and rejects overlapping clicks
+before the next render. A rejected submission keeps its draft and tags for retry.
+
 Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
 
 ## What is in this repository

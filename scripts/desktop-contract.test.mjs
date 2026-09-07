@@ -4,6 +4,23 @@ import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
 import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
 import { initializeEditorViewport } from '../src/editor-viewport.ts';
+import { submitOnce } from '../src/submission.ts';
+
+test('post submission suppresses overlapping clicks and unlocks after failure', async () => {
+  const lock = { current: false };
+  let release, calls = 0;
+  const pending = submitOnce(lock, () => { calls++; return new Promise(resolve => { release = resolve; }); });
+  assert.equal(lock.current, true);
+  assert.equal(await submitOnce(lock, async () => { calls++; }), false);
+  assert.equal(calls, 1);
+  release();
+  assert.equal(await pending, true);
+  assert.equal(lock.current, false);
+  await assert.rejects(submitOnce(lock, async () => { throw Error('failed'); }), /failed/);
+  assert.equal(lock.current, false);
+  assert.equal(await submitOnce(lock, async () => { calls++; }), true);
+  assert.equal(calls, 2);
+});
 
 test('mounted editors measure the visible host before drawing either diff side', () => {
   const calls = [];
