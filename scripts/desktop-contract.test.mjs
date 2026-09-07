@@ -1,7 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { hasAgentMention } from '../src/mentions.ts';
+import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
+
+test('agent insertion follows the cursor and preserves the rest of a draft', () => {
+  const body = 'Ask @Bu to inspect the diff, then @Reviewer.';
+  const caret = body.indexOf('@Bu') + 3;
+  assert.equal(activeMentionAt(body, caret).query, 'Bu');
+  assert.deepEqual(insertAgentMention(body, caret, 'Builder'), {
+    text: 'Ask @Builder to inspect the diff, then @Reviewer.', caret: 12,
+  });
+  assert.equal(insertAgentMention('@Builde', 3, 'Builder').text, '@Builder ');
+  assert.equal(insertAgentMention('@Moon Cheese', 12, 'Moon Cheese Inspector engineer').text, '@Moon Cheese Inspector engineer ');
+  assert.equal(activeMentionAt('person@example.com', 10), null);
+  assert.equal(activeMentionAt('@Builder\nnew line', 17), null);
+  assert.equal(activeMentionAt('no mention', 4), null);
+  assert.equal(activeMentionAt('@Builder', 0), null);
+  assert.equal(insertAgentMention('plain task', 5, 'Builder'), null);
+  assert.equal(insertAgentMention('(@Bu)', 4, 'Builder').text, '(@Builder)');
+});
 import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
 import { initializeEditorViewport } from '../src/editor-viewport.ts';
 import { submitOnce } from '../src/submission.ts';

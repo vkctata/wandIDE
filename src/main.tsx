@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { hasAgentMention } from "./mentions";
+import { hasAgentMention, activeMentionAt, insertAgentMention } from "./mentions";
 import { accumulateDownload, installApprovedUpdate, type DownloadState } from "./update-installation";
 import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-persistence";
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
@@ -2782,7 +2782,12 @@ function AgentMentionInput({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [caret, setCaret] = useState(value.length);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const pendingCaret = useRef<number | null>(null);
+  const menuId = React.useId();
+  const context = activeMentionAt(value, caret);
+  const query = context?.query || "";
   const [highlighted, setHighlighted] = useState(0);
   const available = agents.filter(
     (agent) =>
@@ -2792,28 +2797,36 @@ function AgentMentionInput({
   );
   const choose = (agent: Agent) => {
     if (disabled) return;
-    const at = value.lastIndexOf("@");
-    const next =
-      at >= 0
-        ? value.slice(0, at) + "@" + agent.name + " "
-        : value + "@" + agent.name + " ";
-    onChange(next);
+    const next = insertAgentMention(value, caret, agent.name);
+    if (!next) return;
+    pendingCaret.current = next.caret;
+    onChange(next.text);
     onTagged(tagged.includes(agent.id) ? tagged : [...tagged, agent.id]);
     setOpen(false);
-    setQuery("");
+    setCaret(next.caret);
     setHighlighted(0);
   };
-  const update = (next: string) => {
+  useEffect(() => {
+    if (pendingCaret.current === null) return;
+    input.current?.focus();
+    input.current?.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  }, [value]);
+  const locateMention = (next: string, position: number) => {
+    setCaret(position);
+    const range = activeMentionAt(next, position);
+    const alreadySelected = range && available.some(agent => tagged.includes(agent.id) &&
+      (range.query === agent.name || range.query.startsWith(agent.name + ' ')));
+    setOpen(Boolean(range && !alreadySelected));
+    setHighlighted(0);
+  };
+  const update = (next: string, position: number) => {
     onChange(next);
     onTagged(tagged.filter((id) => {
       const agent = available.find((candidate) => candidate.id === id);
       return agent ? hasAgentMention(next, agent.name) : false;
     }));
-    const at = next.lastIndexOf("@");
-    const fragment = at >= 0 ? next.slice(at + 1) : "";
-    setQuery(fragment);
-    setOpen(at >= 0 && !fragment.includes(" "));
-    setHighlighted(0);
+    locateMention(next, position);
   };
   const matches = available
     .filter((agent) =>
@@ -2826,9 +2839,16 @@ function AgentMentionInput({
   return (
     <div className="mention-composer">
       <textarea
+        ref={input}
+        aria-haspopup="listbox"
+        aria-autocomplete="list"
+        aria-controls={open && !disabled ? menuId : undefined}
+        aria-activedescendant={open && !disabled && matches.length ? `${menuId}-${highlighted % matches.length}` : undefined}
+        aria-label={placeholder}
         value={value}
         disabled={disabled}
-        onChange={(event) => update(event.target.value)}
+        onChange={(event) => update(event.target.value, event.target.selectionStart)}
+        onSelect={(event) => locateMention(event.currentTarget.value, event.currentTarget.selectionStart)}
         placeholder={placeholder}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -2841,23 +2861,24 @@ function AgentMentionInput({
             setHighlighted((index) => (index - 1 + matches.length) % matches.length);
           } else if (open && event.key === "Enter" && matches.length) {
             event.preventDefault();
-            choose(matches[highlighted]);
+            choose(matches[highlighted % matches.length]);
           }
         }}
       />
       {open && !disabled && (
-        <div className="mention-menu" role="listbox" aria-label="Agents to tag">
+        <div className="mention-menu" id={menuId} role="listbox" aria-label="Agents to tag">
           {matches.map((agent, index) => (
               <button
                 type="button"
                 key={agent.id}
+                id={`${menuId}-${index}`}
                 role="option"
                 aria-selected={index === highlighted}
                 className={index === highlighted ? "highlighted" : ""}
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  choose(agent);
                 }}
+                onClick={() => choose(agent)}
               >
                 <span
                   className="mention-avatar"
