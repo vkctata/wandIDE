@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { hasAgentMention } from "./mentions";
-import { isRepositorySync } from "./provider-events";
+import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
@@ -3561,26 +3561,25 @@ function BackgroundStatus() {
   );
 }
 function ProviderHealth() {
-  const [error, setError] = useState("");
+  const [failures, setFailures] = useState<ProviderFailure[]>([]);
   useEffect(() => {
     const stop = listen<any>("wand://provider", (event) => {
-      if (event.payload?.status === "error")
-        setError(`${event.payload.provider}: ${event.payload.error}`);
-      else if (event.payload?.status === "ok") setError("");
+      setFailures((current) => updateProviderHealth(current, event.payload));
     });
     return () => {
       stop.then((unsubscribe) => unsubscribe());
     };
   }, []);
-  if (!error) return null;
+  const failure = failures[0];
+  if (!failure) return null;
   return (
     <button
       className="provider-health-error"
-      onClick={() => setError("")}
+      onClick={() => setFailures((current) => current.filter((item) => item.provider !== failure.provider))}
       title="Dismiss provider health warning"
     >
       <span className="background-dot error" />
-      <span>{error}</span>
+      <span>{failure.provider}: {failure.message}{failures.length > 1 ? ` (+${failures.length - 1} more)` : ""}</span>
       <b>×</b>
     </button>
   );
