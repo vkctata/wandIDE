@@ -133,6 +133,11 @@ notifications; those notices require a completed repository sync with a valid co
 Failures are tracked per provider: recovery or dismissal of one warning leaves
 other provider failures visible, with a count when multiple connections need attention.
 
+Onboarding finishes only after the desktop database saves your name. A failed
+save keeps the walkthrough open with a retryable error; repeated submission is
+blocked while saving. Browser previews store their name separately and cannot
+mark native onboarding complete.
+
 ## Wand website
 
 The product tour groups screenshots into keyboard-accessible tabs for tasks,

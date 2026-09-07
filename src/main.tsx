@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { hasAgentMention } from "./mentions";
+import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-persistence";
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
 import { createRoot } from "react-dom/client";
@@ -2091,9 +2092,26 @@ const localCliFallback: DetectedCli[] = [
   { id: "gemini", name: "Gemini CLI", command: "gemini", installed: false },
 ];
 
-function Onboarding({ done }: { done: (name: string) => void }) {
+function Onboarding({ done }: { done: (name: string) => Promise<void> }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const saveInFlight = useRef(false);
+  const finish = async () => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await done(name);
+    } catch (cause) {
+      setSaveError(`Could not save your name: ${String(cause)}. Please try again.`);
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
+    }
+  };
   const [providers, setProviders] = useState<Record<string, boolean>>({});
   const [providerMessage, setProviderMessage] = useState("");
   const [clis, setClis] = useState<DetectedCli[]>([]);
@@ -2102,7 +2120,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
   const [cliMessage, setCliMessage] = useState("");
   const slides = [
     ["Welcome to Wand", "Your local-first AI engineering workspace. Plan, build, review, and verify without losing the thread."],
-    ["Connect your reports", "Choose where Wand can read repository and project activity. Credentials are protected by your operating system's credential store."],
+    ["Connect your tools", "Choose where Wand can read repository and project activity. Credentials are protected by your operating system's credential store."],
     ["Prepare your local tools", "Wand found the coding CLIs available on this machine. Enable only the runtimes you want your agents to use."],
     ["You're ready", "Your workspace remains local, every handoff is visible, and you can change providers or tools anytime in Settings."],
   ];
@@ -2247,7 +2265,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
         </div>
         <div className="onboard-actions">
           {step > 0 ? (
-            <button className="textbtn" onClick={() => setStep(step - 1)}>
+            <button className="textbtn" disabled={saving} onClick={() => setStep(step - 1)}>
               Back
             </button>
           ) : (
@@ -2255,14 +2273,15 @@ function Onboarding({ done }: { done: (name: string) => void }) {
           )}
           <button
             className="primary"
-            disabled={step === 0 && !name.trim()}
+            disabled={saving || !name.trim()}
             onClick={() =>
-              step < slides.length - 1 ? setStep(step + 1) : done(name.trim())
+              step < slides.length - 1 ? setStep(step + 1) : void finish()
             }
           >
-            {step < slides.length - 1 ? "Continue" : "Enter Wand"}
+            {saving ? "Saving…" : step < slides.length - 1 ? "Continue" : "Enter Wand"}
           </button>
         </div>
+        {saveError && <p className="onboard-message" role="alert">{saveError}</p>}
       </div>
     </div>
   );
@@ -3676,13 +3695,13 @@ function OnboardingGate() {
     invoke<string | null>("user_name")
       .then((name) => setShow(!name?.trim()))
       .catch(() =>
-        setShow(localStorage.getItem("wand.onboarding.complete") !== "true"),
+        setShow(isTauriRuntime() || !previewOnboardingComplete(() => localStorage)),
       );
   }, []);
   const finish = async (name: string) => {
-    await invoke("save_user_name", { name }).catch(() => {});
-    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: name }));
-    localStorage.setItem("wand.onboarding.complete", "true");
+    const saved = await persistOnboardingName(name, isTauriRuntime(),
+      (value) => invoke("save_user_name", { name: value }), () => localStorage);
+    window.dispatchEvent(new CustomEvent("wand:user-name", { detail: saved }));
     setShow(false);
   };
   return (
