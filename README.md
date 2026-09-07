@@ -59,7 +59,7 @@ The background Rust worker wakes every 30 seconds. It monitors recurring cron ta
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 24+ (CI uses Node 24)
 - npm
 - Rust stable and Cargo
 - Tauri platform prerequisites for the operating system you are building on
@@ -125,12 +125,14 @@ Run the frontend build:
 
 ```bash
 npm run build
+npm run test:desktop
+npm run check:ipc
 ```
 
 Run the Rust/Tauri check:
 
 ```bash
-cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
 ```
 
 ## Desktop builds
