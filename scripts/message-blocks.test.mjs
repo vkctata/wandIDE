@@ -21,4 +21,14 @@ test('closing fence must match type and minimum length', () => {
 test('does not mistake inline backticks for a block', () => {
   assert.equal(messageBlocks('Use `x` or ```y``` inline.')[0].kind, 'text');
   assert.equal(messageBlocks('```\n```')[0].content, '');
+  assert.equal(messageBlocks('```inline``` text')[0].kind, 'text');
+  assert.equal(messageBlocks('```js `invalid`\nx')[0].kind, 'text');
+});
+
+test('untrusted fence labels never resolve inherited object properties', () => {
+  for (const name of ['__proto__', 'constructor', 'prototype', 'unknown-language']) {
+    const block = messageBlocks('```' + name + '\nx\n```')[0];
+    assert.equal(block.language, name);
+    assert.equal(typeof block.language, 'string');
+  }
 });
