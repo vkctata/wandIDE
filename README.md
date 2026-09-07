@@ -120,6 +120,8 @@ inline scripts, or eval are allowed. See [Tauri's CSP guidance](https://v2.tauri
 The file editor keeps Git HEAD as its diff baseline after saving. Save is disabled
 until a file has loaded successfully, and stale file-load responses are ignored.
 Switching repositories resets the editor to that repository's file context.
+Editors remeasure their visible container on mount before drawing code, including
+both diff panes, so native first paint does not rely on a deferred resize frame.
 
 Fenced code in post details, comments, and saved agent transcripts uses lazy,
 read-only Monaco snippets that follow the desktop appearance. Timeline cards show a short prose title (or a code

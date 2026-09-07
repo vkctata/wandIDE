@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
 import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
+import { initializeEditorViewport } from '../src/editor-viewport.ts';
+
+test('mounted editors measure the visible host before drawing either diff side', () => {
+  const calls = [];
+  const host = { layout: () => calls.push('layout') };
+  const view = name => ({ render: force => calls.push([name, force]) });
+  initializeEditorViewport(host, [view('file')]);
+  assert.deepEqual(calls, ['layout', ['file', true]]);
+  calls.length = 0;
+  initializeEditorViewport(host, [view('original'), view('modified')]);
+  assert.deepEqual(calls, ['layout', ['original', true], ['modified', true]]);
+  const source = readFileSync(new URL('../src/editor.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /Temporary Monaco diagnostics|setTimeout/);
+  assert.equal([...source.matchAll(/props.onMount\?\.\(editor, api\)/g)].length, 2);
+});
 
 test('repository layout reserves a second column only for an open post', () => {
   const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
