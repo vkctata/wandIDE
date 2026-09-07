@@ -113,9 +113,18 @@ GitHub Actions builds these installers for tagged releases and attaches them to 
 
 The static product site lives in `website/` and is published through
 `.github/workflows/pages.yml` to GitHub Pages whenever the site changes on
-`main`. It includes release-aware download links, product screenshots, and a
-responsive newsletter signup surface. GitHub Pages cannot safely send email by
-itself; configure `window.WAND_NEWSLETTER_ENDPOINT` in the site deployment to
+`main`. It uses a responsive, neutral layout and a light/dark switch that follows
+the system initially and saves the visitor's choice locally. An app tour covers
+tasks, conversations, providers, and notifications; historical beta screenshots
+are labeled accordingly. Download cards resolve the published release, package
+size, and architecture, with an explicit fallback when an installer is missing
+or GitHub cannot be reached. Run `node --test scripts/website.test.mjs` to check
+assets, anchors, theme behavior, and release URL handling.
+
+Email signup is hidden until connected, with GitHub release updates offered
+instead. GitHub Pages cannot safely send email by itself; configure
+`window.WAND_NEWSLETTER_ENDPOINT` in an external same-origin script loaded before
+`main.js` (inline scripts are blocked by the site's CSP) to
 point at a provider-owned HTTPS endpoint or a small serverless function. Keep
 any provider API key on that service, never in the Pages bundle.
 

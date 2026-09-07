@@ -1,44 +1,38 @@
-const releaseApi = 'https://api.github.com/repos/vkctata/wandIDE/releases/latest';
-const releasePage = 'https://github.com/vkctata/wandIDE/releases/latest';
-
-const safeGithubUrl = (value, fallback = releasePage) => {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && url.hostname === 'github.com' ? url.href : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
+import { releasePage, resolveAsset } from './releases.js';
 const releaseLinks = document.querySelectorAll('[data-release-asset]');
+const releaseStatus = document.querySelector('#release-status');
+releaseStatus.textContent = 'Checking the latest release…';
 releaseLinks.forEach((link) => link.setAttribute('aria-busy', 'true'));
 
-fetch(releaseApi, {
+fetch('https://api.github.com/repos/vkctata/wandIDE/releases/latest', {
   headers: { Accept: 'application/vnd.github+json' },
-  mode: 'cors',
   credentials: 'omit',
   referrerPolicy: 'no-referrer',
+  signal: AbortSignal.timeout(10000),
 })
   .then((response) => {
-    if (!response.ok) throw new Error('release lookup failed');
+    if (!response.ok) throw new Error('Release lookup unavailable');
     return response.json();
   })
   .then((release) => {
-    const assets = Array.isArray(release?.assets) ? release.assets : [];
-    const fallback = safeGithubUrl(release?.html_url);
+    if (!release?.tag_name || !Array.isArray(release.assets)) throw new Error('Invalid release');
+    releaseStatus.textContent = `Latest published release: ${release.tag_name}`;
     releaseLinks.forEach((link) => {
-      const suffix = link.dataset.releaseAsset;
-      const asset = assets.find((candidate) => typeof candidate?.name === 'string' && candidate.name.endsWith(suffix));
-      link.href = safeGithubUrl(asset?.browser_download_url, fallback);
-      link.removeAttribute('aria-busy');
+      const asset = resolveAsset(release, link.dataset.releaseAsset);
+      link.href = asset.href;
+      // Download in this tab; fallback release notes remain a normal link.
+      if (asset.available) link.removeAttribute('target');
+      const note = document.createElement('span');
+      note.className = 'asset-note';
+      note.textContent = asset.available ? `Download installer${asset.size ? ' · ' + asset.size : ''}` : 'Installer unavailable · view release';
+      link.append(note);
     });
   })
   .catch(() => {
-    releaseLinks.forEach((link) => {
-      link.href = releasePage;
-      link.removeAttribute('aria-busy');
-    });
-  });
+    releaseStatus.textContent = 'Could not check the latest release. Installer links will open GitHub Releases.';
+    releaseLinks.forEach((link) => { link.href = releasePage; });
+  })
+  .finally(() => releaseLinks.forEach((link) => link.removeAttribute('aria-busy')));
 
 const form = document.querySelector('#newsletter-form');
 const note = document.querySelector('#form-note');
@@ -52,6 +46,11 @@ const newsletterEndpoint = () => {
   }
 };
 
+if (form && newsletterEndpoint()) {
+  form.hidden = false;
+  note.textContent = 'Subscribe for release updates. Your email is sent to our mailing service only when you submit.';
+}
+
 form?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const email = String(new FormData(form).get('email') || '').trim();
@@ -63,7 +62,7 @@ form?.addEventListener('submit', async (event) => {
   const endpoint = newsletterEndpoint();
   if (!endpoint) {
     note.textContent = 'Newsletter signup is opening soon — follow Wand on GitHub for release updates.';
-    note.dataset.state = 'success';
+    note.dataset.state = 'unavailable';
     return;
   }
 
