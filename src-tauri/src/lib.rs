@@ -50,9 +50,9 @@ fn encrypt_local_value(value: &str) -> Result<String, String> {
     let store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
     let key = local_cipher_key(&store.salt);
     let id = uuid::Uuid::new_v4();
-    let nonce_bytes = &id.as_bytes()[..12];
+    let nonce_bytes: [u8; 12] = id.as_bytes()[..12].try_into().map_err(|_| "Invalid encryption nonce")?;
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
-    let ciphertext = cipher.encrypt(Nonce::from_slice(nonce_bytes), value.as_bytes()).map_err(|_| "Could not encrypt local data".to_string())?;
+    let ciphertext = cipher.encrypt(&Nonce::from(nonce_bytes), value.as_bytes()).map_err(|_| "Could not encrypt local data".to_string())?;
     Ok(format!("{LOCAL_CIPHER_PREFIX}{}:{}", BASE64.encode(nonce_bytes), BASE64.encode(ciphertext)))
 }
 
@@ -64,10 +64,10 @@ fn decrypt_local_value(value: &str) -> Result<String, String> {
     let (nonce, ciphertext) = payload.split_once(':').ok_or_else(|| "Encrypted local data is malformed".to_string())?;
     let nonce = BASE64.decode(nonce).map_err(|_| "Encrypted local data is malformed".to_string())?;
     let ciphertext = BASE64.decode(ciphertext).map_err(|_| "Encrypted local data is malformed".to_string())?;
-    if nonce.len() != 12 { return Err("Encrypted local data is malformed".into()); }
+    let nonce: [u8; 12] = nonce.try_into().map_err(|_| "Encrypted local data is malformed".to_string())?;
     let store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
     let cipher = Aes256Gcm::new_from_slice(&local_cipher_key(&store.salt)).map_err(|e| e.to_string())?;
-    let plaintext = cipher.decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref()).map_err(|_| "Could not decrypt local data for this user".to_string())?;
+    let plaintext = cipher.decrypt(&Nonce::from(nonce), ciphertext.as_ref()).map_err(|_| "Could not decrypt local data for this user".to_string())?;
     String::from_utf8(plaintext).map_err(|_| "Encrypted local data is malformed".to_string())
 }
 
@@ -934,8 +934,6 @@ fn create_thread_message(
         };
 
         if !agent_ids.is_empty() {
-            let cli = first_enabled_installed_cli(&tx)
-                .ok_or_else(|| "No enabled and installed CLI is available for this agent task".to_string())?;
             let repo_path: String = tx
                 .query_row(
                     "SELECT path FROM repos WHERE name=?1 AND (provider='local' OR provider='')",
@@ -950,36 +948,9 @@ fn create_thread_message(
             if !repo_path.is_dir() {
                 return Err("The tagged repository folder is no longer available".into());
             }
-            let fallback_cli = cli.clone();
-            let enabled_clis = cli_access_from_db(&tx)?;
-            let configs = agent_ids
-                .iter()
-                .filter_map(|agent_id| {
-                    tx.query_row(
-                        "SELECT cli,model,role,skills FROM agents WHERE id=?1",
-                        params![agent_id],
-                        |row| {
-                            let stored_cli: String = row.get(0)?;
-                            let cli = if enabled_clis.iter().any(|item| item == &stored_cli)
-                                && installed_cli_path(&stored_cli).is_some()
-                            {
-                                stored_cli
-                            } else {
-                                fallback_cli.clone()
-                            };
-                            let skills_json: String = row.get(3)?;
-                            Ok(AgentExecution {
-                                cli,
-                                model: row.get(1)?,
-                                responsibility: row.get(2)?,
-                                skills: serde_json::from_str(&skills_json).unwrap_or_default(),
-                            })
-                        },
-                    )
-                    .ok()
-                    .map(|config| (agent_id.clone(), config))
-                })
-                .collect::<HashMap<_, _>>();
+            let configs = persisted_chain_configs(&tx, &repo, &agent_ids, &|cli| {
+                installed_cli_path(cli).is_some()
+            })?;
             let task_id = uuid::Uuid::new_v4().to_string();
             let task_name: String = body.chars().take(120).collect();
             let agents_json = serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?;
@@ -1001,8 +972,6 @@ fn create_thread_message(
                 prompt: body,
                 repo_path: repo_path.to_string_lossy().into_owned(),
                 agents: agent_ids,
-                cli,
-                model: "default".into(),
                 agent_configs: configs,
                 run_id: Some(run_id),
             });
@@ -1016,8 +985,7 @@ fn create_thread_message(
             "wand://task",
             serde_json::json!({"task_id": task_id, "repo": message.repo}),
         );
-        let cli = request.cli.clone();
-        launch_chain_worker(request, cli, db.0.clone(), app.clone());
+        launch_chain_worker(request, db.0.clone(), app.clone());
     }
     Ok(message)
 }
@@ -1138,12 +1106,6 @@ fn cli_access_from_db(conn: &Connection) -> Result<Vec<String>, String> {
     Ok(value
         .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
         .unwrap_or_default())
-}
-fn first_enabled_installed_cli(conn: &Connection) -> Option<String> {
-    cli_access_from_db(conn)
-        .ok()?
-        .into_iter()
-        .find(|cli| installed_cli_path(cli).is_some())
 }
 #[tauri::command]
 fn cli_access(db: State<Db>) -> Result<Vec<String>, String> {
@@ -1345,7 +1307,7 @@ fn provider_url(provider: String, db: State<Db>) -> Result<Option<String>, Strin
     .optional()
     .map_err(|e| e.to_string())
 }
-#[derive(Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 struct AgentExecution {
     cli: String,
     model: String,
@@ -1360,14 +1322,64 @@ struct ChainRequest {
     prompt: String,
     repo_path: String,
     agents: Vec<String>,
-    cli: String,
-    #[serde(default)]
-    model: String,
     #[serde(default)]
     agent_configs: HashMap<String, AgentExecution>,
     #[serde(default)]
     run_id: Option<String>,
 }
+// Resolve every stage from storage, never from request-supplied defaults.
+fn chain_stages(agents: &[String]) -> Vec<String> {
+    let mut stages: Vec<_> = agents.iter()
+        .filter(|agent| agent.as_str() != "sentinel-verifier").cloned().collect();
+    stages.push("sentinel-verifier".into());
+    stages
+}
+
+fn persisted_agent_execution(
+    conn: &Connection,
+    repo: &str,
+    agent: &str,
+    installed: &impl Fn(&str) -> bool,
+) -> Result<AgentExecution, String> {
+    // The final stage has a distinct event label, but uses the saved Sentinel agent.
+    let persisted_id = if agent == "sentinel-verifier" { "sentinel" } else { agent };
+    let (cli, model, responsibility, skills, scope): (String, String, String, String, String) =
+        conn.query_row(
+            "SELECT cli,model,role,skills,scope FROM agents WHERE id=?1",
+            params![persisted_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        ).map_err(|_| format!("Unknown agent: {agent}"))?;
+    if scope != "workspace" && scope != format!("repo:{repo}") {
+        return Err(format!("Agent {agent} is not available in repository {repo}"));
+    }
+    if allowed_cli(&cli).is_none() {
+        return Err(format!("Agent {agent} uses unsupported CLI runtime '{cli}'"));
+    }
+    if !cli_access_from_db(conn)?.contains(&cli) {
+        return Err(format!("Agent {agent} uses CLI runtime '{cli}' disabled in Wand settings"));
+    }
+    if !installed(&cli) {
+        return Err(format!("Agent {agent} uses CLI runtime '{cli}' no longer installed on this machine"));
+    }
+    Ok(AgentExecution {
+        cli, model, responsibility,
+        skills: serde_json::from_str(&skills)
+            .map_err(|e| format!("Invalid skills for agent {agent}: {e}"))?,
+    })
+}
+
+fn persisted_chain_configs(
+    conn: &Connection,
+    repo: &str,
+    agents: &[String],
+    installed: &impl Fn(&str) -> bool,
+) -> Result<HashMap<String, AgentExecution>, String> {
+    chain_stages(agents).into_iter().map(|agent| {
+        let config = persisted_agent_execution(conn, repo, &agent, installed)?;
+        Ok((agent, config))
+    }).collect()
+}
+
 fn allowed_cli(cli: &str) -> Option<&'static str> {
     match cli {
         "claude" => Some("claude"),
@@ -1569,29 +1581,58 @@ fn finish_run(
 }
 fn begin_task_run(conn: &Connection, task_id: &str) -> rusqlite::Result<bool> {
     conn.execute(
-        "UPDATE tasks SET status='running' WHERE id=?1 AND status != 'cancelled'",
+        "UPDATE tasks SET status='running' WHERE id=?1 AND status NOT IN ('cancelled','running')",
         params![task_id],
     )
     .map(|changed| changed > 0)
 }
+fn validate_task_agents(conn: &Connection, task_id: &str, agents: &[String]) -> Result<(), String> {
+    let stored: String = conn.query_row(
+        "SELECT agents FROM tasks WHERE id=?1", params![task_id], |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    let persisted: Vec<String> = serde_json::from_str(&stored).map_err(|e| e.to_string())?;
+    if agents.is_empty() || agents != persisted {
+        return Err("Agent chain must exactly match the persisted task agents in order".into());
+    }
+    Ok(())
+}
+
+// Called inside the launch transaction: neither a reused run nor a failed task
+// claim can reach process execution, and an error rolls back both updates.
+fn claim_task_run(conn: &Connection, task_id: &str, run_id: &str) -> Result<(), String> {
+    let changed = conn.execute(
+        "UPDATE task_runs SET status='running',started_at=?3 WHERE id=?1 AND task_id=?2 AND status='queued'",
+        params![run_id, task_id, Utc::now().to_rfc3339()],
+    ).map_err(|e| e.to_string())?;
+    if changed != 1 {
+        return Err("Task run is missing, already started, or belongs to another task".into());
+    }
+    if !begin_task_run(conn, task_id).map_err(|e| e.to_string())? {
+        return Err("Task is missing, cancelled, or already running".into());
+    }
+    Ok(())
+}
+
+fn start_manual_run(conn: &mut Connection, req: &mut ChainRequest) -> Result<(), String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    validate_task_agents(&tx, &req.task_id, &req.agents)?;
+    // Manual IPC never accepts a caller-selected run identity.
+    let run_id = uuid::Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",
+        params![run_id, req.task_id, Utc::now().to_rfc3339()],
+    ).map_err(|e| e.to_string())?;
+    claim_task_run(&tx, &req.task_id, &run_id)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    req.run_id = Some(run_id);
+    Ok(())
+}
+
 #[tauri::command]
 fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> Result<(), String> {
-    let command = allowed_cli(&req.cli)
-        .ok_or_else(|| "Unsupported CLI".to_string())?
-        .to_string();
     {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
-        let allowed = cli_access_from_db(&conn)?;
-        if !allowed.iter().any(|item| item == &command) {
-            return Err(format!(
-                "CLI runtime '{command}' is disabled in Wand settings"
-            ));
-        }
-        if installed_cli_path(&command).is_none() {
-            return Err(format!(
-                "CLI runtime '{command}' is no longer installed on this machine"
-            ));
-        }
+        let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+        validate_task_agents(&conn, &req.task_id, &req.agents)?;
         let (repo_name, stored_path): (String, String) = conn
             .query_row(
                 "SELECT tasks.repo,repos.path FROM tasks JOIN repos ON repos.name=tasks.repo WHERE tasks.id=?1",
@@ -1600,58 +1641,19 @@ fn run_agent_chain_v2(mut req: ChainRequest, db: State<Db>, app: AppHandle) -> R
             )
             .map_err(|_| "Task or repository does not exist".to_string())?;
         let stored_path = decrypt_local_value(&stored_path)?;
-        if std::path::Path::new(&stored_path).canonicalize().ok()
-            != std::path::Path::new(&req.repo_path).canonicalize().ok()
-        {
+        let stored_root = Path::new(&stored_path).canonicalize()
+            .map_err(|_| "Task repository folder is no longer available".to_string())?;
+        let requested_root = Path::new(&req.repo_path).canonicalize()
+            .map_err(|_| "Agent execution folder is no longer available".to_string())?;
+        if !stored_root.is_dir() || stored_root != requested_root {
             return Err("Agent execution path does not match the task repository".into());
         }
-        for agent_id in &req.agents {
-            let scope: String = conn
-                .query_row(
-                    "SELECT scope FROM agents WHERE id=?1",
-                    params![agent_id],
-                    |row| row.get(0),
-                )
-                .map_err(|_| format!("Unknown agent: {agent_id}"))?;
-            if scope != "workspace" && scope != format!("repo:{repo_name}") {
-                return Err(format!(
-                    "Agent {agent_id} is not available in repository {repo_name}"
-                ));
-            }
-        }
-    for agent_id in &req.agents {
-        if agent_id == "sentinel-verifier" {
-            continue;
-        }
-        let (cli, model, responsibility, skills_json): (String, String, String, String) = conn
-            .query_row(
-                "SELECT cli,model,role,skills FROM agents WHERE id=?1",
-                params![agent_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)), 
-            )
-            .map_err(|_| format!("Unknown agent: {agent_id}"))?;
-        req.agent_configs.insert(
-            agent_id.clone(),
-            AgentExecution {
-                cli,
-                model,
-                responsibility,
-                skills: serde_json::from_str(&skills_json).unwrap_or_default(),
-            },
-        );
+        req.agent_configs = persisted_chain_configs(&conn, &repo_name, &req.agents, &|cli| {
+            installed_cli_path(cli).is_some()
+        })?;
+        start_manual_run(&mut conn, &mut req)?;
     }
-    }
-    let run_id = req
-        .run_id
-        .take()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let scheduled_at = Utc::now().to_rfc3339();
-    {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
-        conn.execute("INSERT OR IGNORE INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",params![run_id,&req.task_id,scheduled_at]).map_err(|e|e.to_string())?;
-    }
-    req.run_id = Some(run_id);
-    launch_chain_worker(req, command, db.0.clone(), app);
+    spawn_claimed_chain_worker(req, db.0.clone(), app);
     Ok(())
 }
 fn task_completion_status(cron: &str) -> &'static str {
@@ -1663,47 +1665,49 @@ fn task_completion_status(cron: &str) -> &'static str {
 }
 fn launch_chain_worker(
     req: ChainRequest,
-    command: String,
     db_arc: Arc<Mutex<Connection>>,
     app: AppHandle,
 ) {
+    // Scheduler callers hold the database lock; claim on the worker thread.
     thread::spawn(move || {
-        let cancelled_before_start = match db_arc.lock() {
-            Ok(conn) => {
-                !begin_task_run(&conn, &req.task_id).unwrap_or(false)
-                    && conn
-                        .query_row(
-                            "SELECT status FROM tasks WHERE id=?1",
-                            params![req.task_id],
-                            |row| row.get::<_, String>(0),
-                        )
-                        .map(|status| status == "cancelled")
-                        .unwrap_or(false)
-            }
-            Err(_) => false,
-        };
-        if cancelled_before_start {
-            finish_run(&db_arc, &req.run_id, "cancelled", Some("Cancelled by user"));
-            let _ = app.emit(
-                "wand://agent",
-                serde_json::json!({"task_id":req.task_id,"status":"cancelled","error":"Cancelled by user"}),
-            );
-            return;
-        }
-        if let Ok(conn) = db_arc.lock() {
-            if let Some(run_id) = &req.run_id {
+        let claim = (|| {
+            let mut conn = db_arc.lock().map_err(|e| e.to_string())?;
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            validate_task_agents(&tx, &req.task_id, &req.agents)?;
+            let run_id = req.run_id.as_deref().ok_or("Task run identity is required")?;
+            claim_task_run(&tx, &req.task_id, run_id)?;
+            tx.commit().map_err(|e| e.to_string())
+        })();
+        if let Err(error) = claim {
+            if let Ok(conn) = db_arc.lock() {
                 let _ = conn.execute(
-                    "UPDATE task_runs SET status='running',started_at=?2 WHERE id=?1",
-                    params![run_id, Utc::now().to_rfc3339()],
+                    "UPDATE task_runs SET status='failed',finished_at=?3,error=?4 WHERE id=?1 AND task_id=?2 AND status='queued'",
+                    params![req.run_id, req.task_id, Utc::now().to_rfc3339(), error],
                 );
             }
+            let _ = app.emit("wand://agent", serde_json::json!({
+                "task_id":req.task_id,"run_id":req.run_id,"status":"failed","error":error
+            }));
+            return;
         }
+        spawn_claimed_chain_worker(req, db_arc, app);
+    });
+}
+
+fn spawn_claimed_chain_worker(req: ChainRequest, db_arc: Arc<Mutex<Connection>>, app: AppHandle) {
+    thread::spawn(move || {
         let mut handoff = String::from(
             "No previous stage output. Inspect the repository and begin from the task request.",
         );
-        let mut stages = req.agents.clone();
-        stages.push("sentinel-verifier".into());
+        let stages = chain_stages(&req.agents);
         for (index, agent) in stages.iter().enumerate() {
+            let stage_number = match i64::try_from(index + 1) {
+                Ok(value) => value,
+                Err(_) => {
+                    finish_run(&db_arc, &req.run_id, "failed", Some("Too many agent stages"));
+                    return;
+                }
+            };
             let cancelled = db_arc
                 .lock()
                 .ok()
@@ -1724,48 +1728,38 @@ fn launch_chain_worker(
                 );
                 return;
             }
-            let config = req.agent_configs.get(agent);
-            let stage_command = config
-                .and_then(|item| allowed_cli(&item.cli))
-                .unwrap_or(&command)
-                .to_string();
-            if installed_cli_path(&stage_command).is_none() {
-                let message = format!(
-                    "CLI runtime '{stage_command}' is no longer installed on this machine"
-                );
-                finish_run(&db_arc, &req.run_id, "failed", Some(&message));
-                let _ = app.emit(
-                    "wand://agent",
-                    serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
-                );
-                return;
-            }
-            if let Ok(conn) = db_arc.lock() {
-                let allowed = cli_access_from_db(&conn).unwrap_or_default();
-                if !allowed.iter().any(|item| item == &stage_command) {
-                    let message =
-                        format!("CLI runtime '{stage_command}' is disabled in Wand settings");
+            // Recheck persisted scope and runtime immediately before each stage.
+            // Drop the database guard before finish_run acquires it again.
+            let config = (|| {
+                let conn = db_arc.lock().map_err(|e| e.to_string())?;
+                let repo: String = conn.query_row(
+                    "SELECT repo FROM tasks WHERE id=?1", params![req.task_id],
+                    |row| row.get(0),
+                ).map_err(|e| e.to_string())?;
+                persisted_agent_execution(&conn, &repo, agent, &|cli| {
+                    installed_cli_path(cli).is_some()
+                })
+            })();
+            let config = match config {
+                Ok(config) => config,
+                Err(message) => {
+                    if let Ok(conn) = db_arc.lock() {
+                        let _ = conn.execute(
+                            "UPDATE tasks SET status='failed' WHERE id=?1 AND status='running'",
+                            params![req.task_id],
+                        );
+                    }
                     finish_run(&db_arc, &req.run_id, "failed", Some(&message));
-                    let _ = app.emit("wand://agent", serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}));
+                    let _ = app.emit("wand://agent", serde_json::json!({
+                        "task_id":req.task_id,"agent":agent,"status":"failed","error":message
+                    }));
                     return;
                 }
-                if installed_cli_path(&stage_command).is_none() {
-                    let message = format!(
-                        "CLI runtime '{stage_command}' is no longer installed on this machine"
-                    );
-                    finish_run(&db_arc, &req.run_id, "failed", Some(&message));
-                    let _ = app.emit(
-                        "wand://agent",
-                        serde_json::json!({"task_id":req.task_id,"agent":agent,"status":"failed","error":message}),
-                    );
-                    return;
-                }
-            }
-            let stage_model = config.map(|item| item.model.as_str()).unwrap_or(&req.model);
-            let responsibility = config
-                .map(|item| item.responsibility.as_str())
-                .unwrap_or("");
-            let skills = config.map(|item| item.skills.as_slice()).unwrap_or(&[]);
+            };
+            let stage_command = &config.cli;
+            let stage_model = config.model.as_str();
+            let responsibility = config.responsibility.as_str();
+            let skills = config.skills.as_slice();
             let _=app.emit("wand://agent",serde_json::json!({"run_id":req.run_id.as_deref(),"task_id":req.task_id,"agent":agent,"stage":index+1,"total":stages.len(),"cli":stage_command,"model":stage_model,"status":"running"}));
             let output_app = app.clone();
             let output_run_id = req.run_id.clone();
@@ -1812,7 +1806,7 @@ fn launch_chain_worker(
                         {
                             let _ = conn.execute(
                                 "INSERT INTO agent_transcripts(run_id,task_id,repo,agent,stage,status,content,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                                params![run_id, req.task_id, repo, agent, index + 1, if agent == "sentinel-verifier" { "verified" } else { "completed" }, handoff, Utc::now().to_rfc3339()],
+                                params![run_id, req.task_id, repo, agent, stage_number, if agent == "sentinel-verifier" { "verified" } else { "completed" }, handoff, Utc::now().to_rfc3339()],
                             );
                         }
                         let _ = conn.execute(
@@ -1873,7 +1867,7 @@ fn launch_chain_worker(
                         if let (Some(repo), Some(run_id)) = (repo, req.run_id.as_deref()) {
                             let _ = conn.execute(
                                 "INSERT INTO agent_transcripts(run_id,task_id,repo,agent,stage,status,content,created_at) VALUES (?1,?2,?3,?4,?5,'failed',?6,?7)",
-                                params![run_id, req.task_id, repo, agent, index + 1, error, Utc::now().to_rfc3339()],
+                                params![run_id, req.task_id, repo, agent, stage_number, error, Utc::now().to_rfc3339()],
                             );
                         }
                         let _ = conn.execute(
@@ -2726,8 +2720,7 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                     let message = format!("Scheduled task due: {name}");
                     let _ = conn.execute("INSERT INTO events(kind,message,created_at) VALUES (?1,?2,?3)", params!["scheduler.due", message, now.to_rfc3339()]);
                     let _ = app.emit("wand://scheduler", serde_json::json!({"task_id":id,"name":name,"status":"due","at":now.to_rfc3339()}));
-                    let cli = first_enabled_installed_cli(&conn);
-                    if let Some(cli) = cli {
+                    {
                         if let Ok((agents_json, repo_name)) = conn.query_row(
                             "SELECT agents,repo FROM tasks WHERE id=?1",
                             params![id],
@@ -2758,37 +2751,21 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                         );
                                         continue;
                                     };
-                                    let fallback_cli = cli.to_string();
-                                    let enabled_clis = cli_access_from_db(&conn).unwrap_or_default();
-                                    let agent_configs = agents
-                                        .iter()
-                                        .filter_map(|agent_id| {
-                                            conn.query_row(
-                                                "SELECT cli,model,role,skills FROM agents WHERE id=?1",
-                                                params![agent_id],
-                                                |r| {
-                                                    let stored_cli: String = r.get(0)?;
-                                                    let stage_cli = if enabled_clis.iter().any(|item| item == &stored_cli)
-                                                        && installed_cli_path(&stored_cli).is_some()
-                                                    {
-                                                        stored_cli
-                                                    } else {
-                                                        fallback_cli.clone()
-                                                    };
-                                                    let skills_json: String = r.get(3)?;
-                                                    Ok(AgentExecution {
-                                                        cli: stage_cli,
-                                                        model: r.get(1)?,
-                                                        responsibility: r.get(2)?,
-                                                        skills: serde_json::from_str(&skills_json)
-                                                            .unwrap_or_default(),
-                                                    })
-                                                },
-                                            )
-                                            .ok()
-                                            .map(|config| (agent_id.clone(), config))
-                                        })
-                                        .collect();
+                                    let agent_configs = match persisted_chain_configs(
+                                        &conn, &repo_name, &agents, &|cli| installed_cli_path(cli).is_some(),
+                                    ) {
+                                        Ok(configs) => configs,
+                                        Err(reason) => {
+                                            let _ = conn.execute(
+                                                "INSERT INTO events(kind,message,created_at) VALUES ('scheduler.skipped',?1,?2)",
+                                                params![format!("Scheduled task skipped: {name}: {reason}"), now.to_rfc3339()],
+                                            );
+                                            let _ = app.emit("wand://scheduler", serde_json::json!({
+                                                "task_id":id,"name":name,"status":"skipped","reason":reason
+                                            }));
+                                            continue;
+                                        }
+                                    };
                                     let run_id = format!("{}-{}", id, slot);
                                     let run_inserted = conn
                                         .execute(
@@ -2803,12 +2780,9 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                                                 prompt: format!("Scheduled task: {name}"),
                                                 repo_path: repo_path.to_string_lossy().into_owned(),
                                                 agents,
-                                                cli: cli.to_string(),
-                                                model: "default".into(),
                                                 agent_configs,
                                                 run_id: Some(run_id),
                                             },
-                                            cli.to_string(),
                                             db.clone(),
                                             app.clone(),
                                         );
@@ -2844,7 +2818,15 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default().plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); initialise_local_store(&dir).expect("initialise encrypted local store"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); encrypt_existing_repository_paths(&conn).expect("encrypt repository paths"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear,sync_linear_activity]).run(tauri::generate_context!()).expect("error while running wand");
+    tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_process::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_updater::Builder::new().pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyOTc2NzY4ODBFMDUzQ0QKUldUTlUrQ0FhR2VYUXJ3SFI0SytQbkIzaTBOaXdzWjNNYlNkb2dxLzdQdVJkcG9yZEhqeUQ0WUcK").build()).setup(|app| { let dir:PathBuf=app.path().app_data_dir().expect("app data dir"); fs::create_dir_all(&dir).expect("create app data dir"); initialise_local_store(&dir).expect("initialise encrypted local store"); let conn=Connection::open(dir.join("wand.db")).expect("open database"); migrate(&conn).expect("migrate database"); encrypt_existing_repository_paths(&conn).expect("encrypt repository paths"); recover_interrupted_runs(&conn).expect("recover interrupted runs"); let db=Arc::new(Mutex::new(conn)); app.manage(Db(db.clone())); start_background_sync(app.handle().clone(),db); Ok(()) }).invoke_handler(tauri::generate_handler![read_repo_file,write_repo_file,git_diff,git_file_versions,create_worktree,apply_git_patch,scan_repositories,save_repository,save_workspace_root,workspace_root,background_status,local_hour,workspace_setting,save_workspace_setting,save_user_name,user_name,list_repositories,run_agent_chain_v2,create_task,cancel_task,list_tasks,list_task_runs,list_agent_transcripts,list_events,list_agents,save_agent,delete_agent,import_agent_workflow,list_agent_workflows,list_thread_messages,create_thread_message,list_notifications,mark_notifications_read,detect_clis,cli_access,save_cli_access,save_provider_token,disconnect_provider,provider_status,test_provider_connection,save_provider_url,provider_url,github_pull_request_action,azure_pull_request_comment,azure_pull_request_approve,sync_github,sync_github_activity,sync_azure_devops,sync_azure_activity,sync_linear,sync_linear_activity]).run(tauri::generate_context!()).expect("error while running wand");
 }
 #[tauri::command]
 fn read_repo_file(
@@ -3140,6 +3122,199 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    fn launch_test_request(conn: &Connection) -> ChainRequest {
+        conn.execute(
+            "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('launch','Launch','repo','one-off','[\"planner\",\"builder\"]','queued','now')",
+            [],
+        ).unwrap();
+        serde_json::from_value(serde_json::json!({
+            "task_id":"launch","prompt":"test","repo_path":"/unused",
+            "agents":["planner","builder"],"run_id":"caller-selected"
+        })).unwrap()
+    }
+
+    #[test]
+    fn manual_launch_requires_exact_nonempty_persisted_agent_order() {
+        let mut conn = runtime_test_db();
+        let req = launch_test_request(&conn);
+        for agents in [
+            vec![], vec!["planner"], vec!["builder", "planner"],
+            vec!["planner", "reviewer"], vec!["planner", "builder", "builder"],
+        ] {
+            let mut changed = req.clone();
+            changed.agents = agents.into_iter().map(String::from).collect();
+            assert!(start_manual_run(&mut conn, &mut changed).is_err());
+        }
+        conn.execute("UPDATE tasks SET agents='[]' WHERE id='launch'", []).unwrap();
+        assert!(validate_task_agents(&conn, "launch", &[]).is_err());
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM task_runs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn manual_launch_ignores_caller_run_id_and_preserves_existing_run() {
+        let mut conn = runtime_test_db();
+        let mut req = launch_test_request(&conn);
+        conn.execute(
+            "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES ('caller-selected','other','old','completed')", [],
+        ).unwrap();
+        start_manual_run(&mut conn, &mut req).unwrap();
+        assert_ne!(req.run_id.as_deref(), Some("caller-selected"));
+        let existing: (String, String) = conn.query_row(
+            "SELECT task_id,status FROM task_runs WHERE id='caller-selected'", [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).unwrap();
+        assert_eq!(existing, ("other".into(), "completed".into()));
+        let status: String = conn.query_row(
+            "SELECT status FROM task_runs WHERE id=?1", params![req.run_id], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(status, "running");
+    }
+
+    #[test]
+    fn competing_manual_launches_claim_task_once_and_rollback_loser() {
+        let conn = runtime_test_db();
+        let req = launch_test_request(&conn);
+        let db = Arc::new(Mutex::new(conn));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = (0..2).map(|_| {
+            let db = db.clone();
+            let barrier = barrier.clone();
+            let mut req = req.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                start_manual_run(&mut db.lock().unwrap(), &mut req).is_ok()
+            })
+        }).collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(results.iter().filter(|ok| **ok).count(), 1);
+        let conn = db.lock().unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM task_runs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+        assert!(!begin_task_run(&conn, "launch").unwrap());
+    }
+
+    #[test]
+    fn worker_claim_rejects_missing_cancelled_running_and_reused_runs() {
+        let mut conn = runtime_test_db();
+        launch_test_request(&conn);
+        conn.execute(
+            "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES ('queued-run','launch','slot','queued')", [],
+        ).unwrap();
+        for status in ["cancelled", "running"] {
+            conn.execute("UPDATE tasks SET status=?1 WHERE id='launch'", params![status]).unwrap();
+            {
+                let tx = conn.transaction().unwrap();
+                assert!(claim_task_run(&tx, "launch", "queued-run").is_err());
+            }
+            let run_status: String = conn.query_row(
+                "SELECT status FROM task_runs WHERE id='queued-run'", [], |r| r.get(0),
+            ).unwrap();
+            assert_eq!(run_status, "queued");
+        }
+        conn.execute("UPDATE tasks SET status='queued' WHERE id='launch'", []).unwrap();
+        for (task, run) in [("missing", "queued-run"), ("launch", "missing")] {
+            let tx = conn.transaction().unwrap();
+            assert!(claim_task_run(&tx, task, run).is_err());
+        }
+        {
+            let tx = conn.transaction().unwrap();
+            claim_task_run(&tx, "launch", "queued-run").unwrap();
+            tx.commit().unwrap();
+        }
+        let tx = conn.transaction().unwrap();
+        assert!(claim_task_run(&tx, "launch", "queued-run").is_err());
+        assert!(!begin_task_run(&tx, "missing").unwrap());
+    }
+
+    fn runtime_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO workspace_settings(key,value) VALUES ('allowed-clis','[\"codex\",\"claude\"]')",
+            [],
+        ).unwrap();
+        conn
+    }
+
+    #[test]
+    fn chain_uses_persisted_models_responsibilities_and_verifier() {
+        let conn = runtime_test_db();
+        conn.execute("UPDATE agents SET cli='claude',model='saved-model',role='Saved responsibility',skills='[\"saved skill\"]' WHERE id='sentinel'", []).unwrap();
+        let mut req: ChainRequest = serde_json::from_value(serde_json::json!({
+            "task_id":"task","prompt":"test","repo_path":"/unused","agents":["planner"],
+            "cli":"shell","model":"untrusted",
+            "agent_configs":{"sentinel-verifier":{
+                "cli":"codex","model":"untrusted","responsibility":"untrusted"
+            }}
+        })).unwrap();
+        req.agent_configs = persisted_chain_configs(&conn, "repo", &req.agents, &|_| true).unwrap();
+        let verifier = &req.agent_configs["sentinel-verifier"];
+        assert_eq!(verifier.cli, "claude");
+        assert_eq!(verifier.model, "saved-model");
+        assert_eq!(verifier.responsibility, "Saved responsibility");
+        assert_eq!(verifier.skills, vec!["saved skill"]);
+        assert_eq!(req.agent_configs["planner"].cli, "codex");
+        assert_eq!(req.agent_configs["planner"].model, "default");
+        assert_eq!(chain_stages(&["sentinel-verifier".into(), "planner".into()]),
+            vec!["planner", "sentinel-verifier"]);
+    }
+
+    #[test]
+    fn chain_rejects_disabled_missing_and_unsupported_runtime_without_fallback() {
+        let conn = runtime_test_db();
+        for (cli, expected) in [("gemini", "disabled"), ("shell", "unsupported"), ("claude", "no longer installed")] {
+            conn.execute("UPDATE agents SET cli=?1 WHERE id='planner'", params![cli]).unwrap();
+            let error = persisted_chain_configs(&conn, "repo", &["planner".into()], &|cli| cli == "codex").unwrap_err();
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+
+    #[test]
+    fn chain_rejects_unknown_and_out_of_scope_agents_including_verifier() {
+        let conn = runtime_test_db();
+        assert!(persisted_chain_configs(&conn, "repo", &["missing".into()], &|_| true)
+            .unwrap_err().contains("Unknown agent"));
+        for id in ["planner", "sentinel"] {
+            conn.execute("UPDATE agents SET scope='repo:other' WHERE id=?1", params![id]).unwrap();
+            assert!(persisted_chain_configs(&conn, "repo", &["planner".into()], &|_| true)
+                .unwrap_err().contains("not available"));
+            conn.execute("UPDATE agents SET scope='workspace' WHERE id=?1", params![id]).unwrap();
+        }
+        conn.execute("DELETE FROM agents WHERE id='sentinel'", []).unwrap();
+        assert!(persisted_chain_configs(&conn, "repo", &[], &|_| true)
+            .unwrap_err().contains("Unknown agent"));
+    }
+
+    #[test]
+    fn stage_rechecks_persisted_changes_and_runtime_revocation() {
+        let conn = runtime_test_db();
+        persisted_chain_configs(&conn, "repo", &["planner".into()], &|_| true).unwrap();
+        conn.execute("UPDATE agents SET cli='claude',model='new-model',role='New responsibility' WHERE id='planner'", []).unwrap();
+        let stage = persisted_agent_execution(&conn, "repo", "planner", &|_| true).unwrap();
+        assert_eq!(stage.cli, "claude");
+        assert_eq!(stage.model, "new-model");
+        assert_eq!(stage.responsibility, "New responsibility");
+        conn.execute("UPDATE workspace_settings SET value='[\"codex\"]' WHERE key='allowed-clis'", []).unwrap();
+        assert!(persisted_agent_execution(&conn, "repo", "planner", &|_| true)
+            .unwrap_err().contains("disabled"));
+        conn.execute("UPDATE agents SET cli='claude' WHERE id='sentinel'", []).unwrap();
+        assert!(persisted_chain_configs(&conn, "repo", &[], &|_| true)
+            .unwrap_err().contains("disabled"));
+    }
+
+    #[test]
+    fn rejected_tagged_chain_rolls_back_message_transaction() {
+        let mut conn = runtime_test_db();
+        {
+            let tx = conn.transaction().unwrap();
+            tx.execute("INSERT INTO thread_messages(repo,author,body,created_at) VALUES ('repo','You','tagged','now')", []).unwrap();
+            assert!(persisted_chain_configs(&tx, "repo", &["planner".into()], &|_| false).is_err());
+        }
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM thread_messages", [], |row| row.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
     #[test]
     fn comments_are_scoped_to_root_posts_in_the_same_repo() {
         let conn = Connection::open_in_memory().unwrap();
@@ -3233,7 +3408,9 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
 
-        assert_eq!(first_enabled_installed_cli(&conn), None);
+        let error = persisted_chain_configs(&conn, "repo", &["planner".into()], &|_| true)
+            .unwrap_err();
+        assert!(error.contains("disabled"));
     }
 
     #[test]

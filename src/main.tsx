@@ -28,7 +28,6 @@ import {
   Code2,
   FolderGit2,
   GitPullRequest,
-  Github,
   Hash,
   LayoutDashboard,
   MessageSquare,
