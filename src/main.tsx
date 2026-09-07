@@ -2570,15 +2570,11 @@ function AgentManager({ repos }: { repos: Repo[] }) {
     }
   };
   const edit = async (agent?: StoredAgent) => {
-    const cliOptions = (enabledClis.length ? enabledClis : ["codex"]).filter(
-      (cli) => cli !== "kimi" || enabledClis.includes("kimi"),
-    );
-    const modelOptions: Record<string, string[]> = {
-      claude: ["default", "sonnet", "opus"],
-      codex: ["default", "gpt-5-codex"],
-      gemini: ["default", "gemini-2.5-pro"],
-      kimi: ["default", "kimi-k2"],
-    };
+    const cliOptions = enabledClis;
+    if (!cliOptions.length) {
+      setWorkflowMessage("Enable an installed runtime in CLI Access before configuring an agent.");
+      return;
+    }
     const selectedCli = cliOptions.includes(agent?.cli || "")
       ? agent?.cli || cliOptions[0]
       : cliOptions[0];
@@ -2615,8 +2611,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           id: "model",
           label: "Model",
           value: agent?.model || "default",
-          optionsFor: (current) =>
-            modelOptions[current.cli || selectedCli || "codex"] || ["default"],
+          placeholder: "default, or a model ID supported by your CLI and account",
         },
         {
           id: "scope",
@@ -2625,7 +2620,7 @@ function AgentManager({ repos }: { repos: Repo[] }) {
           options: ["workspace", ...repos.map((repo) => `repo:${repo.name}`)],
         },
       ],
-      "Give each agent one clear responsibility. This text is used as its execution instruction.",
+      "Give each agent one clear responsibility. Use default for your CLI's configured model, or enter a model ID your runtime and account support.",
     );
     if (!values?.name) return;
     try {
