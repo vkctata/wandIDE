@@ -5,6 +5,23 @@ import { hasAgentMention } from '../src/mentions.ts';
 import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
 import { initializeEditorViewport } from '../src/editor-viewport.ts';
 import { submitOnce } from '../src/submission.ts';
+import { readThreadSnapshot, mergeThreadSnapshot } from '../src/thread-refresh.ts';
+
+test('thread refresh failures remain distinct from an empty repository', async () => {
+  assert.deepEqual(await readThreadSnapshot(async () => []), { messages: [], error: null });
+  assert.deepEqual(await readThreadSnapshot(async () => { throw Error('database busy'); }), { messages: null, error: 'database busy' });
+  assert.match((await readThreadSnapshot(async () => { throw Error(''); })).error, /Unable to read/);
+  const current = [{ id: 2, body: 'live reply' }, { id: 1, body: 'post' }];
+  const merged = mergeThreadSnapshot(current, [{ id: 1, body: 'post' }]);
+  assert.deepEqual(merged.map(message => message.id), [1, 2]);
+  assert.equal(current[0].id, 2, 'does not mutate current state');
+  assert.equal(mergeThreadSnapshot(merged, [merged[1]]).length, 2, 'live event is deduplicated');
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(app, /await submitOnce\(commentLock/);
+  assert.match(app, /if \(result.messages !== null\) setMessages/);
+  assert.match(app, /version !== loadVersion.current/);
+  assert.match(app, /Retry loading posts/);
+});
 
 test('post submission suppresses overlapping clicks and unlocks after failure', async () => {
   const lock = { current: false };

@@ -8,6 +8,8 @@ Repository posts use the available width until a post opens in a detail pane wit
 
 Post submission disables the composer while saving and rejects overlapping clicks
 before the next render. A rejected submission keeps its draft and tags for retry.
+Comments also reject overlapping submissions. Failed history refreshes preserve
+loaded posts with a retry action; a delayed snapshot cannot erase newer live replies.
 
 Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
 

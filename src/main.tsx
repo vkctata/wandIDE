@@ -6,6 +6,7 @@ import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./
 import { MessageContent } from "./message-content";
 import { messagePreview } from "./message-blocks";
 import { submitOnce } from "./submission";
+import { readThreadSnapshot, mergeThreadSnapshot } from "./thread-refresh";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -1291,6 +1292,10 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
   const [commentErrors, setCommentErrors] = useState<Record<number, string>>({});
   const [pendingPost, setPendingPost] = useState<number | null>(null);
+  const commentLock = useRef(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const loadVersion = useRef(0);
   const comment = selected ? commentDrafts[selected.id] || "" : "";
   const commentError = selected ? commentErrors[selected.id] || "" : "";
   const commentPending = pendingPost !== null;
@@ -1301,26 +1306,33 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
     if (!selected || !comment.trim() || commentPending) return;
     const postId = selected.id;
     const submittedDraft = comment;
-    setPendingPost(postId);
-    setCommentErrors((errors) => ({ ...errors, [postId]: "" }));
-    try {
-      await invoke("create_thread_message", {
-        repo: repo.name, author: "You", body: comment.trim(),
-        agentIds: [], parentId: postId,
-      });
-      setCommentDrafts((drafts) => drafts[postId] === submittedDraft
-        ? { ...drafts, [postId]: "" } : drafts);
-      await load();
-    } catch (error) { setCommentErrors((errors) => ({ ...errors, [postId]: String(error) })); }
-    finally { setPendingPost(null); }
+    await submitOnce(commentLock, async () => {
+      setPendingPost(postId);
+      setCommentErrors((errors) => ({ ...errors, [postId]: "" }));
+      try {
+        await invoke("create_thread_message", {
+          repo: repo.name, author: "You", body: comment.trim(),
+          agentIds: [], parentId: postId,
+        });
+        setCommentDrafts((drafts) => drafts[postId] === submittedDraft
+          ? { ...drafts, [postId]: "" } : drafts);
+        await load();
+      } catch (error) { setCommentErrors((errors) => ({ ...errors, [postId]: String(error) })); }
+      finally { setPendingPost(null); }
+    });
   };
   const hasRepo = repo.name !== emptyRepo.name;
-  const load = () =>
-    hasRepo
-      ? invoke<Message[]>("list_thread_messages", { repo: repo.name })
-          .then(setMessages)
-          .catch(() => setMessages([]))
-      : Promise.resolve(setMessages([]));
+  const load = async () => {
+    if (!hasRepo) return;
+    const version = ++loadVersion.current;
+    setLoadingMessages(true);
+    setRefreshError("");
+    const result = await readThreadSnapshot(() => invoke<Message[]>("list_thread_messages", { repo: repo.name }));
+    if (version !== loadVersion.current) return;
+    if (result.messages !== null) setMessages(current => mergeThreadSnapshot(current, result.messages));
+    setRefreshError(result.error || "");
+    setLoadingMessages(false);
+  };
   useEffect(() => {
     load();
   }, [repo.name, hasRepo]);
@@ -1328,11 +1340,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
     if (!hasRepo) return;
     const stop = listen<Message>("wand://thread", (event) => {
       if (event.payload.repo !== repo.name) return;
-      setMessages((current) =>
-        current.some((message) => message.id === event.payload.id)
-          ? current
-          : [...current, event.payload],
-      );
+      setMessages(current => mergeThreadSnapshot(current, [event.payload]));
     });
     return () => {
       stop.then((unsubscribe) => unsubscribe());
@@ -1408,15 +1416,18 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               Could not post this thread: {postError}
             </div>
           )}
+          {refreshError && <div className="thread-error thread-refresh-error" role="alert">
+            <span>Could not refresh posts: {refreshError}. {messages.length > 0 ? "Previously loaded posts are still shown." : "Try loading the repository history again."}</span>
+            <button className="outline" disabled={loadingMessages} onClick={() => void load()}>Retry loading posts</button>
+          </div>}
           <div className={`thread-layout${selected ? " has-detail" : ""}`}>
-          <div className="threadlist">
+          <div className="threadlist" aria-busy={loadingMessages}>
             {messages.length === 0 ? (
               <div className="emptyhint">
                 <MessageSquare size={20} />
-                <h3>No repository messages yet</h3>
+                <h3>{loadingMessages ? "Loading posts…" : refreshError ? "Posts unavailable" : "No repository messages yet"}</h3>
                 <p>
-                  Start the conversation for this repository and keep the context
-                  local.
+                  {loadingMessages ? "Reading this repository’s history." : refreshError ? "Retry loading to see this repository’s history." : "Start the conversation for this repository and keep the context local."}
                 </p>
               </div>
             ) : (
