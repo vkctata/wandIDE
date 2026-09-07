@@ -4,6 +4,15 @@ import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
 import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
 
+test('repository layout reserves a second column only for an open post', () => {
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/native-ui.css', import.meta.url), 'utf8');
+  assert.match(app, /thread-layout\$\{selected \? " has-detail" : ""\}/);
+  assert.match(css, /\.thread-layout \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(css, /\.thread-layout\.has-detail \{ grid-template-columns: minmax\(0, 1fr\) minmax\(300px, 380px\);/);
+  assert.match(css, /@media \(max-width: 900px\) \{ \.thread-layout\.has-detail \{ grid-template-columns: minmax\(0, 1fr\); \} \.thread-detail-pane \{[^}]*order: -1;/);
+});
+
 test('native theme changes do not depend on transition clocks', () => {
   const css = readFileSync(new URL('../src/minimal-ui.css', import.meta.url), 'utf8');
   const beforeMedia = css.split('@media')[0];

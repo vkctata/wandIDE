@@ -1398,7 +1398,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               Could not post this thread: {postError}
             </div>
           )}
-          <div className="thread-layout">
+          <div className={`thread-layout${selected ? " has-detail" : ""}`}>
           <div className="threadlist">
             {messages.length === 0 ? (
               <div className="emptyhint">
