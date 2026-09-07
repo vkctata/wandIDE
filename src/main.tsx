@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { hasAgentMention } from "./mentions";
+import { isRepositorySync } from "./provider-events";
 import { MessageContent } from "./message-content";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
@@ -479,6 +480,8 @@ function App() {
         .catch(() => {});
     const subscriptions = [
       listen<any>("wand://provider", (event) => {
+        // Health/error events have no repository count and must never announce success.
+        if (!isRepositorySync(event.payload)) return;
         refreshRepos();
         const provider = event.payload?.provider || "Provider";
         const count = event.payload?.count ?? 0;

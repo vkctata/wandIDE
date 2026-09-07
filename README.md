@@ -128,6 +128,9 @@ overhead. Plain text remains available during loading or if the editor fails.
 Live streaming output remains a plain-text log until persisted; unfenced output
 is not guessed to be code, and message HTML is never executed.
 
+Provider health checks and credential errors do not produce successful-sync
+notifications; those notices require a completed repository sync with a valid count.
+
 ## Wand website
 
 The product tour groups screenshots into keyboard-accessible tabs for tasks,
