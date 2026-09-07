@@ -13,8 +13,8 @@ The current build provides the desktop-ready product foundation:
 - Tauri 2 desktop shell with a Rust command boundary
 - React + TypeScript frontend powered by Vite
 - Wand first-run onboarding walkthrough
-- Premium responsive workspace UI with configurable dark/light accent themes, subtle gradients, and reduced-motion support
-- Borderless themed desktop chrome with in-app minimize, maximize, and close controls
+- Minimal responsive UI with neutral dark/light surfaces, restrained accents, clear separators, and reduced-motion support
+- Native macOS window controls and rounded corners, with platform-specific desktop chrome
 - Local repository workspace and task persistence in SQLite through the Tauri boundary, including manually added repositories
 - Pre-built engineering agent catalog:
   - Planner

@@ -61,6 +61,7 @@ import "./responsive-fix.css";
 import "./premium-plus.css";
 import "./threads.css";
 import "./native-ui.css";
+import "./minimal-ui.css";
 
 const isTauriRuntime = () =>
   typeof window !== "undefined" &&
@@ -924,9 +925,6 @@ function Home({
     <section className="content">
       <div className="hero">
         <div>
-          <p className="eyebrow">
-            <span className="pulse" /> LOCAL WORKSPACE
-          </p>
           <h1>{greeting}, {userName}.</h1>
           <p className="sub">
             Your agents are ready to work across your repositories.

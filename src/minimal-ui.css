@@ -1,0 +1,116 @@
+/* Final desktop presentation contract. Keep native window geometry and user
+   font/accent preferences; surfaces should never depend on decorative effects. */
+body[data-theme] {
+  --wand-surface: #202226;
+  --wand-surface-2: #191b1e;
+  --wand-ink: #eceef0;
+  --wand-text: var(--wand-ink);
+  --wand-muted: #a1a6af;
+  --wand-border: #34373d;
+}
+body[data-theme="daylight"], body[data-theme="porcelain"] {
+  --wand-surface: #ffffff;
+  --wand-surface-2: #f6f7f8;
+  --wand-ink: #252a32;
+  --wand-muted: #626a76;
+  --wand-border: #e0e3e7;
+}
+body[data-theme] :is(.app, main, .content, aside, header,
+  .settings-modal, .settings-modal-header, .settings-modal-body,
+  .settings-modal-nav, .settings-modal-content) {
+  background: var(--wand-surface-2) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  border-color: var(--wand-border) !important;
+  color: var(--wand-ink);
+}
+body[data-theme] :is(aside, header, .content)::before,
+body[data-theme] :is(aside, header, .content)::after { display: none !important; }
+body[data-theme] .content {
+  width: 100%; max-width: none; margin: 0;
+  padding: clamp(20px, 3vw, 40px);
+  border-radius: 0;
+}
+body[data-theme] :is(.hero, .stats, .timeline, .sectionhead, .agentgrid) { max-width: none; }
+body[data-theme] .hero { margin-bottom: 24px; }
+body[data-theme] .hero h1 { font-size: clamp(23px, 2.5vw, 30px); letter-spacing: -.025em; }
+body[data-theme] :is(.eyebrow, .navgroup label) { letter-spacing: .08em; font-size: 10px; }
+body[data-theme] .stats { margin-bottom: 28px; }
+body[data-theme] :is(.stat, .agent, .taskcard, .settingscard,
+  .settings-section, .thread-card, .thread-detail-pane, .emptyhint,
+  .onboard-card, .search-palette, .wand-modal, .toast) {
+  background: var(--wand-surface) !important;
+  background-image: none !important;
+  color: var(--wand-ink);
+  border: 1px solid var(--wand-border) !important;
+  border-radius: 10px;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+body[data-theme] :is(.stat, .agent) { padding: 18px; }
+body[data-theme] .stat strong { font-size: 26px; color: var(--wand-ink); }
+body[data-theme] .emptyhint { padding: 28px 20px; }
+body[data-theme] :is(.primary, .outline, .filter, .run, .iconbtn,
+  .account-trigger, .search, .status, .agent-icon, .wand-wordmark, .d-sparkle) {
+  box-shadow: none !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
+body[data-theme] :is(.primary, .outline, .filter, .run, .thread-card, .agent):hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+body[data-theme] :is(.nav, .repo) { color: var(--wand-muted) !important; }
+body[data-theme] :is(.nav.active, .repo.active, .filter.active, .thread-card.selected) {
+  color: var(--wand-ink) !important;
+  background: color-mix(in srgb, var(--wand-ink) 7%, var(--wand-surface-2)) !important;
+  border-color: var(--wand-border) !important;
+  box-shadow: none !important;
+}
+body[data-theme] :is(.nav.active, .repo.active) svg { color: var(--wand-accent); }
+body[data-theme] .thread-card:hover { border-color: var(--wand-muted) !important; }
+body[data-theme] .thread-detail-body { color: var(--wand-ink); }
+body[data-theme] .content > .hero h1,
+body[data-theme] .content > .sectionhead h2,
+body[data-theme] .content > .code-toolbar h1,
+body[data-theme] .content .emptyhint h3 { color: var(--wand-ink) !important; }
+body[data-theme] .content > .hero .sub,
+body[data-theme] .content > .hero .eyebrow,
+body[data-theme] .content > .sectionhead p,
+body[data-theme] .content .emptyhint p { color: var(--wand-muted) !important; }
+body[data-theme] .event { box-shadow: none !important; }
+body[data-theme] :is(button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--wand-muted); outline-offset: 3px;
+}
+body[data-theme] .settings-modal-content { border-radius: 0; }
+body[data-theme] .app > main > header {
+  background: var(--wand-surface-2) !important;
+  border-bottom: 1px solid var(--wand-border) !important;
+}
+body[data-theme] .app > main,
+body[data-theme] .app > main > .content {
+  background: var(--wand-surface-2) !important;
+  background-image: none !important;
+  border-radius: 0;
+}
+body[data-theme="daylight"] :is(.stat > svg, .nav.active svg, .repo.active svg) { color: #526c20; }
+body[data-theme] aside { border-right: 1px solid var(--wand-border) !important; }
+body[data-theme] aside :is(.nav, .repo, .status, .navgroup label) { color: var(--wand-muted) !important; }
+body[data-theme] aside :is(.nav.active, .repo.selected) {
+  color: var(--wand-ink) !important;
+  background: color-mix(in srgb, var(--wand-ink) 7%, var(--wand-surface-2)) !important;
+}
+@media (max-width: 900px) {
+  body[data-theme] .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  body[data-theme] .content { padding: 18px 14px; }
+  body[data-theme] :is(.stats, .agentgrid) { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-theme] *, body[data-theme] *::before, body[data-theme] *::after {
+    animation: none !important; transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
