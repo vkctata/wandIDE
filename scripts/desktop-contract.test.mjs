@@ -4,6 +4,22 @@ import { readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('routine heartbeat listener stays out of application notifications', () => {
+  const source = read('src/main.tsx');
+  const app = source.slice(0, source.indexOf('function BackgroundStatus()'));
+  assert.doesNotMatch(app, /listen[^;]*"wand:\/\/sync"/);
+  assert.match(source.slice(source.indexOf('function BackgroundStatus()')), /"wand:\/\/sync"/);
+});
+
+test('post comment state is keyed by originating post, including async completion', () => {
+  const source = read('src/main.tsx');
+  assert.match(source, /commentDrafts\[selected\.id\]/);
+  assert.match(source, /commentErrors\[selected\.id\]/);
+  assert.match(source, /parentId: postId/);
+  assert.match(source, /drafts\[postId\] === submittedDraft/);
+  assert.match(source, /aria-label="Close post details"/);
+});
+
 test('installed UI has native window controls, not a second HTML title bar', () => {
   const config = JSON.parse(read('src-tauri/tauri.macos.conf.json'));
   assert.equal(config.app.windows[0].decorations, true);
