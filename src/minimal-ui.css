@@ -180,3 +180,8 @@ body[data-theme] :is(.font-option em, .stat > svg, .nav.active svg, .repo.active
 .message-snippet > header { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 12px; color: var(--ink-muted); }
 .message-plain { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .transcript-stage > .message-content { padding: 14px; }
+body[data-theme] .code-toolbar { background: transparent; box-shadow: none; border: 0; padding: 0; align-items: flex-start; flex-direction: column; }
+body[data-theme] .code-toolbar > div:first-child { width: 100%; }
+body[data-theme] .code-controls { width: 100%; justify-content: flex-start; }
+body[data-theme] .code-controls .outline.active { background: var(--wand-surface-2) !important; color: var(--wand-ink) !important; box-shadow: none !important; border-color: var(--wand-accent) !important; }
+body[data-theme] .editor-shell { background: var(--wand-surface); border-color: var(--wand-border); box-shadow: none; }
