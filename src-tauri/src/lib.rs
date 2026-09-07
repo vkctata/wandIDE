@@ -177,6 +177,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE agents ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace'",
         [],
     );
+    let _ = conn.execute("ALTER TABLE thread_messages ADD COLUMN parent_id INTEGER", []);
+    let _ = conn.execute("ALTER TABLE tasks ADD COLUMN thread_message_id INTEGER", []);
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_thread_parent ON thread_messages(parent_id)", [])?;
     Ok(())
 }
 
@@ -830,6 +833,17 @@ fn import_agent_workflow(path: String, db: State<Db>) -> Result<WorkflowImportRe
     })
 }
 
+fn validate_comment_parent(conn: &Connection, repo: &str, parent_id: Option<i64>) -> Result<(), String> {
+    if let Some(parent_id) = parent_id {
+        let valid: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM thread_messages WHERE id=?1 AND repo=?2 AND parent_id IS NULL)",
+            params![parent_id, repo], |row| row.get(0),
+        ).map_err(|e| e.to_string())?;
+        if !valid { return Err("Comments must belong to a post in this repository".into()); }
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 struct ThreadMessage {
     id: i64,
@@ -838,11 +852,12 @@ struct ThreadMessage {
     body: String,
     created_at: String,
     agent_ids: Vec<String>,
+    parent_id: Option<i64>,
 }
 #[tauri::command]
 fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at,agent_ids FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?;
+    let mut stmt=conn.prepare("SELECT id,repo,author,body,created_at,agent_ids,parent_id FROM thread_messages WHERE repo=?1 ORDER BY id ASC").map_err(|e|e.to_string())?;
     let rows = stmt
         .query_map(params![repo], |r| {
             Ok(ThreadMessage {
@@ -853,6 +868,7 @@ fn list_thread_messages(repo: String, db: State<Db>) -> Result<Vec<ThreadMessage
                 created_at: r.get(4)?,
                 agent_ids: serde_json::from_str::<Vec<String>>(&r.get::<_, String>(5)?)
                     .unwrap_or_default(),
+                parent_id: r.get(6)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -864,6 +880,7 @@ fn create_thread_message(
     author: String,
     body: String,
     agent_ids: Option<Vec<String>>,
+    parent_id: Option<i64>,
     db: State<Db>,
     app: AppHandle,
 ) -> Result<ThreadMessage, String> {
@@ -878,6 +895,7 @@ fn create_thread_message(
     {
         let mut conn = db.0.lock().map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
+        validate_comment_parent(&tx, &repo, parent_id)?;
         for agent_id in &agent_ids {
             let scope: String = tx
                 .query_row(
@@ -893,13 +911,14 @@ fn create_thread_message(
             }
         }
         tx.execute(
-            "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
+            "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids,parent_id) VALUES (?1,?2,?3,?4,?5,?6)",
             params![
                 repo,
                 author,
                 body,
                 created_at,
-                serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?
+                serde_json::to_string(&agent_ids).map_err(|e| e.to_string())?,
+                parent_id
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -911,6 +930,7 @@ fn create_thread_message(
             body: body.clone(),
             created_at: created_at.clone(),
             agent_ids: agent_ids.clone(),
+            parent_id,
         };
 
         if !agent_ids.is_empty() {
@@ -968,6 +988,8 @@ fn create_thread_message(
                 params![task_id, task_name, repo, agents_json, created_at],
             )
             .map_err(|e| e.to_string())?;
+            tx.execute("UPDATE tasks SET thread_message_id=?1 WHERE id=?2", params![parent_id.unwrap_or(id), task_id])
+                .map_err(|e| e.to_string())?;
             let run_id = uuid::Uuid::new_v4().to_string();
             tx.execute(
                 "INSERT INTO task_runs(id,task_id,scheduled_at,status) VALUES (?1,?2,?3,'queued')",
@@ -1806,14 +1828,18 @@ fn launch_chain_worker(
                             ],
                         );
                         if let Some(repo) = repo {
+                            let parent_id: Option<i64> = conn.query_row(
+                                "SELECT thread_message_id FROM tasks WHERE id=?1",
+                                params![req.task_id], |row| row.get(0),
+                            ).ok().flatten();
                             let created_at = Utc::now().to_rfc3339();
                             let body = format!("Stage {} handoff\n\n{}", index + 1, handoff);
                             let agent_ids =
                                 serde_json::to_string(&vec![agent]).unwrap_or_else(|_| "[]".into());
-                            if conn
+                            if parent_id.is_some() && conn
                                 .execute(
-                                    "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids) VALUES (?1,?2,?3,?4,?5)",
-                                    params![repo, agent, body, created_at, agent_ids],
+                                    "INSERT INTO thread_messages(repo,author,body,created_at,agent_ids,parent_id) VALUES (?1,?2,?3,?4,?5,?6)",
+                                    params![repo, agent, body, created_at, agent_ids,parent_id],
                                 )
                                 .is_ok()
                             {
@@ -1826,7 +1852,8 @@ fn launch_chain_worker(
                                         "author": agent,
                                         "body": body,
                                         "created_at": created_at,
-                                        "agent_ids": [agent]
+                                        "agent_ids": [agent],
+                                        "parent_id": parent_id
                                     }),
                                 );
                             }
@@ -3113,6 +3140,18 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn comments_are_scoped_to_root_posts_in_the_same_repo() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        conn.execute("INSERT INTO thread_messages(id,repo,author,body,created_at,parent_id) VALUES (1,'alpha','You','post','now',NULL),(2,'alpha','You','comment','now',1)", []).unwrap();
+        assert!(validate_comment_parent(&conn, "alpha", Some(1)).is_ok());
+        assert!(validate_comment_parent(&conn, "beta", Some(1)).is_err());
+        assert!(validate_comment_parent(&conn, "alpha", Some(2)).is_err());
+        assert!(validate_comment_parent(&conn, "alpha", Some(999)).is_err());
+    }
+
     #[cfg(unix)]
     #[test]
     fn stage_cleanup_closes_pipes_inherited_by_descendants() {

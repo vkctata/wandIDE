@@ -537,22 +537,6 @@ function App() {
     };
   }, []);
   useEffect(() => {
-    let stop: undefined | (() => void);
-    listen<any>("wand://agent", (event) => {
-      const payload = event.payload || {};
-      if (payload.status !== "completed" && payload.status !== "verified")
-        return;
-      const task = tasks.find((item) => item.id === payload.task_id);
-      if (!task || !payload.handoff) return;
-      const author = payload.agent || "Wand agent";
-      const body = `${payload.status === "verified" ? "Verification result" : "Stage handoff"}:\n${String(payload.handoff).slice(0, 4000)}`;
-      invoke("create_thread_message", { repo: task.repo, author, body }).catch(
-        () => {},
-      );
-    }).then((unsubscribe) => (stop = unsubscribe));
-    return () => stop?.();
-  }, [tasks]);
-  useEffect(() => {
     document.body.dataset.view = view;
     const go = (e: Event) => setView((e as CustomEvent<View>).detail);
     window.addEventListener("wand:navigate", go);
@@ -873,7 +857,7 @@ function App() {
         ) : view === "code" ? (
           <CodeWorkspace repo={repo} />
         ) : view === "threads" ? (
-          <Threads repo={repo} agents={agentCatalog} />
+          <Threads key={repo.name} repo={repo} agents={agentCatalog} />
         ) : view === "tasks" ? (
           <Tasks tasks={tasks} addTask={addTask} runTask={runTask} cancelTask={cancelTask} />
         ) : (
@@ -1285,12 +1269,30 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
     body: string;
     created_at: string;
     agent_ids: string[];
+    parent_id?: number | null;
   };
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
   const [postError, setPostError] = useState("");
   const [selected, setSelected] = useState<Message | null>(null);
+  const [comment, setComment] = useState("");
+  const [commentError, setCommentError] = useState("");
+  const [commentPending, setCommentPending] = useState(false);
+  const addComment = async () => {
+    if (!selected || !comment.trim() || commentPending) return;
+    setCommentPending(true);
+    setCommentError("");
+    try {
+      await invoke("create_thread_message", {
+        repo: repo.name, author: "You", body: comment.trim(),
+        agentIds: [], parentId: selected.id,
+      });
+      setComment("");
+      await load();
+    } catch (error) { setCommentError(String(error)); }
+    finally { setCommentPending(false); }
+  };
   const hasRepo = repo.name !== emptyRepo.name;
   const load = () =>
     hasRepo
@@ -1391,7 +1393,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                 </p>
               </div>
             ) : (
-              messages.map((message) => (
+              messages.filter((message) => !message.parent_id).map((message) => (
                 <button className={"thread thread-card " + (selected?.id === message.id ? "selected" : "")} key={message.id} onClick={() => setSelected(message)}>
                   <div className="threadicon">
                     <Hash size={16} />
@@ -1414,7 +1416,19 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
             <p className="thread-detail-time">{selected.created_at}</p>
             <div className="thread-detail-body">{selected.body}</div>
             {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
-            <div className="thread-comments"><h3>Comments</h3><p>Comments on this post will appear here.</p><textarea placeholder="Write a comment…" /></div>
+            <div className="thread-comments">
+              <h3>Comments</h3>
+              {messages.filter((message) => message.parent_id === selected.id).map((message) => (
+                <article key={message.id} className="post-comment">
+                  <strong>{agents.find((agent) => agent.id === message.author)?.name || message.author}</strong>
+                  <time>{formatWorkspaceTime(message.created_at)}</time>
+                  <div className="thread-detail-body">{message.body}</div>
+                </article>
+              ))}
+              <textarea aria-label="Comment on selected post" placeholder="Write a comment…" value={comment} onChange={(event) => setComment(event.target.value)} />
+              {commentError && <p role="alert">{commentError}</p>}
+              <button className="primary" disabled={commentPending || !comment.trim()} onClick={addComment}>{commentPending ? "Posting…" : "Post comment"}</button>
+            </div>
           </aside>}
           </div>
         </>

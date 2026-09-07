@@ -2,6 +2,8 @@
 
 Desktop reliability: macOS uses native window controls and rounded corners. Agent stages have a 30-minute deadline covering both process execution and output draining; timed-out process trees are terminated so inherited output pipes cannot leave a run waiting indefinitely. Provider-agent creation is covered by a database regression test.
 
+Repository posts open in a detail pane with persistent comments. Findings from tagged-agent tasks are saved as replies to the originating post by the native worker, including when the frontend is closed. Comments are restricted to root posts in the same repository. Tasks without an originating post retain their output in run transcripts.
+
 Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
 
 ## What is in this repository
