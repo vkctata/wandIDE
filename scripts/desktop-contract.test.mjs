@@ -16,6 +16,17 @@ test('deleted and partial mentions cannot leave an agent selected', () => {
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('editor preserves HEAD on save and cannot save a pending or failed load', () => {
+  const source = read('src/main.tsx');
+  const editor = source.slice(source.indexOf('function CodeWorkspace('), source.indexOf('function Threads('));
+  const save = editor.slice(editor.indexOf('const save ='), editor.indexOf('const createWorktree ='));
+  assert.doesNotMatch(save, /setOriginal\(/);
+  assert.match(save, /if \(saving \|\| loading \|\| !path\) return/);
+  assert.match(editor, /if \(request !== loadRequest.current\) return/);
+  assert.match(editor, /const \[path, setPath\] = useState\(""\)/);
+  assert.match(source, /CodeWorkspace key=\{`\$\{repo.name\}:\$\{repo.path\}`\}/);
+});
+
 test('routine heartbeat listener stays out of application notifications', () => {
   const source = read('src/main.tsx');
   const app = source.slice(0, source.indexOf('function BackgroundStatus()'));
