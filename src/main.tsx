@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { hasAgentMention } from "./mentions";
+import { MessageContent } from "./message-content";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -1410,7 +1411,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
           {selected && <section className="thread-detail-pane" aria-label="Post details">
             <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" aria-label="Close post details" onClick={() => setSelected(null)}>×</button></div>
             <p className="thread-detail-time">{formatWorkspaceTime(selected.created_at)}</p>
-            <div className="thread-detail-body">{selected.body}</div>
+            <MessageContent content={selected.body} />
             {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
             <div className="thread-comments">
               <h3>Comments</h3>
@@ -1418,7 +1419,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                 <article key={message.id} className="post-comment">
                   <strong>{agents.find((agent) => agent.id === message.author)?.name || message.author}</strong>
                   <time>{formatWorkspaceTime(message.created_at)}</time>
-                  <div className="thread-detail-body">{message.body}</div>
+                  <MessageContent content={message.body} />
                 </article>
               ))}
               <textarea aria-label="Comment on selected post" placeholder="Write a comment…" value={comment} onChange={(event) => setComment(event.target.value)} />
@@ -1695,7 +1696,7 @@ function Tasks({
                 {!live && (transcripts[run.id] || []).length === 0 ? <p className="sub">No persisted stage output for this run yet.</p> : (transcripts[run.id] || []).map((stage) => (
                   <article className="transcript-stage" key={stage.id}>
                     <div><b>Stage {stage.stage} · {stage.agent}</b><span className={"tag " + (stage.status === "failed" ? "red" : stage.status === "verified" ? "green" : "blue")}>{stage.status}</span></div>
-                    <pre>{stage.content}</pre>
+                    <MessageContent content={stage.content} />
                   </article>
                 ))}
               </div>

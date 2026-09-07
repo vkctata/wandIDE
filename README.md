@@ -109,6 +109,15 @@ Installers are published on the [Wand Releases page](https://github.com/vkctata/
 
 GitHub Actions builds these installers for tagged releases and attaches them to the release. Linux users may need the WebKitGTK and related system libraries documented in the [Tauri Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
 
+## Agent code output
+
+Fenced code in post details, comments, and saved agent transcripts uses lazy,
+read-only Monaco snippets that follow the desktop appearance. Large snippets
+and additional blocks offer an explicit “Format code” action to limit editor
+overhead. Plain text remains available during loading or if the editor fails.
+Live streaming output remains a plain-text log until persisted; unfenced output
+is not guessed to be code, and message HTML is never executed.
+
 ## Wand website
 
 The static product site lives in `website/` and is published through
