@@ -4,6 +4,16 @@ import { readFileSync } from 'node:fs';
 import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
 import { activityMessage } from '../src/activity-labels.ts';
 import { latestRequest } from '../src/latest-request.ts';
+import { readSearchSources } from '../src/search-sources.ts';
+
+test('search preserves successful sources and identifies unavailable categories', async () => {
+  const result = await readSearchSources([
+    { name: 'notifications', read: async () => [{ id: 1 }] },
+    { name: 'activity', read: () => { throw Error('database busy'); } },
+  ]);
+  assert.deepEqual(result, { rows: [[{ id: 1 }], []], unavailable: ['activity'] });
+  assert.deepEqual(await readSearchSources([{ name: 'activity', read: async () => [] }]), { rows: [[]], unavailable: [] });
+});
 
 test('refresh responses cannot overwrite a newer request or an unmounted view', () => {
   const requests = latestRequest();

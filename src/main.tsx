@@ -7,6 +7,7 @@ import { MessageContent } from "./message-content";
 import { messagePreview } from "./message-blocks";
 import { activityMessage } from "./activity-labels";
 import { latestRequest } from "./latest-request";
+import { readSearchSources } from "./search-sources";
 import { submitOnce } from "./submission";
 import { readThreadSnapshot, mergeThreadSnapshot } from "./thread-refresh";
 import { persistAppearance, readPreviewAppearance, type AppearanceSetting } from "./appearance-persistence";
@@ -333,6 +334,8 @@ function App() {
   const [userName, setUserName] = useState("there");
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ id: string; label: string; detail: string; target: View; repo?: string }>>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchWarning, setSearchWarning] = useState("");
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
   const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
@@ -368,8 +371,11 @@ function App() {
   }, []);
   useEffect(() => {
     const term = query.trim().toLowerCase();
-    if (!term) { setSearchResults([]); return; }
+    if (!term) { setSearchResults([]); setSearchLoading(false); setSearchWarning(""); return; }
     let active = true;
+    setSearchResults([]);
+    setSearchLoading(true);
+    setSearchWarning("");
     const search = async () => {
       const results: Array<{ id: string; label: string; detail: string; target: View; repo?: string }> = [];
       repos.forEach((item) => {
@@ -377,13 +383,18 @@ function App() {
       });
       tasks.forEach((item) => { if (`${item.name} ${item.repo} ${item.status}`.toLowerCase().includes(term)) results.push({ id: `task:${item.id}`, label: item.name, detail: `Task · ${item.status}`, target: "tasks" }); });
       agentCatalog.forEach((item) => { if (`${item.name} ${item.role} ${item.skills.join(" ")}`.toLowerCase().includes(term)) results.push({ id: `agent:${item.id}`, label: `@${item.name}`, detail: `Agent · ${item.role}`, target: "home" }); });
-      const [notifications, events] = await Promise.all([
-        invoke<any[]>("list_notifications").catch(() => []),
-        invoke<any[]>("list_events", { limit: 100 }).catch(() => []),
+      if (active) setSearchResults(results.slice(0, 12));
+      const { rows: [notifications, events], unavailable } = await readSearchSources<any>([
+        { name: "notifications", read: () => invoke<any[]>("list_notifications") },
+        { name: "activity", read: () => invoke<any[]>("list_events", { limit: 100 }) },
       ]);
       notifications.forEach((item) => { if (`${item.title} ${item.body} ${item.repo} ${item.author}`.toLowerCase().includes(term)) results.push({ id: `notice:${item.id}`, label: item.title, detail: `${item.provider} · ${item.repo}`, target: "notifications" }); });
       events.forEach((item) => { if (`${item.kind} ${item.message}`.toLowerCase().includes(term)) results.push({ id: `event:${item.id}`, label: item.message, detail: `Activity · ${item.created_at}`, target: "home" }); });
-      if (active) setSearchResults(results.slice(0, 12));
+      if (active) {
+        setSearchResults(results.slice(0, 12));
+        setSearchWarning(unavailable.length ? `Partial results: could not search ${unavailable.join(" and ")}. Change your search to try again.` : "");
+        setSearchLoading(false);
+      }
     };
     void search();
     return () => { active = false; };
@@ -840,11 +851,13 @@ function App() {
           </div>
         </header>
         {query.trim() && (
-          <div className="search-palette">
+          <div className="search-palette" aria-busy={searchLoading}>
+            {searchLoading && <div className="search-empty" role="status">Searching activity and notifications…</div>}
+            {searchWarning && <div className="search-empty" role="status">{searchWarning}</div>}
             {searchResults.map((result) => (
                 <button
                   key={result.id}
-                  onMouseDown={() => {
+                  onClick={() => {
                     if (result.id.startsWith("agent:")) openSettings("agents");
                     else { if (result.repo) { const selectedRepo = repos.find((item) => item.name === result.repo); if (selectedRepo) setRepo(selectedRepo); } setView(result.target); }
                     setQuery("");
@@ -854,7 +867,7 @@ function App() {
                   <small>{result.detail}</small>
                 </button>
               ))}
-            {searchResults.length === 0 && <div className="search-empty">No matching repositories, tasks, agents, activity, or notifications.</div>}
+            {!searchLoading && !searchWarning && searchResults.length === 0 && <div className="search-empty">No matching repositories, tasks, agents, activity, or notifications.</div>}
           </div>
         )}
         {notice && (
