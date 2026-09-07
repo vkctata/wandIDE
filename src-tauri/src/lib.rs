@@ -1174,7 +1174,7 @@ fn ensure_provider_agent(conn: &Connection, provider: &str) -> Result<(), String
         "linear" => ("Linear", "Reads teams and issues, surfaces updates, and helps plan work", "[\"teams\",\"issues\",\"planning\",\"project context\"]", "#a78bfa"),
         _ => return Err("Unsupported provider".into()),
     };
-    conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,?3,?4,0,'codex','default','workspace')", params![format!("provider:{provider}"), name, role, skills, color]).map_err(|e| e.to_string())?;
+    conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,?3,?4,?5,0,'codex','default','workspace')", params![format!("provider:{provider}"), name, role, skills, color]).map_err(|e| e.to_string())?;
     Ok(())
 }
 #[tauri::command]
@@ -3066,6 +3066,22 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_agents_are_created_idempotently() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        for provider in ["github", "azure-devops", "linear"] {
+            ensure_provider_agent(&conn, provider).unwrap();
+            ensure_provider_agent(&conn, provider).unwrap();
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM agents WHERE id=?1 AND scope='workspace' AND color LIKE '#%'",
+                params![format!("provider:{provider}")], |row| row.get(0),
+            ).unwrap();
+            assert_eq!(count, 1);
+        }
+        assert!(ensure_provider_agent(&conn, "unsupported").is_err());
+    }
+
     #[test]
     fn registered_repo_root_rejects_unregistered_paths() {
         let registered_path = std::env::temp_dir().join(format!("wand-registered-{}", uuid::Uuid::new_v4()));

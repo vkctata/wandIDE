@@ -1730,7 +1730,7 @@ function Notifications() {
       const [repositories, statuses] = await Promise.all([
         invoke<Repo[]>("list_repositories"),
         Promise.all(
-          ["github", "azure-devops"].map(async (provider) => [
+          ["github", "azure-devops", "linear"].map(async (provider) => [
             provider,
             await invoke<boolean>("provider_status", { provider }).catch(() => false),
           ] as const),
@@ -1749,15 +1749,18 @@ function Notifications() {
         ),
       );
       const providers = repositoryProviders.filter((provider) => connected.has(provider));
-      const syncTargets = providers.length > 0 ? providers : Array.from(connected);
+      const syncTargets = Array.from(connected);
 
       if (syncTargets.length === 0) {
-        setActionMessage("Connect GitHub or Azure DevOps in Settings before syncing review activity.");
+        setActionMessage("Connect GitHub, Azure DevOps, or Linear in Settings before syncing activity.");
         return;
       }
 
       const outcomes = await Promise.allSettled(
         syncTargets.map(async (provider) => {
+          if (provider === "linear") {
+            return ["Linear", await invoke<number>("sync_linear_activity")] as const;
+          }
           if (provider === "github") {
             return ["GitHub", await invoke<number>("sync_github_activity")] as const;
           }
@@ -1788,7 +1791,6 @@ function Notifications() {
             : failures[0],
         );
       }
-      await invoke("sync_linear_activity").catch(() => 0);
       await load();
     } catch (error) {
       setActionMessage(String(error));
