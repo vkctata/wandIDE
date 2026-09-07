@@ -54,6 +54,18 @@ body[data-theme] .search-palette button:focus-visible {
   outline-offset: -2px;
   background: var(--wand-surface);
 }
+body[data-theme] .search-palette { max-height: min(520px, 70vh); overflow-y: auto; }
+body[data-theme] .search-palette button {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 5px; padding: 12px; font: inherit; font-size: 14px;
+}
+body[data-theme] .search-palette button > span {
+  width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body[data-theme] .search-palette small {
+  font: inherit; font-size: 12px; text-transform: none;
+  color: var(--wand-muted); opacity: 1; overflow-wrap: anywhere;
+}
 body[data-theme] :is(.stat, .agent, .taskcard, .settingscard,
   .settings-section, .thread-card, .thread-detail-pane, .emptyhint,
   .onboard-card, .search-palette, .wand-modal, .toast) {

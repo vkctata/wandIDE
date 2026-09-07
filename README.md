@@ -47,6 +47,7 @@ The current build provides the desktop-ready product foundation:
 - Home distinguishes loading, unavailable, and empty history; stale refresh responses cannot replace newer activity.
 - Search shows local matches while history loads, identifies unavailable categories, and supports native keyboard activation of result buttons.
 - Search supports Up/Down result navigation, Home/End within results, and Escape to dismiss results and return focus to the input.
+- Search results use compact titles and readable metadata, with a scrollable list that stays within the window.
 - Monaco file editor with guarded repository saves and Git original-versus-modified diff viewer
 - Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
 - Tauri icon and desktop configuration for macOS and Windows

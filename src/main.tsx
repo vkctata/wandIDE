@@ -390,7 +390,7 @@ function App() {
         { name: "activity", read: () => invoke<any[]>("list_events", { limit: 100 }) },
       ]);
       notifications.forEach((item) => { if (`${item.title} ${item.body} ${item.repo} ${item.author}`.toLowerCase().includes(term)) results.push({ id: `notice:${item.id}`, label: item.title, detail: `${item.provider} · ${item.repo}`, target: "notifications" }); });
-      events.forEach((item) => { if (`${item.kind} ${item.message}`.toLowerCase().includes(term)) results.push({ id: `event:${item.id}`, label: item.message, detail: `Activity · ${item.created_at}`, target: "home" }); });
+      events.forEach((item) => { if (`${item.kind} ${item.message}`.toLowerCase().includes(term)) results.push({ id: `event:${item.id}`, label: activityMessage(item.kind, item.message, agentCatalog), detail: `Activity · ${formatWorkspaceTime(item.created_at)}`, target: "home" }); });
       if (active) {
         setSearchResults(results.slice(0, 12));
         setSearchWarning(unavailable.length ? `Partial results: could not search ${unavailable.join(" and ")}. Change your search to try again.` : "");
