@@ -1,6 +1,6 @@
 # Wand
 
-The desktop interface uses flat, neutral surfaces, system typography by default, and minimal interaction motion. A shared sparkles-only icon is generated for the platform installers. Home shows persisted agents and recent activity instead of placeholder agent cards. Native desktop permissions cover repository browsing, live events, notification consent, and restarting after an approved update.
+The desktop interface uses flat, neutral surfaces and system typography by default. Theme and interaction colors change immediately, without transition animations that can leave inactive native windows displaying stale colors. A shared sparkles-only icon is generated for the platform installers. Home shows persisted agents and recent activity instead of placeholder agent cards. Native desktop permissions cover repository browsing, live events, notification consent, and restarting after an approved update.
 
 Desktop reliability: macOS uses native window controls and rounded corners. Agent stages have a 30-minute deadline covering both process execution and output draining; timed-out process trees are terminated so inherited output pipes cannot leave a run waiting indefinitely. Provider-agent creation is covered by a database regression test.
 

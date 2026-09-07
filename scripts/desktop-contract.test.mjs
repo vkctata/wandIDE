@@ -4,6 +4,15 @@ import { readFileSync } from 'node:fs';
 import { hasAgentMention } from '../src/mentions.ts';
 import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
 
+test('native theme changes do not depend on transition clocks', () => {
+  const css = readFileSync(new URL('../src/minimal-ui.css', import.meta.url), 'utf8');
+  const beforeMedia = css.split('@media')[0];
+  assert.match(beforeMedia, /body\[data-theme\] \*, body\[data-theme\] \*::before, body\[data-theme\] \*::after\s*\{\s*transition: none !important;/);
+  assert.doesNotMatch(css, /transition:\s*background-color/);
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /TemporaryCssDiagnostics/);
+});
+
 test('approved update restart failure retries restart without installing twice', async () => {
   let installed = false, downloads = 0, restarts = 0;
   const download = async () => { downloads += 1; };

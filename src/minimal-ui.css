@@ -1,5 +1,11 @@
 /* Final desktop presentation contract. Keep native window geometry and user
    font/accent preferences; surfaces should never depend on decorative effects. */
+/* Theme colors must settle immediately, including inactive native windows.
+   WKWebView can retain the initial color of a suspended transition even after
+   inherited theme variables change. Focus/hover feedback still changes color. */
+body[data-theme] *, body[data-theme] *::before, body[data-theme] *::after {
+  transition: none !important;
+}
 body[data-theme] {
   --wand-accent: #a4b8ef;
   --wand-accent-2: #a4b8ef;
@@ -129,7 +135,7 @@ body[data-theme] :is(.pulse, .green-dot, .status, .d-sparkle, .brand,
   transform: none !important;
   box-shadow: none !important;
   filter: none !important;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: none !important;
 }
 body[data-theme] :is(.settings-modal-backdrop, .wand-modal-backdrop) {
   backdrop-filter: none !important;
