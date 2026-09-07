@@ -1727,28 +1727,15 @@ function Notifications() {
     setLoading(true);
     setActionMessage("");
     try {
-      const [repositories, statuses] = await Promise.all([
-        invoke<Repo[]>("list_repositories"),
-        Promise.all(
+      const statuses = await Promise.all(
           ["github", "azure-devops", "linear"].map(async (provider) => [
             provider,
             await invoke<boolean>("provider_status", { provider }).catch(() => false),
           ] as const),
-        ),
-      ]);
+      );
       const connected = new Set(
         statuses.filter(([, isConnected]) => isConnected).map(([provider]) => provider),
       );
-      const repositoryProviders = Array.from(
-        new Set(
-          repositories
-            .map((repo) => repo.provider)
-            .filter((provider): provider is string =>
-              provider === "github" || provider === "azure-devops",
-            ),
-        ),
-      );
-      const providers = repositoryProviders.filter((provider) => connected.has(provider));
       const syncTargets = Array.from(connected);
 
       if (syncTargets.length === 0) {
@@ -2086,7 +2073,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
   const [cliMessage, setCliMessage] = useState("");
   const slides = [
     ["Welcome to Wand", "Your local-first AI engineering workspace. Plan, build, review, and verify without losing the thread."],
-    ["Connect your reports", "Choose where Wand can read repository and project activity. Credentials are encrypted in Wand's local app store."],
+    ["Connect your reports", "Choose where Wand can read repository and project activity. Credentials are protected by your operating system's credential store."],
     ["Prepare your local tools", "Wand found the coding CLIs available on this machine. Enable only the runtimes you want your agents to use."],
     ["You're ready", "Your workspace remains local, every handoff is visible, and you can change providers or tools anytime in Settings."],
   ];
@@ -2130,7 +2117,7 @@ function Onboarding({ done }: { done: (name: string) => void }) {
     const values = await askModal(
       `Connect ${providerName}`,
       [{ id: "token", label: "Personal access token", placeholder: "Paste your token", secret: true }],
-      "Wand encrypts this token in its local app store. It does not use macOS Keychain.",
+      "Wand saves this token in your operating system's credential store.",
     );
     if (!values?.token) return;
     try {
@@ -2374,7 +2361,7 @@ function ProviderAccess() {
           secret: true,
         },
       ],
-      "The token is encrypted in Wand's local app store. It does not use macOS Keychain.",
+      "The token is saved in your operating system's credential store.",
     );
     if (!values?.token) return;
     try {
@@ -2488,7 +2475,7 @@ function ProviderAccess() {
             <b>{name}</b>
             <small>
               {status[id]
-                ? "Connected in Wand's encrypted local store"
+                ? "Connected through the system credential store"
                 : "Not connected"}
             </small>
           </div>
@@ -2959,7 +2946,7 @@ function WhatsNewSection() {
         },
         {
           title: "Local-First Privacy",
-          desc: "Repository locations and provider tokens are encrypted locally in Wand's app store without Keychain prompts.",
+          desc: "Repository locations stay local. Provider tokens are protected by your system credential store.",
           icon: Zap,
         },
       ],

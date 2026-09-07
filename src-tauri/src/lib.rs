@@ -81,10 +81,12 @@ fn persist_local_store(store: &LocalSecretStore) -> Result<(), String> {
 
 fn initialise_local_store(dir: &Path) -> Result<(), String> {
     let path = dir.join("local-secrets.json");
-    let mut store = fs::read(&path)
-        .ok()
-        .and_then(|raw| serde_json::from_slice::<LocalSecretStore>(&raw).ok())
-        .unwrap_or_default();
+    let mut store = match fs::read(&path) {
+        Ok(raw) => serde_json::from_slice::<LocalSecretStore>(&raw)
+            .map_err(|_| "Wand's local store is damaged; restore it from a backup".to_string())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => LocalSecretStore::default(),
+        Err(error) => return Err(error.to_string()),
+    };
     store.path = path;
     if store.salt.is_empty() {
         store.salt = uuid::Uuid::new_v4().to_string();
@@ -115,7 +117,9 @@ fn local_secret_set(key: &str, value: &str) -> Result<(), String> {
 
 fn local_secret_remove(key: &str) -> Result<(), String> {
     let mut store = LOCAL_STORE.get().ok_or_else(local_store_error)?.lock().map_err(|e| e.to_string())?;
-    store.values.remove(key);
+    if store.values.remove(key).is_none() {
+        return Ok(());
+    }
     persist_local_store(&store)
 }
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -1177,13 +1181,38 @@ fn ensure_provider_agent(conn: &Connection, provider: &str) -> Result<(), String
     conn.execute("INSERT OR IGNORE INTO agents(id,name,role,skills,color,built_in,cli,model,scope) VALUES (?1,?2,?3,?4,?5,0,'codex','default','workspace')", params![format!("provider:{provider}"), name, role, skills, color]).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+// Migrate legacy credentials only after the native credential store accepts
+// the value. An unavailable/locked store must never downgrade to file storage.
+fn native_provider_secret(service: &str) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(service, "default").map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(value) => {
+            local_secret_remove(service)?;
+            Ok(Some(value))
+        }
+        Err(keyring::Error::NoEntry) => {
+            if let Some(value) = local_secret_get(service)? {
+                entry.set_password(&value).map_err(|e| e.to_string())?;
+                local_secret_remove(service)?;
+                Ok(Some(value))
+            } else {
+                Ok(None)
+            }
+        }
+        Err(error) => Err(format!("Unlock your system credential store: {error}")),
+    }
+}
+
 #[tauri::command]
 fn save_provider_token(provider: String, token: String, db: State<Db>, app: AppHandle) -> Result<(), String> {
     if token.trim().is_empty() {
         return Err("Token cannot be empty".into());
     }
     let service = provider_service(&provider)?;
-    local_secret_set(&service, &token)?;
+    keyring::Entry::new(&service, "default").map_err(|e| e.to_string())?
+        .set_password(&token).map_err(|e| e.to_string())?;
+    local_secret_remove(&service)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     ensure_provider_agent(&conn, &provider)?;
     let _ = app.emit("wand://agents", serde_json::json!({"provider": provider, "connected": true}));
@@ -1192,7 +1221,12 @@ fn save_provider_token(provider: String, token: String, db: State<Db>, app: AppH
 #[tauri::command]
 fn disconnect_provider(provider: String, db: State<Db>, app: AppHandle) -> Result<(), String> {
     let scoped = provider_service(&provider)?;
+    // Remove the legacy copy first so it cannot be re-imported on reconnect.
     local_secret_remove(&scoped)?;
+    match keyring::Entry::new(&scoped, "default").map_err(|e| e.to_string())?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => (),
+        Err(error) => return Err(error.to_string()),
+    }
     if provider == "azure-devops" {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -1210,7 +1244,7 @@ fn disconnect_provider(provider: String, db: State<Db>, app: AppHandle) -> Resul
 #[tauri::command]
 fn provider_status(provider: String) -> Result<bool, String> {
     let service = provider_service(&provider)?;
-    Ok(local_secret_get(&service)?.is_some())
+    Ok(native_provider_secret(&service)?.is_some())
 }
 
 #[tauri::command]
@@ -1875,7 +1909,7 @@ struct ProviderRepo {
 }
 async fn provider_token(provider: &str) -> Result<String, String> {
     let service = provider_service(provider)?;
-    local_secret_get(&service)?.ok_or_else(|| format!("No {provider} credential is connected"))
+    native_provider_secret(&service)?.ok_or_else(|| format!("No {provider} credential is connected"))
 }
 fn validate_azure_org_url(raw: &str) -> Result<String, String> {
     let value = raw.trim().trim_end_matches('/');
