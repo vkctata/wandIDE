@@ -1411,9 +1411,9 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               ))
             )}
           </div>
-          {selected && <aside className="thread-detail-pane">
+          {selected && <section className="thread-detail-pane" aria-label="Post details">
             <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" onClick={() => setSelected(null)}>×</button></div>
-            <p className="thread-detail-time">{selected.created_at}</p>
+            <p className="thread-detail-time">{formatWorkspaceTime(selected.created_at)}</p>
             <div className="thread-detail-body">{selected.body}</div>
             {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
             <div className="thread-comments">
@@ -1429,7 +1429,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               {commentError && <p role="alert">{commentError}</p>}
               <button className="primary" disabled={commentPending || !comment.trim()} onClick={addComment}>{commentPending ? "Posting…" : "Post comment"}</button>
             </div>
-          </aside>}
+          </section>}
           </div>
         </>
       )}

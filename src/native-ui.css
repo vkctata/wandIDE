@@ -75,7 +75,11 @@ button { -webkit-app-region: no-drag; }
 .thread-card h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
 .thread-card .threadicon { margin-right: 2px; }
 .agent-mention { display: inline-flex; align-items: center; margin-left: auto; padding: 4px 8px; border-radius: 999px; color: #10251e; background: #8fe3b4; font: 600 10px ui-monospace, monospace; box-shadow: 0 0 0 2px color-mix(in srgb, #8fe3b4 22%, transparent); }
-.thread-detail-pane { position: sticky; top: 18px; min-height: 360px; border: 1px solid var(--wand-border, #292d3e); border-radius: 14px; background: var(--wand-surface, #151823); padding: 20px; }
+.thread-detail-pane { position: sticky; top: 18px; width: 100%; min-width: 0; min-height: 360px; box-sizing: border-box; overflow-wrap: anywhere; border: 1px solid var(--wand-border, #292d3e); border-radius: 14px; background: var(--wand-surface, #151823); padding: 20px; }
+.post-comment { padding: 16px 0; border-bottom: 1px solid var(--wand-border); }
+.post-comment strong, .post-comment time { display: block; }
+.post-comment time { margin-top: 4px; font-size: 12px; color: var(--wand-muted); }
+.post-comment .thread-detail-body { margin: 12px 0; }
 .thread-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .thread-detail-head h2 { margin: 6px 0 0; font-size: 17px; }
 .thread-detail-time { color: var(--wand-muted, #7c8399); font: 10px ui-monospace, monospace; }
