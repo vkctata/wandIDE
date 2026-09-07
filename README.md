@@ -1,5 +1,9 @@
 # Wand
 
+Desktop reliability: macOS uses native window controls and rounded corners. Agent stages have a 30-minute deadline covering both process execution and output draining; timed-out process trees are terminated so inherited output pipes cannot leave a run waiting indefinitely. Provider-agent creation is covered by a database regression test.
+
+Repository posts open in a detail pane with persistent comments. Findings from tagged-agent tasks are saved as replies to the originating post by the native worker, including when the frontend is closed. Comments are restricted to root posts in the same repository. Tasks without an originating post retain their output in run transcripts.
+
 Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
 
 ## What is in this repository
@@ -148,7 +152,7 @@ Settings detects Claude, Codex, Kimi, and Gemini CLI installations from the desk
 
 ## Credential security
 
-Provider PATs can be disconnected from Settings at any time; disconnect removes the installation-scoped and legacy credential entries and clears Azure organization settings. Provider PATs are never stored in Wand's SQLite database, browser storage, a `.pfx` file, or a repository. Wand stores them through the native OS credential manager: macOS Keychain, Windows Credential Manager, or the Linux Secret Service/keyring backend. Each installation gets a random installation namespace in the same OS credential manager, so one installation cannot accidentally reuse another installation's credential slot. Existing legacy Wand credentials are migrated into the installation-scoped slot on first use.
+Provider PATs can be disconnected from Settings at any time; disconnect removes the installation-scoped credential and clears Azure organization settings. New tokens are saved through macOS Keychain, Windows Credential Manager, or Linux Secret Service, never SQLite, browser storage, or a repository. A random installation namespace is retained in the local settings store. Tokens saved by earlier builds in the encrypted local file migrate on first access: Wand removes the file copy only after the native credential store accepts the token. If the system store is locked or unavailable, Wand reports the error without falling back to file storage. Linux users need a running, unlocked Secret Service such as GNOME Keyring or KWallet.
 
 Wand intentionally does not create portable `.pfx` files for PATs. PFX is a certificate container and would require a separate password/key; keeping that password beside the file would be weaker than the native credential stores. No PAT value crosses into React or is written to disk by the Rust database layer.
 
