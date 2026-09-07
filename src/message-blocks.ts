@@ -15,11 +15,12 @@ export function messageBlocks(source: string): MessageBlock[] {
   for (const line of source.replace(/\r\n/g, '\n').split('\n')) {
     if (!fence) {
       const opening = line.match(/^ {0,3}(`{3,}|~{3,})\s*([\w+#.-]*)[^\n]*$/);
-      if (opening) {
+      // Backtick info strings cannot contain backticks (including inline spans).
+      if (opening && !(opening[1][0] === '`' && line.slice(line.indexOf(opening[1]) + opening[1].length).includes('`'))) {
         flush();
         fence = opening[1];
         const name = opening[2].toLowerCase();
-        language = aliases[name] || name || 'plaintext';
+        language = Object.prototype.hasOwnProperty.call(aliases, name) ? aliases[name] : name || 'plaintext';
       } else lines.push(line);
     } else if (new RegExp(`^ {0,3}${fence[0]}{${fence.length},}\\s*$`).test(line)) {
       flush(); fence = ''; language = '';
