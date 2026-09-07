@@ -7,6 +7,7 @@ import { MessageContent } from "./message-content";
 import { messagePreview } from "./message-blocks";
 import { submitOnce } from "./submission";
 import { readThreadSnapshot, mergeThreadSnapshot } from "./thread-refresh";
+import { persistAppearance, readPreviewAppearance, type AppearanceSetting } from "./appearance-persistence";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -3096,65 +3097,67 @@ function WhatsNewSection() {
 }
 
 function ThemeSection() {
-  const [theme, setTheme] = useState(() =>
-    isTauriRuntime() ? "obsidian" : normalizeTheme(localStorage.getItem("wand.theme")),
-  );
-  const [font, setFont] = useState<FontName>(() =>
-    isTauriRuntime() ? "system" : normalizeFont(localStorage.getItem("wand.font")),
-  );
+  const [theme, setTheme] = useState(() => normalizeTheme(document.body.dataset.theme));
+  const [font, setFont] = useState<FontName>(() => normalizeFont(document.body.dataset.font));
+  const [loading, setLoading] = useState(isTauriRuntime());
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [status, setStatus] = useState("");
+  const saveLock = useRef(false);
   useEffect(() => {
-    invoke<string | null>("workspace_setting", { key: "theme" })
-      .then((value) => {
-        if (!value) return;
-        const nextTheme = normalizeTheme(value);
-        setTheme(nextTheme);
-        document.body.dataset.theme = nextTheme;
-        if (!isTauriRuntime()) localStorage.setItem("wand.theme", nextTheme);
-      })
-      .catch(() => {});
-    invoke<string | null>("workspace_setting", { key: "font" })
-      .then((value) => {
-        const nextFont = normalizeFont(value);
-        setFont(nextFont);
-        document.body.dataset.font = nextFont;
-        if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
-      })
-      .catch(() => {});
+    if (!isTauriRuntime()) return;
+    let cancelled = false;
+    Promise.all([
+      invoke<string | null>("workspace_setting", { key: "theme" }),
+      invoke<string | null>("workspace_setting", { key: "font" }),
+    ]).then(([savedTheme, savedFont]) => {
+      if (cancelled) return;
+      const nextTheme = normalizeTheme(savedTheme), nextFont = normalizeFont(savedFont);
+      setTheme(nextTheme); setFont(nextFont);
+      document.body.dataset.theme = nextTheme;
+      document.body.dataset.font = nextFont;
+    }).catch(error => {
+      if (!cancelled) setSaveError(`Could not read saved appearance: ${String(error)}`);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
   const isLight = theme === "daylight";
-  const choose = (name: ThemeName) => {
-    setTheme(name);
-    document.body.dataset.theme = name;
-    if (!isTauriRuntime()) localStorage.setItem("wand.theme", name);
-    void invoke("save_workspace_setting", {
-      key: "theme",
-      value: name,
-    }).catch(() => {});
+  const save = async (setting: AppearanceSetting) => {
+    if (loading) return;
+    await submitOnce(saveLock, async () => {
+      setSaving(true); setSaveError(""); setStatus("");
+      try {
+        await persistAppearance(setting, isTauriRuntime(), value => invoke("save_workspace_setting", value), () => localStorage);
+        if (setting.key === "theme") { setTheme(setting.value); document.body.dataset.theme = setting.value; }
+        else { setFont(setting.value); document.body.dataset.font = setting.value; }
+        setStatus("Appearance saved.");
+      } catch (error) {
+        setSaveError(`Appearance was not saved. Your previous choice is unchanged. Select the option again to retry. ${String(error)}`);
+      } finally { setSaving(false); }
+    });
   };
   const setMode = (mode: "dark" | "light") => {
-    choose(mode === "light" ? "daylight" : "obsidian");
+    void save({ key: "theme", value: mode === "light" ? "daylight" : "obsidian" });
   };
   const chooseFont = (name: FontName) => {
-    setFont(name);
-    document.body.dataset.font = name;
-    if (!isTauriRuntime()) localStorage.setItem("wand.font", name);
-    void invoke("save_workspace_setting", {
-      key: "font",
-      value: name,
-    }).catch(() => {});
+    void save({ key: "font", value: name });
   };
   return (
-    <div className="settings-section appearance-section">
+    <div className="settings-section appearance-section" aria-busy={loading || saving}>
       <div className="settings-section-head">
         <div>
           <h2>Appearance</h2>
           <p>Choose between Wand’s focused dark and light appearances.</p>
         </div>
       </div>
+      {(loading || saving || status) && <p role="status">{loading ? "Loading saved appearance…" : saving ? "Saving appearance…" : status}</p>}
+      {saveError && <p className="thread-error" role="alert">{saveError}</p>}
       <div className="mode-toggle-group">
         <button
           className={"mode-btn " + (!isLight ? "active" : "")}
           onClick={() => setMode("dark")}
+          disabled={loading || saving}
+          aria-pressed={!isLight}
         >
           <Moon size={16} />
           <span>Dark Mode</span>
@@ -3162,6 +3165,8 @@ function ThemeSection() {
         <button
           className={"mode-btn " + (isLight ? "active" : "")}
           onClick={() => setMode("light")}
+          disabled={loading || saving}
+          aria-pressed={isLight}
         >
           <Sun size={16} />
           <span>Light Mode</span>
@@ -3181,6 +3186,7 @@ function ThemeSection() {
               key={option.id}
               className={"font-option font-option-" + option.id + (font === option.id ? " active" : "")}
               onClick={() => chooseFont(option.id)}
+              disabled={loading || saving}
               aria-pressed={font === option.id}
             >
               <strong>{option.name}</strong>
@@ -3792,10 +3798,9 @@ function ThemeBootstrap() {
   useEffect(() => {
     const apply = (value: string) => {
       document.body.dataset.theme = value;
-      if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
     };
     if (!isTauriRuntime()) {
-      apply(normalizeTheme(localStorage.getItem("wand.theme")));
+      apply(normalizeTheme(readPreviewAppearance("theme", () => localStorage)));
       return;
     }
     invoke<string | null>("workspace_setting", { key: "theme" })
@@ -3809,10 +3814,9 @@ function FontBootstrap() {
     const apply = (value: string | null | undefined) => {
       const nextFont = normalizeFont(value);
       document.body.dataset.font = nextFont;
-      if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
     };
     if (!isTauriRuntime()) {
-      apply(localStorage.getItem("wand.font"));
+      apply(readPreviewAppearance("font", () => localStorage));
       return;
     }
     invoke<string | null>("workspace_setting", { key: "font" })

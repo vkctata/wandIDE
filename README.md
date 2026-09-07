@@ -12,6 +12,9 @@ Comments also reject overlapping submissions. Failed history refreshes preserve
 loaded posts with a retry action; a delayed snapshot cannot erase newer live replies.
 Agent mentions follow the text cursor, preserve the rest of the draft, and support
 multi-word name searches. The picker supports keyboard and accessible click selection.
+Appearance changes apply after persistence succeeds. Settings reports saving and
+failure states; failed writes retain the previous theme/font instead of silently
+showing an unsaved choice. Browser preview preferences are separate from native storage.
 
 Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
 

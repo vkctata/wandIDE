@@ -23,6 +23,22 @@ import { accumulateDownload, installApprovedUpdate } from '../src/update-install
 import { initializeEditorViewport } from '../src/editor-viewport.ts';
 import { submitOnce } from '../src/submission.ts';
 import { readThreadSnapshot, mergeThreadSnapshot } from '../src/thread-refresh.ts';
+import { persistAppearance, readPreviewAppearance } from '../src/appearance-persistence.ts';
+
+test('appearance saves distinguish native persistence from browser preferences', async () => {
+  const setting = { key: 'theme', value: 'daylight' };
+  let saved;
+  const blocked = () => { throw Error('storage denied'); };
+  await persistAppearance(setting, true, async value => { saved = value; }, blocked);
+  assert.deepEqual(saved, setting);
+  await assert.rejects(persistAppearance(setting, true, async () => { throw Error('database busy'); }, blocked), /database busy/);
+  await assert.rejects(persistAppearance(setting, false, async () => assert.fail('native save in preview'), blocked), /storage denied/);
+  const values = new Map();
+  const storage = () => ({ setItem: (key, value) => values.set(key, value), getItem: key => values.get(key) ?? null });
+  await persistAppearance({ key: 'font', value: 'avenir' }, false, async () => assert.fail('native save in preview'), storage);
+  assert.equal(readPreviewAppearance('font', storage), 'avenir');
+  assert.equal(readPreviewAppearance('theme', blocked), null);
+});
 
 test('thread refresh failures remain distinct from an empty repository', async () => {
   assert.deepEqual(await readThreadSnapshot(async () => []), { messages: [], error: null });
