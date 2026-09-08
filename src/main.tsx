@@ -1,9 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
-import { hasAgentMention } from "./mentions";
+import { hasAgentMention, activeMentionAt, insertAgentMention } from "./mentions";
 import { accumulateDownload, installApprovedUpdate, type DownloadState } from "./update-installation";
 import { persistOnboardingName, previewOnboardingComplete } from "./onboarding-persistence";
 import { isRepositorySync, updateProviderHealth, type ProviderFailure } from "./provider-events";
 import { MessageContent } from "./message-content";
+import { messagePreview } from "./message-blocks";
+import { activityMessage, agentDisplayName } from "./activity-labels";
+import { latestRequest } from "./latest-request";
+import { readSearchSources } from "./search-sources";
+import { searchFocusIndex } from "./search-navigation";
+import { submitOnce } from "./submission";
+import { readThreadSnapshot, mergeThreadSnapshot } from "./thread-refresh";
+import { persistAppearance, readPreviewAppearance, type AppearanceSetting } from "./appearance-persistence";
 import { createRoot } from "react-dom/client";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -327,6 +335,8 @@ function App() {
   const [userName, setUserName] = useState("there");
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ id: string; label: string; detail: string; target: View; repo?: string }>>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchWarning, setSearchWarning] = useState("");
   const [notice, setNotice] = useState("");
   const [agentCatalog, setAgentCatalog] = useState<Agent[]>(agents);
   const [workflows, setWorkflows] = useState<AgentWorkflow[]>([]);
@@ -362,8 +372,11 @@ function App() {
   }, []);
   useEffect(() => {
     const term = query.trim().toLowerCase();
-    if (!term) { setSearchResults([]); return; }
+    if (!term) { setSearchResults([]); setSearchLoading(false); setSearchWarning(""); return; }
     let active = true;
+    setSearchResults([]);
+    setSearchLoading(true);
+    setSearchWarning("");
     const search = async () => {
       const results: Array<{ id: string; label: string; detail: string; target: View; repo?: string }> = [];
       repos.forEach((item) => {
@@ -371,13 +384,18 @@ function App() {
       });
       tasks.forEach((item) => { if (`${item.name} ${item.repo} ${item.status}`.toLowerCase().includes(term)) results.push({ id: `task:${item.id}`, label: item.name, detail: `Task · ${item.status}`, target: "tasks" }); });
       agentCatalog.forEach((item) => { if (`${item.name} ${item.role} ${item.skills.join(" ")}`.toLowerCase().includes(term)) results.push({ id: `agent:${item.id}`, label: `@${item.name}`, detail: `Agent · ${item.role}`, target: "home" }); });
-      const [notifications, events] = await Promise.all([
-        invoke<any[]>("list_notifications").catch(() => []),
-        invoke<any[]>("list_events", { limit: 100 }).catch(() => []),
+      if (active) setSearchResults(results.slice(0, 12));
+      const { rows: [notifications, events], unavailable } = await readSearchSources<any>([
+        { name: "notifications", read: () => invoke<any[]>("list_notifications") },
+        { name: "activity", read: () => invoke<any[]>("list_events", { limit: 100 }) },
       ]);
       notifications.forEach((item) => { if (`${item.title} ${item.body} ${item.repo} ${item.author}`.toLowerCase().includes(term)) results.push({ id: `notice:${item.id}`, label: item.title, detail: `${item.provider} · ${item.repo}`, target: "notifications" }); });
-      events.forEach((item) => { if (`${item.kind} ${item.message}`.toLowerCase().includes(term)) results.push({ id: `event:${item.id}`, label: item.message, detail: `Activity · ${item.created_at}`, target: "home" }); });
-      if (active) setSearchResults(results.slice(0, 12));
+      events.forEach((item) => { if (`${item.kind} ${item.message}`.toLowerCase().includes(term)) results.push({ id: `event:${item.id}`, label: activityMessage(item.kind, item.message, agentCatalog), detail: `Activity · ${formatWorkspaceTime(item.created_at)}`, target: "home" }); });
+      if (active) {
+        setSearchResults(results.slice(0, 12));
+        setSearchWarning(unavailable.length ? `Partial results: could not search ${unavailable.join(" and ")}. Change your search to try again.` : "");
+        setSearchLoading(false);
+      }
     };
     void search();
     return () => { active = false; };
@@ -451,9 +469,21 @@ function App() {
           document.querySelector(".search input") as HTMLInputElement | null
         )?.focus();
       }
+      const input = document.querySelector<HTMLInputElement>(".search input");
+      const palette = document.querySelector(".search-palette");
+      const inSearch = document.activeElement === input || Boolean(palette?.contains(document.activeElement));
+      if (!inSearch || event.isComposing) return;
       if (event.key === "Escape") {
+        event.preventDefault();
         setQuery("");
-        (document.activeElement as HTMLElement | null)?.blur();
+        input?.focus();
+        return;
+      }
+      const buttons = Array.from(palette?.querySelectorAll<HTMLButtonElement>("button") || []);
+      const next = searchFocusIndex(event.key, buttons.indexOf(document.activeElement as HTMLButtonElement), buttons.length);
+      if (next !== null) {
+        event.preventDefault();
+        buttons[next]?.focus();
       }
     };
     document.addEventListener("keydown", onKey);
@@ -812,6 +842,7 @@ function App() {
               <Search size={15} />
               <input
                 value={query}
+                aria-label="Search repositories, tasks, agents, activity and notifications"
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search anything"
               />
@@ -834,11 +865,13 @@ function App() {
           </div>
         </header>
         {query.trim() && (
-          <div className="search-palette">
+          <div className="search-palette" aria-label="Search results" role="region" aria-busy={searchLoading}>
+            {searchLoading && <div className="search-empty" role="status">Searching activity and notifications…</div>}
+            {searchWarning && <div className="search-empty" role="status">{searchWarning}</div>}
             {searchResults.map((result) => (
                 <button
                   key={result.id}
-                  onMouseDown={() => {
+                  onClick={() => {
                     if (result.id.startsWith("agent:")) openSettings("agents");
                     else { if (result.repo) { const selectedRepo = repos.find((item) => item.name === result.repo); if (selectedRepo) setRepo(selectedRepo); } setView(result.target); }
                     setQuery("");
@@ -848,7 +881,7 @@ function App() {
                   <small>{result.detail}</small>
                 </button>
               ))}
-            {searchResults.length === 0 && <div className="search-empty">No matching repositories, tasks, agents, activity, or notifications.</div>}
+            {!searchLoading && !searchWarning && searchResults.length === 0 && <div className="search-empty">No matching repositories, tasks, agents, activity, or notifications.</div>}
           </div>
         )}
         {notice && (
@@ -904,21 +937,29 @@ function Home({
   const [events, setEvents] = useState<Event[]>([]);
   const [homeAgents, setHomeAgents] = useState<Array<{ id: string; name: string; role: string; cli: string; model: string }>>([]);
   const [loadError, setLoadError] = useState("");
+  const [loadingActivity, setLoadingActivity] = useState(true);
+  const activityRequests = useRef(latestRequest());
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [localHour, setLocalHour] = useState<number | null>(null);
   const refresh = () => {
+    const isCurrent = activityRequests.current.begin();
+    setLoadingActivity(true);
     Promise.all([
       invoke<Event[]>("list_events", { limit: 12 }),
       invoke<typeof homeAgents>("list_agents"),
     ]).then(([nextEvents, agents]) => {
+      if (!isCurrent()) return;
       setEvents(nextEvents); setHomeAgents(agents); setLoadError("");
-    }).catch(() => setLoadError("Could not refresh your activity. Try again."));
+    }).catch(() => {
+      if (isCurrent()) setLoadError("Could not refresh your activity. Try again.");
+    }).finally(() => { if (isCurrent()) setLoadingActivity(false); });
   };
   useEffect(() => {
     refresh();
     const names = ["wand://agent", "wand://agents", "wand://scheduler", "wand://notifications"];
     const stops = names.map((name) => listen(name, refresh));
     return () => {
+      activityRequests.current.invalidate();
       stops.forEach((stop) => stop.then((fn) => fn()).catch(() => {}));
     };
   }, [settingsOpen]);
@@ -978,14 +1019,13 @@ function Home({
           <p>Events synced to this local workspace.</p>
         </div>
       </div>
-      <div className="timeline">
+      <div className="timeline" aria-busy={loadingActivity}>
         {events.length === 0 && (
           <div className="emptyhint">
             <Sparkles size={20} />
-            <h3>No activity yet</h3>
+            <h3>{loadingActivity ? "Loading activity…" : loadError ? "Activity unavailable" : "No activity yet"}</h3>
             <p>
-              Run a task or sync a provider to start your local activity
-              history.
+              {loadingActivity ? "Reading your recent workspace history." : loadError ? "Retry to load your activity. Your saved history has not been removed." : "Run a task or sync a provider to start your local activity history."}
             </p>
           </div>
         )}
@@ -999,7 +1039,7 @@ function Home({
                 <span className="kind">{event.kind}</span>
                 <span className="time">{formatWorkspaceTime(event.created_at)}</span>
               </div>
-              <h3>{event.message}</h3>
+              <h3>{activityMessage(event.kind, event.message, homeAgents)}</h3>
             </div>
           </article>
         ))}
@@ -1016,7 +1056,7 @@ function Home({
       </div>
       <div className="agentgrid">
         {homeAgents.slice(0, 3).map((agent) => <Agent key={agent.id} icon={Bot} name={agent.name} desc={agent.role} status={`${agent.cli} · ${agent.model === "default" ? "CLI default model" : agent.model}`} />)}
-        {!homeAgents.length && <p className="sub">Configure your first agent in Settings.</p>}
+        {!homeAgents.length && <p className="sub">{loadingActivity ? "Loading agents…" : loadError ? "Agent list could not be refreshed." : "Configure your first agent in Settings."}</p>}
       </div>
     </section>
   );
@@ -1283,10 +1323,16 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   const [draft, setDraft] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
   const [postError, setPostError] = useState("");
+  const [posting, setPosting] = useState(false);
+  const postLock = useRef(false);
   const [selected, setSelected] = useState<Message | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
   const [commentErrors, setCommentErrors] = useState<Record<number, string>>({});
   const [pendingPost, setPendingPost] = useState<number | null>(null);
+  const commentLock = useRef(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const loadVersion = useRef(0);
   const comment = selected ? commentDrafts[selected.id] || "" : "";
   const commentError = selected ? commentErrors[selected.id] || "" : "";
   const commentPending = pendingPost !== null;
@@ -1297,26 +1343,33 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
     if (!selected || !comment.trim() || commentPending) return;
     const postId = selected.id;
     const submittedDraft = comment;
-    setPendingPost(postId);
-    setCommentErrors((errors) => ({ ...errors, [postId]: "" }));
-    try {
-      await invoke("create_thread_message", {
-        repo: repo.name, author: "You", body: comment.trim(),
-        agentIds: [], parentId: postId,
-      });
-      setCommentDrafts((drafts) => drafts[postId] === submittedDraft
-        ? { ...drafts, [postId]: "" } : drafts);
-      await load();
-    } catch (error) { setCommentErrors((errors) => ({ ...errors, [postId]: String(error) })); }
-    finally { setPendingPost(null); }
+    await submitOnce(commentLock, async () => {
+      setPendingPost(postId);
+      setCommentErrors((errors) => ({ ...errors, [postId]: "" }));
+      try {
+        await invoke("create_thread_message", {
+          repo: repo.name, author: "You", body: comment.trim(),
+          agentIds: [], parentId: postId,
+        });
+        setCommentDrafts((drafts) => drafts[postId] === submittedDraft
+          ? { ...drafts, [postId]: "" } : drafts);
+        await load();
+      } catch (error) { setCommentErrors((errors) => ({ ...errors, [postId]: String(error) })); }
+      finally { setPendingPost(null); }
+    });
   };
   const hasRepo = repo.name !== emptyRepo.name;
-  const load = () =>
-    hasRepo
-      ? invoke<Message[]>("list_thread_messages", { repo: repo.name })
-          .then(setMessages)
-          .catch(() => setMessages([]))
-      : Promise.resolve(setMessages([]));
+  const load = async () => {
+    if (!hasRepo) return;
+    const version = ++loadVersion.current;
+    setLoadingMessages(true);
+    setRefreshError("");
+    const result = await readThreadSnapshot(() => invoke<Message[]>("list_thread_messages", { repo: repo.name }));
+    if (version !== loadVersion.current) return;
+    if (result.messages !== null) setMessages(current => mergeThreadSnapshot(current, result.messages));
+    setRefreshError(result.error || "");
+    setLoadingMessages(false);
+  };
   useEffect(() => {
     load();
   }, [repo.name, hasRepo]);
@@ -1324,11 +1377,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
     if (!hasRepo) return;
     const stop = listen<Message>("wand://thread", (event) => {
       if (event.payload.repo !== repo.name) return;
-      setMessages((current) =>
-        current.some((message) => message.id === event.payload.id)
-          ? current
-          : [...current, event.payload],
-      );
+      setMessages(current => mergeThreadSnapshot(current, [event.payload]));
     });
     return () => {
       stop.then((unsubscribe) => unsubscribe());
@@ -1336,22 +1385,27 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
   }, [repo.name, hasRepo]);
   const create = async () => {
     if (!hasRepo || !draft.trim()) return;
-    setPostError("");
-    try {
-      await invoke("create_thread_message", {
-        repo: repo.name,
-        author: "You",
-        body: draft.trim(),
-        agentIds: tagged,
-      });
-      setDraft("");
-      setTagged([]);
-      await load();
-    } catch (cause) {
-      setPostError(
-        cause instanceof Error ? cause.message : String(cause),
-      );
-    }
+    await submitOnce(postLock, async () => {
+      setPosting(true);
+      setPostError("");
+      try {
+        await invoke("create_thread_message", {
+          repo: repo.name,
+          author: "You",
+          body: draft.trim(),
+          agentIds: tagged,
+        });
+        setDraft("");
+        setTagged([]);
+        await load();
+      } catch (cause) {
+        setPostError(
+          cause instanceof Error ? cause.message : String(cause),
+        );
+      } finally {
+        setPosting(false);
+      }
+    });
   };
   return (
     <section className="content threads-page">
@@ -1379,7 +1433,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
         </div>
       ) : (
         <>
-          <div className="thread-composer">
+          <div className="thread-composer" aria-busy={posting}>
             <AgentMentionInput
               repo={repo.name}
               value={draft}
@@ -1388,9 +1442,10 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               tagged={tagged}
               onTagged={setTagged}
               placeholder="Write a repository thread… Type @ to tag an agent"
+              disabled={posting}
             />
-            <button className="primary" disabled={!draft.trim()} onClick={create}>
-              Post
+            <button className="primary" disabled={posting || !draft.trim()} onClick={create}>
+              {posting ? "Posting…" : "Post"}
             </button>
           </div>
           {postError && (
@@ -1398,15 +1453,18 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               Could not post this thread: {postError}
             </div>
           )}
-          <div className="thread-layout">
-          <div className="threadlist">
+          {refreshError && <div className="thread-error thread-refresh-error" role="alert">
+            <span>Could not refresh posts: {refreshError}. {messages.length > 0 ? "Previously loaded posts are still shown." : "Try loading the repository history again."}</span>
+            <button className="outline" disabled={loadingMessages} onClick={() => void load()}>Retry loading posts</button>
+          </div>}
+          <div className={`thread-layout${selected ? " has-detail" : ""}`}>
+          <div className="threadlist" aria-busy={loadingMessages}>
             {messages.length === 0 ? (
               <div className="emptyhint">
                 <MessageSquare size={20} />
-                <h3>No repository messages yet</h3>
+                <h3>{loadingMessages ? "Loading posts…" : refreshError ? "Posts unavailable" : "No repository messages yet"}</h3>
                 <p>
-                  Start the conversation for this repository and keep the context
-                  local.
+                  {loadingMessages ? "Reading this repository’s history." : refreshError ? "Retry loading to see this repository’s history." : "Start the conversation for this repository and keep the context local."}
                 </p>
               </div>
             ) : (
@@ -1416,9 +1474,9 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
                     <Hash size={16} />
                   </div>
                   <div>
-                    <h3>{message.body}</h3>
+                    <h3>{messagePreview(message.body)}</h3>
                     <p>
-                      {message.author} · {formatWorkspaceTime(message.created_at)}
+                      {agentDisplayName(message.author, agents)} · {formatWorkspaceTime(message.created_at)}
                     </p>
                   </div>
                   {message.agent_ids?.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}
@@ -1429,7 +1487,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
             )}
           </div>
           {selected && <section className="thread-detail-pane" aria-label="Post details">
-            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{selected.author}</h2></div><button className="iconbtn" aria-label="Close post details" onClick={() => setSelected(null)}>×</button></div>
+            <div className="thread-detail-head"><div><span className="eyebrow">POST DETAILS</span><h2>{agentDisplayName(selected.author, agents)}</h2></div><button className="iconbtn" aria-label="Close post details" onClick={() => setSelected(null)}>×</button></div>
             <p className="thread-detail-time">{formatWorkspaceTime(selected.created_at)}</p>
             <MessageContent content={selected.body} />
             {selected.agent_ids?.length > 0 && <div className="thread-detail-tags">{selected.agent_ids.map((id) => <span className="agent-mention" key={id}>@{agents.find((agent) => agent.id === id)?.name || id}</span>)}</div>}
@@ -1437,7 +1495,7 @@ function Threads({ repo, agents }: { repo: Repo; agents: Agent[] }) {
               <h3>Comments</h3>
               {messages.filter((message) => message.parent_id === selected.id).map((message) => (
                 <article key={message.id} className="post-comment">
-                  <strong>{agents.find((agent) => agent.id === message.author)?.name || message.author}</strong>
+                  <strong>{agentDisplayName(message.author, agents)}</strong>
                   <time>{formatWorkspaceTime(message.created_at)}</time>
                   <MessageContent content={message.body} />
                 </article>
@@ -2339,6 +2397,7 @@ function CliManager() {
         <div>
           <h2>Local CLI access</h2>
           <p>Choose which coding runtimes Wand may use.</p>
+          <p className="sub">Enabled CLIs use their own permissions and sandbox settings. Starting in a repository does not restrict all file or network access. Review your CLI configuration before running agents on sensitive code.</p>
         </div>
         <button className="outline" onClick={() => void refresh()} disabled={loading}>
           <RotateCcw size={13} className={loading ? "spin" : ""} />
@@ -2749,6 +2808,7 @@ function AgentMentionInput({
   tagged,
   onTagged,
   placeholder,
+  disabled = false,
 }: {
   repo: string;
   value: string;
@@ -2757,9 +2817,15 @@ function AgentMentionInput({
   tagged: string[];
   onTagged: (ids: string[]) => void;
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [caret, setCaret] = useState(value.length);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const pendingCaret = useRef<number | null>(null);
+  const menuId = React.useId();
+  const context = activeMentionAt(value, caret);
+  const query = context?.query || "";
   const [highlighted, setHighlighted] = useState(0);
   const available = agents.filter(
     (agent) =>
@@ -2768,28 +2834,37 @@ function AgentMentionInput({
       agent.scope === `repo:${repo}`,
   );
   const choose = (agent: Agent) => {
-    const at = value.lastIndexOf("@");
-    const next =
-      at >= 0
-        ? value.slice(0, at) + "@" + agent.name + " "
-        : value + "@" + agent.name + " ";
-    onChange(next);
+    if (disabled) return;
+    const next = insertAgentMention(value, caret, agent.name);
+    if (!next) return;
+    pendingCaret.current = next.caret;
+    onChange(next.text);
     onTagged(tagged.includes(agent.id) ? tagged : [...tagged, agent.id]);
     setOpen(false);
-    setQuery("");
+    setCaret(next.caret);
     setHighlighted(0);
   };
-  const update = (next: string) => {
+  useEffect(() => {
+    if (pendingCaret.current === null) return;
+    input.current?.focus();
+    input.current?.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  }, [value]);
+  const locateMention = (next: string, position: number) => {
+    setCaret(position);
+    const range = activeMentionAt(next, position);
+    const alreadySelected = range && available.some(agent => tagged.includes(agent.id) &&
+      (range.query === agent.name || range.query.startsWith(agent.name + ' ')));
+    setOpen(Boolean(range && !alreadySelected));
+    setHighlighted(0);
+  };
+  const update = (next: string, position: number) => {
     onChange(next);
     onTagged(tagged.filter((id) => {
       const agent = available.find((candidate) => candidate.id === id);
       return agent ? hasAgentMention(next, agent.name) : false;
     }));
-    const at = next.lastIndexOf("@");
-    const fragment = at >= 0 ? next.slice(at + 1) : "";
-    setQuery(fragment);
-    setOpen(at >= 0 && !fragment.includes(" "));
-    setHighlighted(0);
+    locateMention(next, position);
   };
   const matches = available
     .filter((agent) =>
@@ -2802,8 +2877,16 @@ function AgentMentionInput({
   return (
     <div className="mention-composer">
       <textarea
+        ref={input}
+        aria-haspopup="listbox"
+        aria-autocomplete="list"
+        aria-controls={open && !disabled ? menuId : undefined}
+        aria-activedescendant={open && !disabled && matches.length ? `${menuId}-${highlighted % matches.length}` : undefined}
+        aria-label={placeholder}
         value={value}
-        onChange={(event) => update(event.target.value)}
+        disabled={disabled}
+        onChange={(event) => update(event.target.value, event.target.selectionStart)}
+        onSelect={(event) => locateMention(event.currentTarget.value, event.currentTarget.selectionStart)}
         placeholder={placeholder}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -2816,23 +2899,24 @@ function AgentMentionInput({
             setHighlighted((index) => (index - 1 + matches.length) % matches.length);
           } else if (open && event.key === "Enter" && matches.length) {
             event.preventDefault();
-            choose(matches[highlighted]);
+            choose(matches[highlighted % matches.length]);
           }
         }}
       />
-      {open && (
-        <div className="mention-menu" role="listbox" aria-label="Agents to tag">
+      {open && !disabled && (
+        <div className="mention-menu" id={menuId} role="listbox" aria-label="Agents to tag">
           {matches.map((agent, index) => (
               <button
                 type="button"
                 key={agent.id}
+                id={`${menuId}-${index}`}
                 role="option"
                 aria-selected={index === highlighted}
                 className={index === highlighted ? "highlighted" : ""}
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  choose(agent);
                 }}
+                onClick={() => choose(agent)}
               >
                 <span
                   className="mention-avatar"
@@ -3050,65 +3134,67 @@ function WhatsNewSection() {
 }
 
 function ThemeSection() {
-  const [theme, setTheme] = useState(() =>
-    isTauriRuntime() ? "obsidian" : normalizeTheme(localStorage.getItem("wand.theme")),
-  );
-  const [font, setFont] = useState<FontName>(() =>
-    isTauriRuntime() ? "system" : normalizeFont(localStorage.getItem("wand.font")),
-  );
+  const [theme, setTheme] = useState(() => normalizeTheme(document.body.dataset.theme));
+  const [font, setFont] = useState<FontName>(() => normalizeFont(document.body.dataset.font));
+  const [loading, setLoading] = useState(isTauriRuntime());
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [status, setStatus] = useState("");
+  const saveLock = useRef(false);
   useEffect(() => {
-    invoke<string | null>("workspace_setting", { key: "theme" })
-      .then((value) => {
-        if (!value) return;
-        const nextTheme = normalizeTheme(value);
-        setTheme(nextTheme);
-        document.body.dataset.theme = nextTheme;
-        if (!isTauriRuntime()) localStorage.setItem("wand.theme", nextTheme);
-      })
-      .catch(() => {});
-    invoke<string | null>("workspace_setting", { key: "font" })
-      .then((value) => {
-        const nextFont = normalizeFont(value);
-        setFont(nextFont);
-        document.body.dataset.font = nextFont;
-        if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
-      })
-      .catch(() => {});
+    if (!isTauriRuntime()) return;
+    let cancelled = false;
+    Promise.all([
+      invoke<string | null>("workspace_setting", { key: "theme" }),
+      invoke<string | null>("workspace_setting", { key: "font" }),
+    ]).then(([savedTheme, savedFont]) => {
+      if (cancelled) return;
+      const nextTheme = normalizeTheme(savedTheme), nextFont = normalizeFont(savedFont);
+      setTheme(nextTheme); setFont(nextFont);
+      document.body.dataset.theme = nextTheme;
+      document.body.dataset.font = nextFont;
+    }).catch(error => {
+      if (!cancelled) setSaveError(`Could not read saved appearance: ${String(error)}`);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
   const isLight = theme === "daylight";
-  const choose = (name: ThemeName) => {
-    setTheme(name);
-    document.body.dataset.theme = name;
-    if (!isTauriRuntime()) localStorage.setItem("wand.theme", name);
-    void invoke("save_workspace_setting", {
-      key: "theme",
-      value: name,
-    }).catch(() => {});
+  const save = async (setting: AppearanceSetting) => {
+    if (loading) return;
+    await submitOnce(saveLock, async () => {
+      setSaving(true); setSaveError(""); setStatus("");
+      try {
+        await persistAppearance(setting, isTauriRuntime(), value => invoke("save_workspace_setting", value), () => localStorage);
+        if (setting.key === "theme") { setTheme(setting.value); document.body.dataset.theme = setting.value; }
+        else { setFont(setting.value); document.body.dataset.font = setting.value; }
+        setStatus("Appearance saved.");
+      } catch (error) {
+        setSaveError(`Appearance was not saved. Your previous choice is unchanged. Select the option again to retry. ${String(error)}`);
+      } finally { setSaving(false); }
+    });
   };
   const setMode = (mode: "dark" | "light") => {
-    choose(mode === "light" ? "daylight" : "obsidian");
+    void save({ key: "theme", value: mode === "light" ? "daylight" : "obsidian" });
   };
   const chooseFont = (name: FontName) => {
-    setFont(name);
-    document.body.dataset.font = name;
-    if (!isTauriRuntime()) localStorage.setItem("wand.font", name);
-    void invoke("save_workspace_setting", {
-      key: "font",
-      value: name,
-    }).catch(() => {});
+    void save({ key: "font", value: name });
   };
   return (
-    <div className="settings-section appearance-section">
+    <div className="settings-section appearance-section" aria-busy={loading || saving}>
       <div className="settings-section-head">
         <div>
           <h2>Appearance</h2>
           <p>Choose between Wand’s focused dark and light appearances.</p>
         </div>
       </div>
+      {(loading || saving || status) && <p role="status">{loading ? "Loading saved appearance…" : saving ? "Saving appearance…" : status}</p>}
+      {saveError && <p className="thread-error" role="alert">{saveError}</p>}
       <div className="mode-toggle-group">
         <button
           className={"mode-btn " + (!isLight ? "active" : "")}
           onClick={() => setMode("dark")}
+          disabled={loading || saving}
+          aria-pressed={!isLight}
         >
           <Moon size={16} />
           <span>Dark Mode</span>
@@ -3116,6 +3202,8 @@ function ThemeSection() {
         <button
           className={"mode-btn " + (isLight ? "active" : "")}
           onClick={() => setMode("light")}
+          disabled={loading || saving}
+          aria-pressed={isLight}
         >
           <Sun size={16} />
           <span>Light Mode</span>
@@ -3135,6 +3223,7 @@ function ThemeSection() {
               key={option.id}
               className={"font-option font-option-" + option.id + (font === option.id ? " active" : "")}
               onClick={() => chooseFont(option.id)}
+              disabled={loading || saving}
               aria-pressed={font === option.id}
             >
               <strong>{option.name}</strong>
@@ -3746,10 +3835,9 @@ function ThemeBootstrap() {
   useEffect(() => {
     const apply = (value: string) => {
       document.body.dataset.theme = value;
-      if (!isTauriRuntime()) localStorage.setItem("wand.theme", value);
     };
     if (!isTauriRuntime()) {
-      apply(normalizeTheme(localStorage.getItem("wand.theme")));
+      apply(normalizeTheme(readPreviewAppearance("theme", () => localStorage)));
       return;
     }
     invoke<string | null>("workspace_setting", { key: "theme" })
@@ -3763,10 +3851,9 @@ function FontBootstrap() {
     const apply = (value: string | null | undefined) => {
       const nextFont = normalizeFont(value);
       document.body.dataset.font = nextFont;
-      if (!isTauriRuntime()) localStorage.setItem("wand.font", nextFont);
     };
     if (!isTauriRuntime()) {
-      apply(localStorage.getItem("wand.font"));
+      apply(readPreviewAppearance("font", () => localStorage));
       return;
     }
     invoke<string | null>("workspace_setting", { key: "font" })
