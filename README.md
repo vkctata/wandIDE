@@ -170,6 +170,12 @@ repository conversations, providers, and notifications. Without JavaScript,
 all screenshots remain available as a gallery. Installation guidance covers
 macOS, Windows, Linux, and the first repository task. Earlier beta captures
 are labeled so they are not mistaken for the current release UI.
+The full-width app preview is paired with a setup FAQ covering CLI accounts,
+local scheduling, data handling, and Mac processor selection. Windows and Linux
+links in the hero resolve directly to installers; macOS opens the architecture
+choices rather than guessing the visitor's processor.
+Mobile navigation wraps instead of hiding links off-screen. Download shortcuts
+and appearance controls have larger touch targets, with readable focus states.
 
 The static product site lives in `website/` and is published through
 `.github/workflows/pages.yml` to GitHub Pages whenever the site changes on

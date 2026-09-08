@@ -8,6 +8,15 @@ import { enhanceTour } from '../website/tour.js';
 const website = new URL('../website/', import.meta.url);
 const html = readFileSync(new URL('index.html', website), 'utf8');
 
+test('mobile navigation remains visible and primary controls have touch targets', () => {
+  const css = readFileSync(new URL('styles.css', website), 'utf8');
+  const mobile = css.split('@media (max-width: 640px)')[1];
+  assert.match(mobile, /\.site-nav nav \{[^}]*flex-wrap: wrap/);
+  assert.doesNotMatch(mobile, /overflow-x: auto/);
+  assert.match(css, /\.hero-meta a \{[^}]*min-height: 44px/);
+  assert.match(css, /\.theme-toggle, \.nav-cta \{[^}]*min-height: 44px/);
+});
+
 test('app tour supports selection, keyboard wrapping, and accessible panel relationships', () => {
   const element = () => ({
     attributes: {}, children: [], events: {}, hidden: false,
@@ -49,6 +58,18 @@ test('website local assets and section anchors resolve', () => {
   assert.ok(ids.includes('screenshots'));
 });
 
+test('setup answers are accessible without JavaScript and hero downloads identify their platform', () => {
+  const questions = html.split('id="questions"')[1].split('</section>')[0];
+  assert.equal([...questions.matchAll(/<details>/g)].length, 5);
+  assert.equal([...questions.matchAll(/<summary>[^<]+<\/summary>/g)].length, 5);
+  assert.match(questions, /computer awake/);
+  assert.match(questions, /may send prompts and code/);
+  const hero = html.split('class="hero-meta"')[1].split('</ul>')[0];
+  assert.match(hero, /data-release-asset="_x64_en-US.msi"/);
+  assert.match(hero, /data-release-asset="_amd64.AppImage"/);
+  assert.match(hero, /href="#download" aria-label="Choose a macOS installer"/);
+});
+
 test('release resolver uses exact platform suffixes and reports missing assets', () => {
   const url = 'https://github.com/vkctata/wandIDE/releases/download/v1/Wand_1_aarch64.dmg';
   const release = { assets: [{ name: 'Wand_1_aarch64.dmg', browser_download_url: url, size: 1048576 }] };
@@ -56,6 +77,32 @@ test('release resolver uses exact platform suffixes and reports missing assets',
   assert.equal(resolveAsset(release, '_x64.dmg').available, false);
   assert.equal(resolveAsset(release, '').available, false);
   assert.equal(resolveAsset(null, '_x64.dmg').href, releasePage);
+});
+
+test('release lookup updates hero links without adding download-card captions', async () => {
+  const url = 'https://github.com/vkctata/wandIDE/releases/download/v1/Wand_1_x64_en-US.msi';
+  const link = (card) => ({
+    dataset: { releaseAsset: '_x64_en-US.msi' }, children: [],
+    classList: { contains: () => card }, setAttribute() {}, removeAttribute() {},
+    append(child) { this.children.push(child); },
+  });
+  const hero = link(false), card = link(true), status = {};
+  const source = readFileSync(new URL('main.js', website), 'utf8').replace(/^import[^\n]+\n/, '');
+  vm.runInNewContext(source, {
+    releasePage, resolveAsset, AbortSignal,
+    document: {
+      querySelectorAll: () => [hero, card],
+      querySelector: (selector) => selector === '#release-status' ? status : null,
+      createElement: () => ({}),
+    },
+    fetch: async () => ({ ok: true, json: async () => ({ tag_name: 'v1', assets: [{ name: 'Wand_1_x64_en-US.msi', browser_download_url: url }] }) }),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(hero.href, url);
+  assert.equal(card.href, url);
+  assert.equal(hero.children.length, 0);
+  assert.equal(card.children.length, 1);
+  assert.equal(status.textContent, 'Latest published release: v1');
 });
 
 test('release URLs cannot redirect to another repository or credentials', () => {
