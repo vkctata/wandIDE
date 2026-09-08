@@ -231,6 +231,8 @@ Settings detects Claude, Codex, Kimi, and Gemini CLI installations from the desk
 
 ## Credential security
 
+Installer publishing is gated on both frontend validation and Rust tests in CI.
+
 ### Coding runtime permissions
 
 Wand allowlists supported coding CLIs and starts each stage in its registered
