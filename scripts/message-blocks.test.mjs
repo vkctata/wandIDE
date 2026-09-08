@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { messageBlocks } from '../src/message-blocks.ts';
+import { messageBlocks, messagePreview } from '../src/message-blocks.ts';
+
+test('timeline previews keep prose separate from code and preserve full source', () => {
+  const source = '\n## Verified result\n```ts\nconst answer = 42;\n```\nMore details.';
+  assert.equal(messagePreview(source), 'Verified result');
+  assert.equal(messageBlocks(source).find(block => block.kind === 'code').content, 'const answer = 42;');
+  assert.equal(messagePreview('```ts\nconst answer = 42;\n```'), 'typescript snippet');
+  assert.equal(messagePreview('```\ncode'), 'Code snippet');
+  assert.equal(messagePreview('~~~py\nprint(1)\n~~~\nChecked successfully.'), 'Checked successfully.');
+  assert.equal(messagePreview('   \n\t'), 'Empty post');
+  assert.equal(messagePreview('x'.repeat(200)), 'x'.repeat(159) + '…');
+  assert.equal(messagePreview('@Builder  Check this\nSecond line'), '@Builder Check this');
+  assert.equal(messagePreview('<img src=x onerror=alert(1)>'), '<img src=x onerror=alert(1)>');
+});
 
 test('keeps prose and HTML inert and preserves code content', () => {
   assert.deepEqual(messageBlocks('<script>alert(1)</script>'), [{kind:'text',content:'<script>alert(1)</script>',language:''}]);

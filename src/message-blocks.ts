@@ -29,3 +29,16 @@ export function messageBlocks(source: string): MessageBlock[] {
   flush();
   return blocks;
 }
+
+/** A timeline title is prose, not a flattened copy of an entire code block. */
+export function messagePreview(source: string): string {
+  const blocks = messageBlocks(source);
+  const prose = blocks.filter(block => block.kind === 'text')
+    .flatMap(block => block.content.split('\n')).find(line => line.trim());
+  if (prose) {
+    const title = prose.trim().replace(/^#{1,6}\s+/, '').replace(/\s+/g, ' ');
+    return title.length > 160 ? `${title.slice(0, 159)}…` : title;
+  }
+  const code = blocks.find(block => block.kind === 'code');
+  return code ? `${code.language === 'plaintext' ? 'Code' : code.language} snippet` : 'Empty post';
+}

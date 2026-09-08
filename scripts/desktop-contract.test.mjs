@@ -1,8 +1,171 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { hasAgentMention } from '../src/mentions.ts';
+import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
+import { activityMessage, agentDisplayName } from '../src/activity-labels.ts';
+
+test('verification stage displays the persisted Sentinel name without changing human authors', () => {
+  const agents = [{ id: 'sentinel', name: 'Independent reviewer' }];
+  assert.equal(agentDisplayName('sentinel-verifier', agents), 'Independent reviewer');
+  assert.equal(activityMessage('agent.verified', 'sentinel-verifier completed stage 2', agents), 'Independent reviewer completed stage 2');
+  assert.equal(agentDisplayName('You', agents), 'You');
+  assert.equal(agentDisplayName('sentinel-verifier', []), 'sentinel-verifier');
+});
+import { latestRequest } from '../src/latest-request.ts';
+import { readSearchSources } from '../src/search-sources.ts';
+import { searchFocusIndex } from '../src/search-navigation.ts';
+
+test('CLI settings disclose runtime permissions instead of claiming directory sandboxing', () => {
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(app, /Starting in a repository does not restrict all file or network access/);
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /working directory is not an operating-system sandbox/);
+});
+
+test('search arrows wrap while text-editing Home and End remain available in input', () => {
+  assert.equal(searchFocusIndex('ArrowDown', -1, 3), 0);
+  assert.equal(searchFocusIndex('ArrowUp', -1, 3), 2);
+  assert.equal(searchFocusIndex('ArrowDown', 2, 3), 0);
+  assert.equal(searchFocusIndex('ArrowUp', 0, 3), 2);
+  assert.equal(searchFocusIndex('Home', 2, 3), 0);
+  assert.equal(searchFocusIndex('End', 0, 3), 2);
+  assert.equal(searchFocusIndex('Home', -1, 3), null);
+  assert.equal(searchFocusIndex('End', -1, 3), null);
+  assert.equal(searchFocusIndex('ArrowDown', -1, 0), null);
+  assert.equal(searchFocusIndex('Enter', 0, 3), null);
+});
+
+test('search preserves successful sources and identifies unavailable categories', async () => {
+  const result = await readSearchSources([
+    { name: 'notifications', read: async () => [{ id: 1 }] },
+    { name: 'activity', read: () => { throw Error('database busy'); } },
+  ]);
+  assert.deepEqual(result, { rows: [[{ id: 1 }], []], unavailable: ['activity'] });
+  assert.deepEqual(await readSearchSources([{ name: 'activity', read: async () => [] }]), { rows: [[]], unavailable: [] });
+});
+
+test('refresh responses cannot overwrite a newer request or an unmounted view', () => {
+  const requests = latestRequest();
+  const first = requests.begin();
+  assert.equal(first(), true);
+  const second = requests.begin();
+  assert.equal(first(), false);
+  assert.equal(second(), true);
+  requests.invalidate();
+  assert.equal(second(), false);
+  assert.equal(requests.begin()(), true);
+});
+
+test('activity summaries resolve exact agent IDs without rewriting user output', () => {
+  const agents = [{ id: 'repo:Moon Cheese:engineer', name: 'Moon Cheese engineer' }];
+  const source = 'repo:Moon Cheese:engineer completed stage 2';
+  assert.equal(activityMessage('agent.completed', source, agents), 'Moon Cheese engineer completed stage 2');
+  assert.equal(activityMessage('provider.updated', source, agents), source);
+  assert.equal(activityMessage('agent.completed', source, []), source);
+  assert.equal(activityMessage('agent.completed', 'Output mentions repo:Moon Cheese:engineer', agents), 'Output mentions repo:Moon Cheese:engineer');
+  assert.equal(activityMessage('agent.completed', 'other completed stage 2', agents), 'other completed stage 2');
+});
+
+test('agent insertion follows the cursor and preserves the rest of a draft', () => {
+  const body = 'Ask @Bu to inspect the diff, then @Reviewer.';
+  const caret = body.indexOf('@Bu') + 3;
+  assert.equal(activeMentionAt(body, caret).query, 'Bu');
+  assert.deepEqual(insertAgentMention(body, caret, 'Builder'), {
+    text: 'Ask @Builder to inspect the diff, then @Reviewer.', caret: 12,
+  });
+  assert.equal(insertAgentMention('@Builde', 3, 'Builder').text, '@Builder ');
+  assert.equal(insertAgentMention('@Moon Cheese', 12, 'Moon Cheese Inspector engineer').text, '@Moon Cheese Inspector engineer ');
+  assert.equal(activeMentionAt('person@example.com', 10), null);
+  assert.equal(activeMentionAt('@Builder\nnew line', 17), null);
+  assert.equal(activeMentionAt('no mention', 4), null);
+  assert.equal(activeMentionAt('@Builder', 0), null);
+  assert.equal(insertAgentMention('plain task', 5, 'Builder'), null);
+  assert.equal(insertAgentMention('(@Bu)', 4, 'Builder').text, '(@Builder)');
+});
 import { accumulateDownload, installApprovedUpdate } from '../src/update-installation.ts';
+import { initializeEditorViewport } from '../src/editor-viewport.ts';
+import { submitOnce } from '../src/submission.ts';
+import { readThreadSnapshot, mergeThreadSnapshot } from '../src/thread-refresh.ts';
+import { persistAppearance, readPreviewAppearance } from '../src/appearance-persistence.ts';
+
+test('appearance saves distinguish native persistence from browser preferences', async () => {
+  const setting = { key: 'theme', value: 'daylight' };
+  let saved;
+  const blocked = () => { throw Error('storage denied'); };
+  await persistAppearance(setting, true, async value => { saved = value; }, blocked);
+  assert.deepEqual(saved, setting);
+  await assert.rejects(persistAppearance(setting, true, async () => { throw Error('database busy'); }, blocked), /database busy/);
+  await assert.rejects(persistAppearance(setting, false, async () => assert.fail('native save in preview'), blocked), /storage denied/);
+  const values = new Map();
+  const storage = () => ({ setItem: (key, value) => values.set(key, value), getItem: key => values.get(key) ?? null });
+  await persistAppearance({ key: 'font', value: 'avenir' }, false, async () => assert.fail('native save in preview'), storage);
+  assert.equal(readPreviewAppearance('font', storage), 'avenir');
+  assert.equal(readPreviewAppearance('theme', blocked), null);
+});
+
+test('thread refresh failures remain distinct from an empty repository', async () => {
+  assert.deepEqual(await readThreadSnapshot(async () => []), { messages: [], error: null });
+  assert.deepEqual(await readThreadSnapshot(async () => { throw Error('database busy'); }), { messages: null, error: 'database busy' });
+  assert.match((await readThreadSnapshot(async () => { throw Error(''); })).error, /Unable to read/);
+  const current = [{ id: 2, body: 'live reply' }, { id: 1, body: 'post' }];
+  const merged = mergeThreadSnapshot(current, [{ id: 1, body: 'post' }]);
+  assert.deepEqual(merged.map(message => message.id), [1, 2]);
+  assert.equal(current[0].id, 2, 'does not mutate current state');
+  assert.equal(mergeThreadSnapshot(merged, [merged[1]]).length, 2, 'live event is deduplicated');
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(app, /await submitOnce\(commentLock/);
+  assert.match(app, /if \(result.messages !== null\) setMessages/);
+  assert.match(app, /version !== loadVersion.current/);
+  assert.match(app, /Retry loading posts/);
+});
+
+test('post submission suppresses overlapping clicks and unlocks after failure', async () => {
+  const lock = { current: false };
+  let release, calls = 0;
+  const pending = submitOnce(lock, () => { calls++; return new Promise(resolve => { release = resolve; }); });
+  assert.equal(lock.current, true);
+  assert.equal(await submitOnce(lock, async () => { calls++; }), false);
+  assert.equal(calls, 1);
+  release();
+  assert.equal(await pending, true);
+  assert.equal(lock.current, false);
+  await assert.rejects(submitOnce(lock, async () => { throw Error('failed'); }), /failed/);
+  assert.equal(lock.current, false);
+  assert.equal(await submitOnce(lock, async () => { calls++; }), true);
+  assert.equal(calls, 2);
+});
+
+test('mounted editors measure the visible host before drawing either diff side', () => {
+  const calls = [];
+  const host = { layout: () => calls.push('layout') };
+  const view = name => ({ render: force => calls.push([name, force]) });
+  initializeEditorViewport(host, [view('file')]);
+  assert.deepEqual(calls, ['layout', ['file', true]]);
+  calls.length = 0;
+  initializeEditorViewport(host, [view('original'), view('modified')]);
+  assert.deepEqual(calls, ['layout', ['original', true], ['modified', true]]);
+  const source = readFileSync(new URL('../src/editor.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /Temporary Monaco diagnostics|setTimeout/);
+  assert.equal([...source.matchAll(/props.onMount\?\.\(editor, api\)/g)].length, 2);
+});
+
+test('repository layout reserves a second column only for an open post', () => {
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/native-ui.css', import.meta.url), 'utf8');
+  assert.match(app, /thread-layout\$\{selected \? " has-detail" : ""\}/);
+  assert.match(css, /\.thread-layout \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(css, /\.thread-layout\.has-detail \{ grid-template-columns: minmax\(0, 1fr\) minmax\(300px, 380px\);/);
+  assert.match(css, /@media \(max-width: 900px\) \{ \.thread-layout\.has-detail \{ grid-template-columns: minmax\(0, 1fr\); \} \.thread-detail-pane \{[^}]*order: -1;/);
+});
+
+test('native theme changes do not depend on transition clocks', () => {
+  const css = readFileSync(new URL('../src/minimal-ui.css', import.meta.url), 'utf8');
+  const beforeMedia = css.split('@media')[0];
+  assert.match(beforeMedia, /body\[data-theme\] \*, body\[data-theme\] \*::before, body\[data-theme\] \*::after\s*\{\s*transition: none !important;/);
+  assert.doesNotMatch(css, /transition:\s*background-color/);
+  const app = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /TemporaryCssDiagnostics/);
+});
 
 test('approved update restart failure retries restart without installing twice', async () => {
   let installed = false, downloads = 0, restarts = 0;

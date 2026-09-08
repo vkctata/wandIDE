@@ -1,5 +1,6 @@
 import React from "react";
 import Editor, { DiffEditor, loader } from "@monaco-editor/react";
+import { initializeEditorViewport } from "./editor-viewport";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker.js?worker";
@@ -20,11 +21,17 @@ import TypeScriptWorker from "monaco-editor/language/typescript/ts.worker.js?wor
 loader.config({ monaco });
 
 export function CodeEditor(props: React.ComponentProps<typeof Editor>) {
-  return <Editor {...props} />;
+  return <Editor {...props} onMount={(editor, api) => {
+    initializeEditorViewport(editor, [editor]);
+    props.onMount?.(editor, api);
+  }} />;
 }
 
 export function CodeDiffEditor(
   props: React.ComponentProps<typeof DiffEditor>,
 ) {
-  return <DiffEditor {...props} />;
+  return <DiffEditor {...props} onMount={(editor, api) => {
+    initializeEditorViewport(editor, [editor.getOriginalEditor(), editor.getModifiedEditor()]);
+    props.onMount?.(editor, api);
+  }} />;
 }

@@ -1,5 +1,11 @@
 /* Final desktop presentation contract. Keep native window geometry and user
    font/accent preferences; surfaces should never depend on decorative effects. */
+/* Theme colors must settle immediately, including inactive native windows.
+   WKWebView can retain the initial color of a suspended transition even after
+   inherited theme variables change. Focus/hover feedback still changes color. */
+body[data-theme] *, body[data-theme] *::before, body[data-theme] *::after {
+  transition: none !important;
+}
 body[data-theme] {
   --wand-accent: #a4b8ef;
   --wand-accent-2: #a4b8ef;
@@ -43,6 +49,23 @@ body[data-theme] .hero { margin-bottom: 24px; }
 body[data-theme] .hero h1 { font-size: clamp(23px, 2.5vw, 30px); letter-spacing: -.025em; }
 body[data-theme] :is(.eyebrow, .navgroup label) { letter-spacing: .08em; font-size: 10px; }
 body[data-theme] .stats { margin-bottom: 28px; }
+body[data-theme] .search-palette button:focus-visible {
+  outline: 2px solid var(--wand-accent);
+  outline-offset: -2px;
+  background: var(--wand-surface);
+}
+body[data-theme] .search-palette { max-height: min(520px, 70vh); overflow-y: auto; }
+body[data-theme] .search-palette button {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 5px; padding: 12px; font: inherit; font-size: 14px;
+}
+body[data-theme] .search-palette button > span {
+  width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body[data-theme] .search-palette small {
+  font: inherit; font-size: 12px; text-transform: none;
+  color: var(--wand-muted); opacity: 1; overflow-wrap: anywhere;
+}
 body[data-theme] :is(.stat, .agent, .taskcard, .settingscard,
   .settings-section, .thread-card, .thread-detail-pane, .emptyhint,
   .onboard-card, .search-palette, .wand-modal, .toast) {
@@ -129,7 +152,7 @@ body[data-theme] :is(.pulse, .green-dot, .status, .d-sparkle, .brand,
   transform: none !important;
   box-shadow: none !important;
   filter: none !important;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: none !important;
 }
 body[data-theme] :is(.settings-modal-backdrop, .wand-modal-backdrop) {
   backdrop-filter: none !important;
@@ -175,6 +198,8 @@ body[data-theme] :is(.font-option em, .stat > svg, .nav.active svg, .repo.active
 }
 /* Agent content: scoped surfaces prevent transcript header styles reaching Monaco. */
 .message-content { min-width: 0; }
+.thread-refresh-error { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.thread-refresh-error > span { flex: 1 1 240px; }
 .message-prose { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
 .message-snippet { min-width: 0; margin-block: 12px; border: 1px solid var(--wand-border); border-radius: 8px; overflow: hidden; }
 .message-snippet > header { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 12px; color: var(--ink-muted); }

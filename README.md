@@ -1,10 +1,20 @@
 # Wand
 
-The desktop interface uses flat, neutral surfaces, system typography by default, and minimal interaction motion. A shared sparkles-only icon is generated for the platform installers. Home shows persisted agents and recent activity instead of placeholder agent cards. Native desktop permissions cover repository browsing, live events, notification consent, and restarting after an approved update.
+The desktop interface uses flat, neutral surfaces and system typography by default. Theme and interaction colors change immediately, without transition animations that can leave inactive native windows displaying stale colors. A shared sparkles-only icon is generated for the platform installers. Home shows persisted agents and recent activity instead of placeholder agent cards. Native desktop permissions cover repository browsing, live events, notification consent, and restarting after an approved update.
 
 Desktop reliability: macOS uses native window controls and rounded corners. Agent stages have a 30-minute deadline covering both process execution and output draining; timed-out process trees are terminated so inherited output pipes cannot leave a run waiting indefinitely. Provider-agent creation is covered by a database regression test.
 
-Repository posts open in a detail pane with persistent comments. Unsent comment drafts stay with their selected post while switching between posts (drafts are session-only). Findings from tagged-agent tasks are saved as replies to the originating post by the native worker, including when the frontend is closed. Comments are restricted to root posts in the same repository. Tasks without an originating post retain their output in run transcripts. Routine worker heartbeats update the sidebar quietly; actionable task and provider events retain notifications.
+Repository posts use the available width until a post opens in a detail pane with persistent comments. On narrow windows the detail pane stacks above the list. Unsent comment drafts stay with their selected post while switching between posts (drafts are session-only). Findings from tagged-agent tasks are saved as replies to the originating post by the native worker, including when the frontend is closed. Comments are restricted to root posts in the same repository. Tasks without an originating post retain their output in run transcripts. Routine worker heartbeats update the sidebar quietly; actionable task and provider events retain notifications.
+
+Post submission disables the composer while saving and rejects overlapping clicks
+before the next render. A rejected submission keeps its draft and tags for retry.
+Comments also reject overlapping submissions. Failed history refreshes preserve
+loaded posts with a retry action; a delayed snapshot cannot erase newer live replies.
+Agent mentions follow the text cursor, preserve the rest of the draft, and support
+multi-word name searches. The picker supports keyboard and accessible click selection.
+Appearance changes apply after persistence succeeds. Settings reports saving and
+failure states; failed writes retain the previous theme/font instead of silently
+showing an unsaved choice. Browser preview preferences are separate from native storage.
 
 Wand is a lightweight, AI-first engineering workspace for Tauri 2, React, and TypeScript. It is designed around a simple idea: software work should move through a small team of focused agents, with each handoff visible and a final verifier running in the background.
 
@@ -33,6 +43,12 @@ The current build provides the desktop-ready product foundation:
 - Repository threads with live human/agent messages and persisted agent handoff comments
 - Tagging an agent in a repository thread creates a persisted one-off task and starts the ordered handoff plus final Sentinel verification chain; tagged work appears immediately in Tasks
 - Activity timeline, in-app notifications, OS notifications, notification preferences, and settings surfaces
+- Activity stage summaries display configured agent names while preserving original event history and output.
+- Verification stage authors resolve to the configured Sentinel name in activity and post comments.
+- Home distinguishes loading, unavailable, and empty history; stale refresh responses cannot replace newer activity.
+- Search shows local matches while history loads, identifies unavailable categories, and supports native keyboard activation of result buttons.
+- Search supports Up/Down result navigation, Home/End within results, and Escape to dismiss results and return focus to the input.
+- Search results use compact titles and readable metadata, with a scrollable list that stays within the window.
 - Monaco file editor with guarded repository saves and Git original-versus-modified diff viewer
 - Local CLI detection and opt-in access for Claude, Codex, Kimi, and Gemini CLI
 - Tauri icon and desktop configuration for macOS and Windows
@@ -120,9 +136,13 @@ inline scripts, or eval are allowed. See [Tauri's CSP guidance](https://v2.tauri
 The file editor keeps Git HEAD as its diff baseline after saving. Save is disabled
 until a file has loaded successfully, and stale file-load responses are ignored.
 Switching repositories resets the editor to that repository's file context.
+Editors remeasure their visible container on mount before drawing code, including
+both diff panes, so native first paint does not rely on a deferred resize frame.
 
 Fenced code in post details, comments, and saved agent transcripts uses lazy,
-read-only Monaco snippets that follow the desktop appearance. Large snippets
+read-only Monaco snippets that follow the desktop appearance. Timeline cards show a short prose title (or a code
+snippet label) instead of flattening fenced source code into their one-line preview.
+The complete post remains in its detail pane. Large snippets
 and additional blocks offer an explicit “Format code” action to limit editor
 overhead. Plain text remains available during loading or if the editor fails.
 Live streaming output remains a plain-text log until persisted; unfenced output
@@ -210,6 +230,18 @@ Tagged releases are published automatically after the desktop matrix completes. 
 Settings detects Claude, Codex, Kimi, and Gemini CLI installations from the desktop process environment. Because macOS apps launched from Finder do not inherit an interactive shell's PATH, Wand also checks standard Homebrew, npm, Bun, Cargo, pnpm, and nvm locations. Windows npm command shims (`.exe`, `.cmd`, and `.bat`) are supported. Users still explicitly enable detected runtimes in Settings before an agent can execute.
 
 ## Credential security
+
+### Coding runtime permissions
+
+Wand allowlists supported coding CLIs and starts each stage in its registered
+repository directory. That working directory is not an operating-system sandbox.
+CLIs inherit their own configured permission and sandbox policies; Wand does not
+currently enforce one cross-provider isolation policy. Review those settings
+before enabling a runtime, especially for sensitive repositories. A CLI may read
+outside its working directory or contact its model provider when its permissions
+allow it. Native credential storage does not itself constrain CLI execution.
+
+### Provider token storage
 
 Provider PATs can be disconnected from Settings at any time; disconnect removes the installation-scoped credential and clears Azure organization settings. New tokens are saved through macOS Keychain, Windows Credential Manager, or Linux Secret Service, never SQLite, browser storage, or a repository. A random installation namespace is retained in the local settings store. Tokens saved by earlier builds in the encrypted local file migrate on first access: Wand removes the file copy only after the native credential store accepts the token. If the system store is locked or unavailable, Wand reports the error without falling back to file storage. Linux users need a running, unlocked Secret Service such as GNOME Keyring or KWallet.
 
