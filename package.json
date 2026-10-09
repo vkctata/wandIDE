@@ -11,7 +11,7 @@
     "tauri": "tauri"
   },
   "overrides": {
-    "dompurify": "3.4.13",
+    "dompurify": "3.4.16",
     "esbuild": "0.25.0"
   },
   "dependencies": {
