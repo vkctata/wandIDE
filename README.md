@@ -184,7 +184,10 @@ the system initially and saves the visitor's choice locally. An app tour covers
 tasks, conversations, providers, and notifications; historical beta screenshots
 are labeled accordingly. Download cards resolve the published release, package
 size, and architecture, with an explicit fallback when an installer is missing
-or GitHub cannot be reached. Run `node --test scripts/website.test.mjs` to check
+or GitHub cannot be reached. A refresh control retries release discovery without
+reloading the page, with duplicate requests prevented and stale download labels
+cleared on failure. Security guidance explains that CLI permissions remain
+separate from repository scoping. Run `node --test scripts/website.test.mjs` to check
 assets, anchors, theme behavior, and release URL handling.
 
 Email signup is hidden until connected, with GitHub release updates offered
@@ -230,6 +233,8 @@ Tagged releases are published automatically after the desktop matrix completes. 
 Settings detects Claude, Codex, Kimi, and Gemini CLI installations from the desktop process environment. Because macOS apps launched from Finder do not inherit an interactive shell's PATH, Wand also checks standard Homebrew, npm, Bun, Cargo, pnpm, and nvm locations. Windows npm command shims (`.exe`, `.cmd`, and `.bat`) are supported. Users still explicitly enable detected runtimes in Settings before an agent can execute.
 
 ## Credential security
+
+Installer publishing is gated on both frontend validation and Rust tests in CI.
 
 ### Coding runtime permissions
 

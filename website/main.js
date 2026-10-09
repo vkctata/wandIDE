@@ -1,10 +1,17 @@
 import { releasePage, resolveAsset } from './releases.js';
 const releaseLinks = document.querySelectorAll('[data-release-asset]');
 const releaseStatus = document.querySelector('#release-status');
+const retryRelease = document.querySelector('#retry-release');
+let checkingRelease = false;
+
+async function checkRelease() {
+if (checkingRelease) return;
+checkingRelease = true;
+if (retryRelease) { retryRelease.hidden = false; retryRelease.disabled = true; }
 releaseStatus.textContent = 'Checking the latest release…';
 releaseLinks.forEach((link) => link.setAttribute('aria-busy', 'true'));
 
-fetch('https://api.github.com/repos/vkctata/wandIDE/releases/latest', {
+await fetch('https://api.github.com/repos/vkctata/wandIDE/releases/latest', {
   headers: { Accept: 'application/vnd.github+json' },
   credentials: 'omit',
   referrerPolicy: 'no-referrer',
@@ -23,7 +30,7 @@ fetch('https://api.github.com/repos/vkctata/wandIDE/releases/latest', {
       // Download in this tab; fallback release notes remain a normal link.
       if (asset.available) link.removeAttribute('target');
       if (!link.classList.contains('download-card')) return;
-      const note = document.createElement('span');
+      const note = link.querySelector('.asset-note') || document.createElement('span');
       note.className = 'asset-note';
       note.textContent = asset.available ? `Download installer${asset.size ? ' · ' + asset.size : ''}` : 'Installer unavailable · view release';
       link.append(note);
@@ -31,9 +38,20 @@ fetch('https://api.github.com/repos/vkctata/wandIDE/releases/latest', {
   })
   .catch(() => {
     releaseStatus.textContent = 'Could not check the latest release. Installer links will open GitHub Releases.';
-    releaseLinks.forEach((link) => { link.href = releasePage; });
+    releaseLinks.forEach((link) => {
+      link.href = releasePage;
+      const note = link.querySelector('.asset-note');
+      if (note) note.textContent = 'View installers on GitHub';
+    });
   })
-  .finally(() => releaseLinks.forEach((link) => link.removeAttribute('aria-busy')));
+  .finally(() => {
+    releaseLinks.forEach((link) => link.removeAttribute('aria-busy'));
+    checkingRelease = false;
+    if (retryRelease) retryRelease.disabled = false;
+  });
+}
+retryRelease?.addEventListener('click', checkRelease);
+checkRelease();
 
 const form = document.querySelector('#newsletter-form');
 const note = document.querySelector('#form-note');

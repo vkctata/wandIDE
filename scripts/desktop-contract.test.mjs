@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+test('installer publishing requires both frontend and backend verification', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const desktop = workflow.split('  desktop-build:')[1];
+  assert.match(desktop, /needs: \[web-build, rust-check\]/);
+});
 import { readFileSync } from 'node:fs';
 import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
 import { activityMessage, agentDisplayName } from '../src/activity-labels.ts';
