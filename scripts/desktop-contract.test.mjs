@@ -345,3 +345,12 @@ test('Tauri JavaScript and Rust packages have matching major/minor versions', ()
     assert.equal(entry.version.split('.').slice(0, 2).join('.'), rust.get(crate)?.split('.').slice(0, 2).join('.'), `${crate} must match its JavaScript package`);
   }
 });
+
+test('React runtime and DOM packages upgrade together with matching type majors', () => {
+  const { packages } = JSON.parse(read('package-lock.json'));
+  const version = name => packages[`node_modules/${name}`].version;
+  assert.equal(version('react'), version('react-dom'));
+  for (const name of ['@types/react', '@types/react-dom']) {
+    assert.equal(version(name).split('.')[0], version('react').split('.')[0]);
+  }
+});
