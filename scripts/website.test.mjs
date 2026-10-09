@@ -84,6 +84,7 @@ test('release lookup updates hero links without adding download-card captions', 
   const link = (card) => ({
     dataset: { releaseAsset: '_x64_en-US.msi' }, children: [],
     classList: { contains: () => card }, setAttribute() {}, removeAttribute() {},
+    querySelector() { return this.children[0] || null; },
     append(child) { this.children.push(child); },
   });
   const hero = link(false), card = link(true), status = {};
@@ -109,6 +110,49 @@ test('release URLs cannot redirect to another repository or credentials', () => 
   for (const url of ['https://github.com/other/repo/releases/latest', 'javascript:alert(1)', 'https://github.com.evil.test/vkctata/wandIDE/releases/latest', 'https://user:pass@github.com/vkctata/wandIDE/releases/latest', 'https://github.com/vkctata/wandIDE/releases/../../other']) {
     assert.equal(safeReleaseUrl(url), releasePage);
   }
+});
+
+test('download refresh recovers after failure, prevents overlap, and reuses captions', async () => {
+  const card = {
+    dataset: { releaseAsset: 'aarch64.dmg' }, children: [],
+    classList: { contains: () => true }, setAttribute() {}, removeAttribute() {},
+    querySelector() { return this.children[0] || null; },
+    append(child) { if (!this.children.includes(child)) this.children.push(child); },
+  };
+  let retry, finish, calls = 0;
+  const button = { addEventListener(name, callback) { retry = callback; } };
+  const status = {};
+  const source = readFileSync(new URL('main.js', website), 'utf8').replace(/^import[^\n]+\n/, '');
+  vm.runInNewContext(source, {
+    releasePage, resolveAsset, AbortSignal,
+    document: {
+      querySelectorAll: () => [card],
+      querySelector: selector => ({ '#release-status': status, '#retry-release': button })[selector] || null,
+      createElement: () => ({}),
+    },
+    fetch: () => { calls++; return new Promise(resolve => { finish = resolve; }); },
+  });
+  assert.equal(button.disabled, true);
+  await retry();
+  assert.equal(calls, 1);
+  finish({ ok: false });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(status.textContent, /Could not check/);
+  assert.equal(button.disabled, false);
+  assert.equal(card.href, releasePage);
+  const url = 'https://github.com/vkctata/wandIDE/releases/download/v1/Wand_aarch64.dmg';
+  for (let i = 0; i < 2; i++) {
+    const pending = retry();
+    finish({ ok: true, json: async () => ({ tag_name: 'v1', assets: [{ name: 'Wand_aarch64.dmg', browser_download_url: url }] }) });
+    await pending;
+    assert.equal(card.href, url);
+    assert.equal(card.children.length, 1);
+  }
+  const pending = retry();
+  finish({ ok: false });
+  await pending;
+  assert.equal(card.href, releasePage);
+  assert.equal(card.children[0].textContent, 'View installers on GitHub');
 });
 
 function themeContext(saved, blocked = false) {
