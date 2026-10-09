@@ -49,7 +49,7 @@ jobs:
     name: Desktop (${{ matrix.target }})
     permissions:
       contents: write
-    needs: web-build
+    needs: [web-build, rust-check]
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/wand-v')
     timeout-minutes: 30
     runs-on: ${{ matrix.os }}
