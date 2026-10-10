@@ -2509,14 +2509,23 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     emit_provider_health(&app, "github", "ok", None);
 }
 fn background_provider_token(app: &AppHandle, provider: &str) -> Option<String> {
-    match provider_service(provider).and_then(|service| native_provider_secret(&service)) {
+    resolve_background_credential(
+        provider_service(provider).and_then(|service| native_provider_secret(&service)),
+        |status, error| emit_provider_health(app, provider, status, error),
+    )
+}
+fn resolve_background_credential(
+    credential: Result<Option<String>, String>,
+    report: impl FnOnce(&str, Option<String>),
+) -> Option<String> {
+    match credential {
         Ok(Some(token)) => Some(token),
         Ok(None) => {
-            emit_provider_health(app, provider, "disconnected", None);
+            report("disconnected", None);
             None
         }
         Err(error) => {
-            emit_provider_health(app, provider, "error", Some(format!("Credential check failed: {error}")));
+            report("error", Some(format!("Credential check failed: {error}")));
             None
         }
     }
@@ -3119,6 +3128,23 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn background_credentials_distinguish_absence_from_store_failure() {
+        let mut reports = Vec::new();
+        assert_eq!(resolve_background_credential(Ok(None), |status, error| {
+            reports.push((status.to_string(), error));
+        }), None);
+        assert_eq!(reports, vec![("disconnected".to_string(), None)]);
+        reports.clear();
+        assert_eq!(resolve_background_credential(Err("Store locked".into()), |status, error| {
+            reports.push((status.to_string(), error));
+        }), None);
+        assert_eq!(reports, vec![("error".to_string(), Some("Credential check failed: Store locked".to_string()))]);
+        assert_eq!(resolve_background_credential(Ok(Some("test-only-token".into())), |_, _| {
+            panic!("A stored credential must not be emitted as a health event");
+        }), Some("test-only-token".to_string()));
+    }
+
     fn launch_test_request(conn: &Connection) -> ChainRequest {
         conn.execute(
             "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('launch','Launch','repo','one-off','[\"planner\",\"builder\"]','queued','now')",
