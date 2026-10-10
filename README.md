@@ -222,7 +222,7 @@ Every push and pull request runs the web build and Rust check. The desktop job p
 - Apple Silicon macOS (`aarch64-apple-darwin`)
 - Windows x64 (`x86_64-pc-windows-msvc`)
 
-The resulting bundles are uploaded as workflow artifacts. Tagged releases produce the signed updater artifacts and downloadable installers.
+Manual workflow runs build validation installers and upload workflow artifacts only. They do not publish or modify GitHub releases and do not use updater signing keys. Tagged pushes produce the signed updater artifacts and downloadable installers.
 
 The release matrix covers Apple Silicon macOS, Intel macOS, Windows x64, and Linux x64.
 
