@@ -241,6 +241,9 @@ test('provider recovery only clears its own failure and retains other provider w
   const both = updateProviderHealth(first, { provider: 'github', status: 'error', error: 'Offline' });
   assert.equal(both.length, 2);
   assert.deepEqual(updateProviderHealth(both, { provider: 'github', status: 'ok' }), first);
+  assert.deepEqual(updateProviderHealth(both, { provider: 'github', status: 'disconnected' }), first);
+  assert.deepEqual(updateProviderHealth([], { provider: 'github', status: 'disconnected' }), []);
+  assert.equal(isRepositorySync({ provider: 'github', status: 'disconnected', count: 0 }), false);
   assert.deepEqual(updateProviderHealth(first, { provider: 'azure-devops', status: 'ok' }), []);
   assert.equal(updateProviderHealth(first, { provider: 'linear', status: 'ok' }), first);
   assert.equal(updateProviderHealth(first, azure), first, 'identical poll is a no-op');

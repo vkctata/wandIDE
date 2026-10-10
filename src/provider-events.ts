@@ -14,9 +14,9 @@ export function updateProviderHealth(current: ProviderFailure[], payload: unknow
   if (!payload || typeof payload !== "object") return current;
   const event = payload as Record<string, unknown>;
   if (typeof event.provider !== "string" || !event.provider.trim()) return current;
-  if (event.status !== "ok" && event.status !== "error") return current;
+  if (event.status !== "ok" && event.status !== "error" && event.status !== "disconnected") return current;
   const index = current.findIndex((failure) => failure.provider === event.provider);
-  if (event.status === "ok") {
+  if (event.status === "ok" || event.status === "disconnected") {
     return index < 0 ? current : current.filter((failure) => failure.provider !== event.provider);
   }
   const message = typeof event.error === "string" && event.error.trim()

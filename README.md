@@ -311,6 +311,8 @@ Repositories are selected from a local workspace folder and scanned for Git repo
 
 ### Integrations
 
+Background provider polling skips services you have not connected. Credential-store failures still surface as warnings; disconnecting one provider clears only that provider's warning.
+
 GitHub, Azure DevOps, and Linear can be connected from Settings with PATs/API keys stored through the operating system credential manager. GitHub/Azure repository sync and pull-request comment polling plus Linear team synchronization run in Rust adapters, with normalized events sent to React.
 
 ### Local-first data
