@@ -6,6 +6,15 @@ test('installer publishing requires both frontend and backend verification', () 
   assert.match(desktop, /needs: \[web-build, rust-check\]/);
 });
 import { readFileSync } from 'node:fs';
+test('manual packaging cannot publish releases or use updater signing keys', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const validation = workflow.split('- name: Build validation installers without publishing')[1].split('- uses: tauri-apps/tauri-action@')[0];
+  assert.match(validation, /if: github.event_name == 'workflow_dispatch'/);
+  assert.match(validation, /"createUpdaterArtifacts":false/);
+  assert.doesNotMatch(validation, /secrets\.|tagName:|releaseName:/);
+  const publishing = workflow.split('- uses: tauri-apps/tauri-action@')[1].split('- uses: actions\/upload-artifact@')[0];
+  assert.match(publishing, /if: github.event_name == 'push' && startsWith\(github.ref, 'refs\/tags\/wand-v'\)/);
+});
 import { hasAgentMention, activeMentionAt, insertAgentMention } from '../src/mentions.ts';
 import { activityMessage, agentDisplayName } from '../src/activity-labels.ts';
 
