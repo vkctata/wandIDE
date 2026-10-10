@@ -11,6 +11,8 @@ test('manual packaging cannot publish releases or use updater signing keys', () 
   const validation = workflow.split('- name: Build validation installers without publishing')[1].split('- uses: tauri-apps/tauri-action@')[0];
   assert.match(validation, /if: github.event_name == 'workflow_dispatch'/);
   assert.match(validation, /"createUpdaterArtifacts":false/);
+  assert.match(validation, /"macOS":\{"signingIdentity":"-"\}/);
+  assert.match(validation, /codesign --verify --deep --strict/);
   assert.doesNotMatch(validation, /secrets\.|tagName:|releaseName:/);
   const publishing = workflow.split('- uses: tauri-apps/tauri-action@')[1].split('- uses: actions\/upload-artifact@')[0];
   assert.match(publishing, /if: github.event_name == 'push' && startsWith\(github.ref, 'refs\/tags\/wand-v'\)/);

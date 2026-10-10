@@ -84,7 +84,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Build validation installers without publishing
         if: github.event_name == 'workflow_dispatch'
-        run: npm run tauri -- build ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npm run tauri -- build ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":false,"macOS":{"signingIdentity":"-"}}}'
+      - name: Verify validation app signature
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'macOS'
+        run: codesign --verify --deep --strict --verbose=2 src-tauri/target/${{ matrix.target }}/release/bundle/macos/Wand.app
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/wand-v')
         env:
