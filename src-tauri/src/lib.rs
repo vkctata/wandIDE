@@ -2420,9 +2420,9 @@ fn emit_provider_health(app: &AppHandle, provider: &str, status: &str, error: Op
 }
 
 async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
-    let token = match provider_token("github").await {
-        Ok(value) => value,
-        Err(_) => return,
+    let token = match background_provider_token(&app, "github") {
+        Some(value) => value,
+        None => return,
     };
     let names: Vec<String> = {
         let conn = match db.lock() {
@@ -2508,25 +2508,32 @@ async fn background_github_activity(db: Arc<Mutex<Connection>>, app: AppHandle) 
     }
     emit_provider_health(&app, "github", "ok", None);
 }
-async fn report_provider_credentials(app: AppHandle) {
-    for provider in ["github", "azure-devops", "linear"] {
-        if let Err(error) = provider_token(provider).await {
-            let _=app.emit("wand://provider",serde_json::json!({"provider":provider,"status":"error","error":format!("Credential check failed: {error}")}));
+fn background_provider_token(app: &AppHandle, provider: &str) -> Option<String> {
+    resolve_background_credential(
+        provider_service(provider).and_then(|service| native_provider_secret(&service)),
+        |status, error| emit_provider_health(app, provider, status, error),
+    )
+}
+fn resolve_background_credential(
+    credential: Result<Option<String>, String>,
+    report: impl FnOnce(&str, Option<String>),
+) -> Option<String> {
+    match credential {
+        Ok(Some(token)) => Some(token),
+        Ok(None) => {
+            report("disconnected", None);
+            None
+        }
+        Err(error) => {
+            report("error", Some(format!("Credential check failed: {error}")));
+            None
         }
     }
 }
 async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
-    let token = match provider_token("azure-devops").await {
-        Ok(value) => value,
-        Err(error) => {
-            emit_provider_health(
-                &app,
-                "azure-devops",
-                "error",
-                Some(format!("Credential check failed: {error}")),
-            );
-            return;
-        }
+    let token = match background_provider_token(&app, "azure-devops") {
+        Some(value) => value,
+        None => return,
     };
     let base: Option<String> = {
         let conn = match db.lock() {
@@ -2662,7 +2669,7 @@ async fn background_azure_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
 }
 
 async fn background_linear_activity(db: Arc<Mutex<Connection>>, app: AppHandle) {
-    if provider_token("linear").await.is_err() { return; }
+    if background_provider_token(&app, "linear").is_none() { return; }
     let db_state = Db(db);
     let _ = sync_linear_activity_impl(&db_state, app).await;
 }
@@ -2700,7 +2707,6 @@ fn start_background_sync(app: AppHandle, db: Arc<Mutex<Connection>>) {
                 let poll_app = app.clone();
                 let poll_running = provider_poll_running.clone();
                 tauri::async_runtime::spawn(async move {
-                    report_provider_credentials(poll_app.clone()).await;
                     background_github_activity(poll_db.clone(), poll_app.clone()).await;
                     background_azure_activity(poll_db.clone(), poll_app.clone()).await;
                     background_linear_activity(poll_db, poll_app).await;
@@ -3122,6 +3128,23 @@ fn list_repositories(db: State<Db>) -> Result<Vec<ScannedRepo>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn background_credentials_distinguish_absence_from_store_failure() {
+        let mut reports = Vec::new();
+        assert_eq!(resolve_background_credential(Ok(None), |status, error| {
+            reports.push((status.to_string(), error));
+        }), None);
+        assert_eq!(reports, vec![("disconnected".to_string(), None)]);
+        reports.clear();
+        assert_eq!(resolve_background_credential(Err("Store locked".into()), |status, error| {
+            reports.push((status.to_string(), error));
+        }), None);
+        assert_eq!(reports, vec![("error".to_string(), Some("Credential check failed: Store locked".to_string()))]);
+        assert_eq!(resolve_background_credential(Ok(Some("test-only-token".into())), |_, _| {
+            panic!("A stored credential must not be emitted as a health event");
+        }), Some("test-only-token".to_string()));
+    }
+
     fn launch_test_request(conn: &Connection) -> ChainRequest {
         conn.execute(
             "INSERT INTO tasks(id,name,repo,cron,agents,status,created_at) VALUES ('launch','Launch','repo','one-off','[\"planner\",\"builder\"]','queued','now')",
