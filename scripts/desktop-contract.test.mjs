@@ -355,6 +355,14 @@ test('desktop and website share the same sparkles-only icon source', () => {
   assert.doesNotMatch(read('src/main.tsx'), /className="wand-d"/);
 });
 
+test('agent mentions use theme surfaces without decorative glow', () => {
+  const rule = read('src/minimal-ui.css').match(/body\[data-theme\] \.agent-mention\s*\{([^}]+)\}/)?.[1];
+  assert.ok(rule);
+  assert.match(rule, /background:\s*var\(--wand-surface-2\)/);
+  assert.match(rule, /color:\s*var\(--wand-ink\)/);
+  assert.match(rule, /box-shadow:\s*none/);
+});
+
 test('Tauri JavaScript and Rust packages have matching major/minor versions', () => {
   const rust = new Map([...read('src-tauri/Cargo.lock').matchAll(/\[\[package\]\]\nname = "([^"]+)"\nversion = "([^"]+)"/g)].map((match) => [match[1], match[2]]));
   const { packages } = JSON.parse(read('package-lock.json'));

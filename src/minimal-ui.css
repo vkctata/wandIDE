@@ -109,6 +109,12 @@ body[data-theme] .content > .hero .eyebrow,
 body[data-theme] .content > .sectionhead p,
 body[data-theme] .content .emptyhint p { color: var(--wand-muted) !important; }
 body[data-theme] .event { box-shadow: none !important; }
+body[data-theme] .agent-mention {
+  color: var(--wand-ink);
+  background: var(--wand-surface-2);
+  border: 1px solid var(--wand-border);
+  box-shadow: none;
+}
 body[data-theme] :is(button, input, textarea, select):focus-visible {
   outline: 2px solid var(--wand-muted); outline-offset: 3px;
 }
