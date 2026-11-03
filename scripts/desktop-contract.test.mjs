@@ -1,5 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+test('Monaco resolves its vendored sanitizer to the patched npm package only', async () => {
+  const { loadConfigFromFile } = await import('vite');
+  const loaded = await loadConfigFromFile({ command: 'build', mode: 'production' });
+  const plugin = loaded.config.plugins.find(item => item.name === 'monaco-patched-sanitizer');
+  const importer = '/repo/node_modules/monaco-editor/esm/vs/base/browser/domSanitize.js';
+  const context = {
+    resolve(source, from, options) {
+      assert.equal(source, 'dompurify');
+      assert.equal(from, importer);
+      assert.equal(options.skipSelf, true);
+      return { id: 'patched-sanitizer' };
+    },
+  };
+  assert.deepEqual(await plugin.resolveId.call(context, './dompurify/dompurify.js', importer), { id: 'patched-sanitizer' });
+  assert.equal(plugin.resolveId.call(context, './dompurify/dompurify.js', '/other/module.js'), null);
+  assert.equal(plugin.resolveId.call(context, './other.js', importer), null);
+  const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  assert.equal(lock.packages['node_modules/dompurify'].version, '3.4.17');
+});
 test('installer publishing requires both frontend and backend verification', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const desktop = workflow.split('  desktop-build:')[1];
