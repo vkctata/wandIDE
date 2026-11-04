@@ -1,5 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+test('release history does not label an old version latest or advertise retired branding', () => {
+  const source = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const section = source.slice(source.indexOf('function WhatsNewSection()'));
+  assert.doesNotMatch(section, /badge: "Latest"|Sparkle W wordmark|metallic theme gradient/);
+  assert.match(section, /shared sparkles-only icon/);
+});
 test('Monaco resolves its vendored sanitizer to the patched npm package only', async () => {
   const { loadConfigFromFile } = await import('vite');
   const loaded = await loadConfigFromFile({ command: 'build', mode: 'production' });

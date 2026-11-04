@@ -3048,11 +3048,11 @@ function WhatsNewSection() {
     {
       version: "v0.1.0",
       date: "August 2026",
-      badge: "Latest",
+      badge: "Release history",
       highlights: [
         {
-          title: "Typographic Brand Identity & Magic Sparkles",
-          desc: "Sparkle W wordmark with a metallic theme gradient and subtle magic accents.",
+          title: "Shared Sparkles Identity",
+          desc: "A shared sparkles-only icon, neutral surfaces, and restrained motion across the desktop workspace.",
           icon: Sparkles,
         },
         {
